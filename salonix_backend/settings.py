@@ -6,9 +6,6 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-print("BASE_DIR:", BASE_DIR)
-print("INI PATH:", os.path.join(BASE_DIR, "settings.ini"))
-
 # Define qual ambiente está sendo usado
 ENV = os.getenv("DJANGO_ENV", "dev")  # Pode ser: dev, uat, prod
 
@@ -19,7 +16,6 @@ parser.read(ini_path)
 
 # Segurança
 SECRET_KEY = parser[ENV]["SECRET_KEY"]
-print(f"SECRET_KEY: {SECRET_KEY}")
 DEBUG = parser.getboolean(ENV, "DEBUG")
 ALLOWED_HOSTS = [h.strip() for h in parser[ENV]["ALLOWED_HOSTS"].split(",")]
 
@@ -157,3 +153,5 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+AUTH_USER_MODEL = "users.CustomUser"
