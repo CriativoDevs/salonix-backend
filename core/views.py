@@ -1,3 +1,80 @@
-from django.shortcuts import render
+from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView, CreateAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.viewsets import ModelViewSet
 
-# Create your views here.
+from core.models import Appointment, Professional, Service, ScheduleSlot
+from core.serializers import (
+    AppointmentSerializer,
+    ProfessionalSerializer,
+    ServiceSerializer,
+    ScheduleSlotSerializer,
+)
+
+
+class PublicServiceListView(ListAPIView):
+    queryset = Service.objects.all()
+    serializer_class = ServiceSerializer
+    permission_classes = []
+
+
+class PublicProfessionalListView(ListAPIView):
+    queryset = Professional.objects.filter(is_active=True)
+    serializer_class = ProfessionalSerializer
+    permission_classes = []
+
+
+class PublicSlotListView(ListAPIView):
+    serializer_class = ScheduleSlotSerializer
+    permission_classes = []
+
+    def get_queryset(self):
+        professional_id = self.request.query_params.get("professional_id")
+        if not professional_id:
+            raise ValidationError({"professional_id": "Este parâmetro é obrigatório."})
+
+        return ScheduleSlot.objects.filter(
+            professional_id=professional_id, is_available=True
+        ).order_by("start_time")
+
+
+class AppointmentCreateView(CreateAPIView):
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        slot = serializer.validated_data["slot"]
+        if not slot.is_available:
+            raise ValidationError("Este horário já foi agendado.")
+
+        slot.is_available = False
+        slot.save()
+
+        serializer.save(client=self.request.user)
+
+
+class ServiceViewSet(ModelViewSet):
+    serializer_class = ServiceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Service.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class ProfessionalViewSet(ModelViewSet):
+    queryset = Professional.objects.all()
+    serializer_class = ProfessionalSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class ScheduleSlotViewSet(ModelViewSet):
+    queryset = ScheduleSlot.objects.all()
+    serializer_class = ScheduleSlotSerializer
+    permission_classes = [IsAuthenticated]
