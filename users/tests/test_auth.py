@@ -2,7 +2,9 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 @pytest.mark.django_db
@@ -31,7 +33,11 @@ class TestAuthEndpoints:
 
     def test_successful_login(self):
         # Create user
-        User.objects.create_user(username="lucas", password="testpass123")
+        User.objects.create_user(
+            username="lucas",
+            email="lucas@example.com",
+            password="testpass123",
+        )
         payload = {"username": "lucas", "password": "testpass123"}
         response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_200_OK
@@ -39,7 +45,11 @@ class TestAuthEndpoints:
         assert "refresh" in response.data
 
     def test_login_with_wrong_password(self):
-        User.objects.create_user(username="lucas", password="testpass123")
+        User.objects.create_user(
+            username="lucas",
+            email="lucas@example.com",
+            password="testpass123",
+        )
         response = self.client.post(
             self.token_url, data={"username": "lucas", "password": "wrongpassword"}
         )
