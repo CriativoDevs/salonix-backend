@@ -121,3 +121,95 @@ def test_create_appointment(user_fixture):
     assert appointment.slot == slot
     assert appointment.notes == "Por favor, fazer a barba também"
     assert appointment.slot.is_available is False  # slot foi marcado como indisponível
+
+
+@pytest.mark.django_db
+def test_appointment_with_unavailable_slot(user_fixture):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    # Cria serviço
+    service = Service.objects.create(
+        user=user_fixture, name="Corte", duration_minutes=30, price_eur="20.00"
+    )
+
+    # Cria profissional
+    professional = Professional.objects.create(
+        user=user_fixture, name="Lucas", bio="Top", is_active=True
+    )
+
+    # Cria slot indisponível
+    tz = pytz.timezone("Europe/Lisbon")
+    now = datetime.datetime.now(tz=tz)
+    start_time = now + datetime.timedelta(days=1, hours=2)
+    end_time = start_time + datetime.timedelta(minutes=30)
+
+    slot = ScheduleSlot.objects.create(
+        professional=professional,
+        start_time=start_time,
+        end_time=end_time,
+        is_available=False,
+    )
+
+    payload = {
+        "service": service.id,
+        "professional": professional.id,
+        "slot": slot.id,
+        "notes": "Agendamento com slot ocupado",
+    }
+
+    response = client.post("/api/appointments/", data=payload, format="json")
+    print("\nResponse data (slot indisponível):", response.data)
+
+    assert response.status_code == 400
+    assert "já foi agendado" in response.content.decode("utf-8")
+
+
+@pytest.mark.django_db
+def test_appointment_unauthenticated(user_fixture):
+    # Cria dados como antes
+    service = Service.objects.create(
+        user=user_fixture, name="Barba", duration_minutes=30, price_eur="15.00"
+    )
+    professional = Professional.objects.create(
+        user=user_fixture, name="João", bio="Top", is_active=True
+    )
+
+    tz = pytz.timezone("Europe/Lisbon")
+    start_time = datetime.datetime.now(tz) + datetime.timedelta(days=1)
+    end_time = start_time + datetime.timedelta(minutes=30)
+
+    slot = ScheduleSlot.objects.create(
+        professional=professional,
+        start_time=start_time,
+        end_time=end_time,
+        is_available=True,
+    )
+
+    payload = {
+        "service": service.id,
+        "professional": professional.id,
+        "slot": slot.id,
+        "notes": "Sem login",
+    }
+
+    client = APIClient()  # não autenticado
+    response = client.post("/api/appointments/", data=payload, format="json")
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_appointment_with_invalid_ids(user_fixture):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    payload = {
+        "service": 9999,
+        "professional": 8888,
+        "slot": 7777,
+        "notes": "IDs inválidos",
+    }
+
+    response = client.post("/api/appointments/", data=payload, format="json")
+    print("\nResponse data (dados inválidos):", response.data)
+    assert response.status_code == 400
