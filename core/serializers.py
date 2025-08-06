@@ -1,5 +1,7 @@
 from rest_framework import serializers
+
 from core.models import Service, Professional, ScheduleSlot, Appointment
+from django.utils import timezone
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -38,3 +40,33 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["client", "created_at"]
+
+    def validate(self, data):
+        request = self.context.get("request")
+        user = request.user if request else None
+
+        slot = data.get("slot")
+        professional = data.get("professional")
+
+        errors = {}
+
+        # 1. Verifica se o slot está disponível
+        if not slot.is_available:
+            errors["slot"] = "Este horário já foi agendado."
+
+        # 2. Verifica se o slot é do profissional informado
+        if slot.professional != professional:
+            errors["slot"] = "Este horário não pertence ao profissional informado."
+
+        # 3. Verifica se o slot está no futuro
+        if slot.start_time <= timezone.now():
+            errors["slot"] = "Não é possível agendar horários no passado."
+
+        # 4. Verifica se o cliente já tem um agendamento para o mesmo slot
+        if user and Appointment.objects.filter(client=user, slot=slot).exists():
+            errors["slot"] = "Você já tem um agendamento para este horário."
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return data
