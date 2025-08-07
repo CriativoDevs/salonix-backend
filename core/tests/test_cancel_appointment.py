@@ -3,10 +3,12 @@ from rest_framework.test import APIClient
 from core.models import Appointment, Service, Professional, ScheduleSlot
 from django.utils import timezone
 from datetime import timedelta
+from unittest.mock import patch
 
 
 @pytest.mark.django_db
-def test_cancel_appointment(user_fixture):
+@patch("core.views.send_appointment_cancellation_email")
+def test_cancel_appointment(mock_send_email, user_fixture):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 
@@ -42,3 +44,10 @@ def test_cancel_appointment(user_fixture):
     assert appointment.status == "cancelled"
     assert appointment.cancelled_by == user_fixture
     assert appointment.slot.is_available is True
+
+    # Verifica se o e-mail foi enviado
+    assert mock_send_email.called is True
+    args, kwargs = mock_send_email.call_args
+    assert kwargs["client_email"] == user_fixture.email
+    assert kwargs["salon_email"] == professional.user.email
+    assert kwargs["service_name"] == service.name
