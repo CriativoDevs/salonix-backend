@@ -1,6 +1,9 @@
+from rest_framework import status as drf_status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from core.email_utils import send_appointment_confirmation_email
@@ -11,6 +14,8 @@ from core.serializers import (
     ServiceSerializer,
     ScheduleSlotSerializer,
 )
+
+from django.shortcuts import get_object_or_404
 
 
 class PublicServiceListView(ListAPIView):
@@ -65,6 +70,33 @@ class AppointmentCreateView(CreateAPIView):
             )
         except Exception as e:
             print("Falha ao enviar e-mail:", e)
+
+
+class AppointmentCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        appointment = get_object_or_404(Appointment, pk=pk)
+
+        if appointment.client != request.user:
+            return Response(
+                {"detail": "Você não tem permissão para cancelar este agendamento."},
+                status=403,
+            )
+
+        if appointment.status == "cancelled":
+            return Response(
+                {"detail": "Este agendamento já foi cancelado."}, status=400
+            )
+
+        appointment.status = "cancelled"
+        appointment.cancelled_by = request.user
+        appointment.slot.is_available = True
+        appointment.slot.save()
+        appointment.save()
+
+        serializer = AppointmentSerializer(appointment)
+        return Response(serializer.data, status=drf_status.HTTP_200_OK)
 
 
 class ServiceViewSet(ModelViewSet):

@@ -3,6 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from core.views import (
+    AppointmentCancelView,
     AppointmentCreateView,
     ProfessionalViewSet,
     PublicProfessionalListView,
@@ -27,4 +28,9 @@ urlpatterns = [
     ),
     path("slots/", PublicSlotListView.as_view(), name="public-slot-list"),
     path("appointments/", AppointmentCreateView.as_view(), name="appointment-create"),
+    path(
+        "appointments/<int:pk>/cancel/",
+        AppointmentCancelView.as_view(),
+        name="appointment-cancel",
+    ),
 ]
