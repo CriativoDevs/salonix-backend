@@ -57,6 +57,18 @@ class Appointment(models.Model):
     )
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[("scheduled", "Scheduled"), ("cancelled", "Cancelled")],
+        default="scheduled",
+    )
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cancelled_appointments",
+    )
 
     def __str__(self):
         return (
