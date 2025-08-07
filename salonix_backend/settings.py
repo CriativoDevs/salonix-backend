@@ -155,3 +155,14 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = "users.CustomUser"
+
+
+# Email
+# Email configuration
+EMAIL_BACKEND = parser[ENV]["EMAIL_BACKEND"]
+EMAIL_HOST = parser[ENV]["EMAIL_HOST"]
+EMAIL_PORT = parser.getint(ENV, "EMAIL_PORT")
+EMAIL_USE_TLS = parser.getboolean(ENV, "EMAIL_USE_TLS")
+EMAIL_HOST_USER = parser[ENV]["EMAIL_HOST_USER"]
+EMAIL_HOST_PASSWORD = parser[ENV]["EMAIL_HOST_PASSWORD"]
+DEFAULT_FROM_EMAIL = parser[ENV]["DEFAULT_FROM_EMAIL"]

@@ -3,6 +3,7 @@ from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
 
+from core.email_utils import send_appointment_confirmation_email
 from core.models import Appointment, Professional, Service, ScheduleSlot
 from core.serializers import (
     AppointmentSerializer,
@@ -51,7 +52,19 @@ class AppointmentCreateView(CreateAPIView):
         slot.is_available = False
         slot.save()
 
-        serializer.save(client=self.request.user)
+        appointment = serializer.save(client=self.request.user)
+
+        # Envia e-mail de confirmação
+        try:
+            send_appointment_confirmation_email(
+                to_email=self.request.user.email,
+                client_name=self.request.user.username
+                or self.request.user.email.split("@")[0],
+                service_name=appointment.service.name,
+                date_time=appointment.slot.start_time,
+            )
+        except Exception as e:
+            print("Falha ao enviar e-mail:", e)
 
 
 class ServiceViewSet(ModelViewSet):
