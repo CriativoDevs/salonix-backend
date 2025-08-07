@@ -6,7 +6,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from core.email_utils import send_appointment_confirmation_email
+from core.email_utils import (
+    send_appointment_confirmation_email,
+    send_appointment_cancellation_email,
+)
 from core.models import Appointment, Professional, Service, ScheduleSlot
 from core.serializers import (
     AppointmentSerializer,
@@ -94,6 +97,19 @@ class AppointmentCancelView(APIView):
         appointment.slot.is_available = True
         appointment.slot.save()
         appointment.save()
+
+        # Envia e-mail para cliente e salão
+        try:
+            send_appointment_cancellation_email(
+                client_email=appointment.client.email,
+                salon_email=appointment.professional.user.email,
+                client_name=appointment.client.get_full_name()
+                or appointment.client.username,
+                service_name=appointment.service.name,
+                date_time=appointment.slot.start_time,
+            )
+        except Exception as e:
+            print("Erro ao enviar e-mail de cancelamento:", str(e))
 
         serializer = AppointmentSerializer(appointment)
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
