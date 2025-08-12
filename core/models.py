@@ -37,9 +37,27 @@ class ScheduleSlot(models.Model):
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     is_available = models.BooleanField(default=True)
+    STATUS_CHOICES = [
+        ("available", "Available"),
+        ("booked", "Booked"),
+        ("blocked", "Blocked"),
+    ]
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="available"
+    )
 
     def __str__(self):
         return f"{self.professional.name} | {self.start_time} - {self.end_time}"
+
+    def mark_booked(self):
+        self.is_available = False
+        self.status = "booked"
+        self.save(update_fields=["is_available", "status"])
+
+    def mark_available(self):
+        self.is_available = True
+        self.status = "available"
+        self.save(update_fields=["is_available", "status"])
 
 
 class Appointment(models.Model):
