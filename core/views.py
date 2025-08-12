@@ -18,8 +18,10 @@ from core.serializers import (
     ScheduleSlotSerializer,
 )
 
-from django.db import transaction
+from django.db import transaction, models
 from django.shortcuts import get_object_or_404
+
+from users.permissions import IsSalonOwnerOfAppointment
 
 
 class PublicServiceListView(ListAPIView):
@@ -145,3 +147,50 @@ class ScheduleSlotViewSet(ModelViewSet):
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
     permission_classes = [IsAuthenticated]
+
+
+class SalonAppointmentViewSet(ModelViewSet):
+    """
+    Endpoints para o SALÃO visualizar e editar seus agendamentos.
+    - list/retrieve: vê apenas agendamentos do próprio salão
+      (match por professional.user == request.user OU service.user == request.user)
+    - update/partial_update: permite editar SOMENTE o campo 'notes'
+      (cancelamento continua pelo endpoint específico de cancelamento).
+    - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+    """
+
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsSalonOwnerOfAppointment]
+
+    def get_queryset(self):
+        user = self.request.user
+        # Filtra por agendamentos cujo profissional OU serviço pertencem ao salão (user atual)
+        return Appointment.objects.filter(
+            models.Q(professional__user=user) | models.Q(service__user=user)
+        ).select_related("client", "service", "professional", "slot")
+
+    def update(self, request, *args, **kwargs):
+        """Permite editar apenas 'notes' (PUT/PATCH)."""
+        instance = self.get_object()
+        notes = request.data.get("notes", None)
+        # Se vier PUT com outros campos, bloqueamos; se vier PATCH sem 'notes', também bloqueamos
+        only_notes = set(request.data.keys()) <= {"notes"} and notes is not None
+        if not only_notes:
+            return Response(
+                {"detail": "Somente o campo 'notes' pode ser editado por aqui."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        instance.notes = notes
+        instance.save(update_fields=["notes"])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data, status=drf_status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        # Evitamos delete duro via API do salão (histórico importa).
+        return Response(
+            {
+                "detail": "Exclusão de agendamentos não é permitida. Cancele o agendamento."
+            },
+            status=drf_status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
