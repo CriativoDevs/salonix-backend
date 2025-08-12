@@ -18,6 +18,7 @@ from core.serializers import (
     ScheduleSlotSerializer,
 )
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 
@@ -54,11 +55,13 @@ class AppointmentCreateView(CreateAPIView):
 
     def perform_create(self, serializer):
         slot = serializer.validated_data["slot"]
-        if not slot.is_available:
-            raise ValidationError("Este horário já foi agendado.")
+        if (not slot.is_available) or (slot.status != "available"):
+            raise ValidationError(
+                "Este horário já foi agendado ou não está disponível."
+            )
 
-        slot.is_available = False
-        slot.save()
+        # marca como reservado via helper do model
+        slot.mark_booked()
 
         appointment = serializer.save(client=self.request.user)
 
@@ -66,8 +69,11 @@ class AppointmentCreateView(CreateAPIView):
         try:
             send_appointment_confirmation_email(
                 to_email=self.request.user.email,
-                client_name=self.request.user.username
-                or self.request.user.email.split("@")[0],
+                client_name=(
+                    self.request.user.get_full_name()
+                    or self.request.user.username
+                    or self.request.user.email.split("@")[0]
+                ),
                 service_name=appointment.service.name,
                 date_time=appointment.slot.start_time,
             )
@@ -92,13 +98,13 @@ class AppointmentCancelView(APIView):
                 {"detail": "Este agendamento já foi cancelado."}, status=400
             )
 
-        appointment.status = "cancelled"
-        appointment.cancelled_by = request.user
-        appointment.slot.is_available = True
-        appointment.slot.save()
-        appointment.save()
+        with transaction.atomic():
+            appointment.status = "cancelled"
+            appointment.cancelled_by = request.user
+            appointment.slot.mark_available()  # já salva o slot
+            appointment.save()
 
-        # Envia e-mail para cliente e salão
+        # E-mail para cliente e salão (não bloqueia a resposta)
         try:
             send_appointment_cancellation_email(
                 client_email=appointment.client.email,
