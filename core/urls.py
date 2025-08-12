@@ -8,6 +8,7 @@ from core.views import (
     ProfessionalViewSet,
     PublicProfessionalListView,
     PublicSlotListView,
+    SalonAppointmentViewSet,
     ServiceViewSet,
     ScheduleSlotViewSet,
 )
@@ -16,6 +17,9 @@ router = DefaultRouter()
 router.register("services", ServiceViewSet, basename="service")
 router.register("professionals", ProfessionalViewSet, basename="professional")
 router.register("slots", ScheduleSlotViewSet, basename="slot")
+router.register(
+    "salon/appointments", SalonAppointmentViewSet, basename="salon-appointments"
+)
 
 urlpatterns = [
     path("", include(router.urls)),
