@@ -72,3 +72,47 @@ class AppointmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
 
         return data
+
+
+class ServiceMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Service
+        fields = ["id", "name", "price_eur", "duration_minutes"]
+
+
+class ProfessionalMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Professional
+        fields = ["id", "name", "bio", "is_active"]
+
+
+class ScheduleSlotMiniSerializer(serializers.ModelSerializer):
+    start_time = serializers.DateTimeField(format="%Y-%m-%d %H:%M")
+    end_time = serializers.DateTimeField(format="%Y-%m-%d %H:%M")
+
+    class Meta:
+        model = ScheduleSlot
+        fields = ["id", "start_time", "end_time", "is_available", "status"]
+
+
+class AppointmentDetailSerializer(serializers.ModelSerializer):
+    service = ServiceMiniSerializer(read_only=True)
+    professional = ProfessionalMiniSerializer(read_only=True)
+    slot = ScheduleSlotMiniSerializer(read_only=True)
+    client_username = serializers.CharField(source="client.username", read_only=True)
+    client_email = serializers.EmailField(source="client.email", read_only=True)
+
+    class Meta:
+        model = Appointment
+        fields = [
+            "id",
+            "status",
+            "notes",
+            "created_at",
+            "client_username",
+            "client_email",
+            "service",
+            "professional",
+            "slot",
+        ]
+        read_only_fields = fields

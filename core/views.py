@@ -1,6 +1,6 @@
 from rest_framework import status as drf_status
 from rest_framework.exceptions import ValidationError
-from rest_framework.generics import ListAPIView, CreateAPIView
+from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +12,7 @@ from core.email_utils import (
 )
 from core.models import Appointment, Professional, Service, ScheduleSlot
 from core.serializers import (
+    AppointmentDetailSerializer,
     AppointmentSerializer,
     ProfessionalSerializer,
     ServiceSerializer,
@@ -19,7 +20,6 @@ from core.serializers import (
 )
 
 from django.db import transaction, models
-from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 
 from users.permissions import IsSalonOwnerOfAppointment
@@ -213,3 +213,19 @@ class MyAppointmentsListView(ListAPIView):
             .select_related("client", "service", "professional", "slot")
             .order_by("-slot__start_time", "-created_at")
         )
+
+
+class AppointmentDetailView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AppointmentDetailSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        # Acessível para:
+        # - o próprio cliente do agendamento
+        # - o salão (dono) via service.user ou professional.user
+        return Appointment.objects.filter(
+            models.Q(client=user)
+            | models.Q(service__user=user)
+            | models.Q(professional__user=user)
+        ).select_related("client", "service", "professional", "slot")
