@@ -97,7 +97,7 @@ def test_salon_owner_can_edit_own_appointment(user_fixture):
 def test_other_user_cannot_view_or_edit_salon_appointments(user_fixture):
     """
     Outro usuário não vê agendamentos do salão alheio (lista vazia)
-    e não consegue editar (404 por queryset filtrado).
+    e não consegue editar (403 por falta de permissão).
     """
     owner = user_fixture
     other = CustomUser.objects.create_user(
@@ -137,10 +137,10 @@ def test_other_user_cannot_view_or_edit_salon_appointments(user_fixture):
     assert isinstance(list_resp.data, list)
     assert len(list_resp.data) == 0
 
-    # Tentar editar deve dar 404 (objeto não aparece no queryset do other)
+    # Tentar editar deve dar 403 (objeto existe, mas sem permissão)
     patch_resp = client.patch(
         f"/api/salon/appointments/{appt.id}/",
         data={"notes": "tentativa não autorizada"},
         format="json",
     )
-    assert patch_resp.status_code == 404
+    assert patch_resp.status_code == 403

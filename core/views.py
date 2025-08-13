@@ -1,5 +1,5 @@
 from rest_framework import status as drf_status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -165,6 +165,7 @@ class SalonAppointmentViewSet(ModelViewSet):
     - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
     """
 
+    queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated, IsSalonOwnerOfAppointment]
 
@@ -243,22 +244,135 @@ class SalonAppointmentViewSet(ModelViewSet):
 
         return qs
 
-    def update(self, request, *args, **kwargs):
-        """Permite editar apenas 'notes' (PUT/PATCH)."""
-        instance = self.get_object()
-        notes = request.data.get("notes", None)
-        # Se vier PUT com outros campos, bloqueamos; se vier PATCH sem 'notes', também bloqueamos
-        only_notes = set(request.data.keys()) <= {"notes"} and notes is not None
-        if not only_notes:
-            return Response(
-                {"detail": "Somente o campo 'notes' pode ser editado por aqui."},
-                status=drf_status.HTTP_400_BAD_REQUEST,
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Permite ao salão editar:
+        - notes                (campo livre)
+        - slot                 (reagendamento para outro horário livre)
+        - status='cancelled'   (cancela + libera slot + registra cancelled_by)
+        Regras:
+        - Não permite alterar outros campos.
+        - Não permite combinar status='cancelled' com troca de slot na mesma requisição.
+        """
+        instance: Appointment = self.get_object()
+
+        # Segurança extra: além do permission, revalida ownership
+        u = request.user
+        is_owner = (
+            instance.professional.user_id == u.id or instance.service.user_id == u.id
+        )
+        if not is_owner:
+            raise PermissionDenied(
+                "Você não tem permissão para alterar este agendamento."
             )
 
-        instance.notes = notes
-        instance.save(update_fields=["notes"])
+        data = request.data or {}
+        allowed_keys = {"notes", "slot", "status"}
+        unknown = set(data.keys()) - allowed_keys
+        if unknown:
+            raise ValidationError(
+                {"detail": f"Campos não permitidos: {', '.join(sorted(unknown))}"}
+            )
+
+        new_notes = data.get("notes", None) if "notes" in data else None
+        new_status = data.get("status", None)
+        new_slot_id = data.get("slot", None)
+
+        # Notas
+        if "notes" in data:
+            instance.notes = new_notes or ""
+
+        # Regra: não combinar cancelamento com troca de slot
+        if new_status == "cancelled" and new_slot_id is not None:
+            raise ValidationError(
+                {"detail": "Não é permitido reagendar e cancelar na mesma operação."}
+            )
+
+        # Reagendamento
+        if new_slot_id is not None:
+            try:
+                new_slot = ScheduleSlot.objects.select_for_update().get(pk=new_slot_id)
+            except ScheduleSlot.DoesNotExist:
+                raise ValidationError({"slot": "Horário não encontrado."})
+
+            if new_slot.id == instance.slot_id:
+                raise ValidationError({"slot": "O novo horário é igual ao atual."})
+
+            if (not new_slot.is_available) or (new_slot.status != "available"):
+                raise ValidationError(
+                    {"slot": "Horário selecionado não está disponível."}
+                )
+
+            with transaction.atomic():
+                old_slot = ScheduleSlot.objects.select_for_update().get(
+                    pk=instance.slot_id
+                )
+                old_slot.mark_available()
+                new_slot.mark_booked()
+                instance.slot = new_slot
+                instance.save(update_fields=["slot", "notes"])  # status inalterado aqui
+
+        # Cancelamento
+        if new_status is not None:
+            if new_status not in ("scheduled", "cancelled"):
+                raise ValidationError({"status": "Status inválido."})
+
+            if new_status == "cancelled":
+                if instance.status == "cancelled":
+                    raise ValidationError(
+                        {"status": "Este agendamento já foi cancelado."}
+                    )
+
+                with transaction.atomic():
+                    instance.status = "cancelled"
+                    instance.cancelled_by = request.user
+                    instance.slot.mark_available()
+                    instance.save(update_fields=["status", "cancelled_by", "notes"])
+
+                # e-mail (não bloqueia a resposta)
+                try:
+                    send_appointment_cancellation_email(
+                        client_email=instance.client.email,
+                        salon_email=instance.professional.user.email,
+                        client_name=(
+                            instance.client.get_full_name()
+                            or instance.client.username
+                            or (instance.client.email or "").split("@")[0]
+                        ),
+                        service_name=instance.service.name,
+                        date_time=instance.slot.start_time,
+                    )
+                except Exception as e:
+                    print("Erro ao enviar e-mail de cancelamento:", str(e))
+            else:
+                # explicitamente voltar para 'scheduled' não altera slot; só persiste notas
+                if instance.status != "scheduled":
+                    instance.status = "scheduled"
+                    instance.cancelled_by = None
+                    instance.save(update_fields=["status", "cancelled_by", "notes"])
+
+        # Caso só tenha mudado notes (sem slot/status), salva aqui
+        if new_slot_id is None and new_status is None and "notes" in data:
+            instance.save(update_fields=["notes"])
+
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
+
+    def get_object(self):
+        # busca sem restringir por get_queryset(), para podermos diferenciar 403 de 404
+        obj = get_object_or_404(
+            Appointment.objects.select_related(
+                "client", "service", "professional", "slot"
+            ),
+            pk=self.kwargs["pk"],
+        )
+        u = self.request.user
+        is_owner = (obj.professional.user_id == u.id) or (obj.service.user_id == u.id)
+        if not is_owner:
+            raise PermissionDenied(
+                "Você não tem permissão para alterar este agendamento."
+            )
+        return obj
 
     def destroy(self, request, *args, **kwargs):
         # Evitamos delete duro via API do salão (histórico importa).
