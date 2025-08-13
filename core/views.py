@@ -19,10 +19,15 @@ from core.serializers import (
     ScheduleSlotSerializer,
 )
 
-from django.db import transaction, models
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime, parse_date
 
 from users.permissions import IsSalonOwnerOfAppointment
+
+from datetime import datetime, time
 
 
 class PublicServiceListView(ListAPIView):
@@ -161,14 +166,82 @@ class SalonAppointmentViewSet(ModelViewSet):
     """
 
     serializer_class = AppointmentSerializer
-    permission_classes = [IsSalonOwnerOfAppointment]
+    permission_classes = [IsAuthenticated, IsSalonOwnerOfAppointment]
 
     def get_queryset(self):
         user = self.request.user
-        # Filtra por agendamentos cujo profissional OU serviço pertencem ao salão (user atual)
-        return Appointment.objects.filter(
-            models.Q(professional__user=user) | models.Q(service__user=user)
-        ).select_related("client", "service", "professional", "slot")
+
+        qs = (
+            Appointment.objects.filter(
+                Q(professional__user=user) | Q(service__user=user)
+            )
+            .select_related("client", "service", "professional", "slot")
+            .order_by("-created_at")
+        )
+
+        params = self.request.query_params
+
+        # status
+        status_value = params.get("status")
+        if status_value in {"scheduled", "cancelled"}:
+            qs = qs.filter(status=status_value)
+
+        # date_from / date_to (slot.start_time)
+        def _to_aware_start(dt_str):
+            # tenta datetime; se vier só data, usa início do dia
+            dt = parse_datetime(dt_str)
+            if dt is not None:
+                return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+            d = parse_date(dt_str)
+            if d:
+                base = datetime.combine(d, time.min)
+                return timezone.make_aware(
+                    base, timezone=getattr(timezone, "get_current_timezone")()
+                )
+            return None
+
+        def _to_aware_end(dt_str):
+            dt = parse_datetime(dt_str)
+            if dt is not None:
+                return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+            d = parse_date(dt_str)
+            if d:
+                base = datetime.combine(d, time.max)
+                return timezone.make_aware(
+                    base, timezone=getattr(timezone, "get_current_timezone")()
+                )
+            return None
+
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+
+        start_dt = _to_aware_start(date_from) if date_from else None
+        end_dt = _to_aware_end(date_to) if date_to else None
+
+        if start_dt:
+            qs = qs.filter(slot__start_time__gte=start_dt)
+        if end_dt:
+            qs = qs.filter(slot__start_time__lte=end_dt)
+
+        # professional_id / service_id
+        professional_id = params.get("professional_id")
+        if professional_id:
+            qs = qs.filter(professional_id=professional_id)
+
+        service_id = params.get("service_id")
+        if service_id:
+            qs = qs.filter(service_id=service_id)
+
+        # ordering
+        ordering = params.get("ordering")
+        if ordering in {"created_at", "-created_at"}:
+            qs = qs.order_by(ordering)
+        elif ordering in {"slot_time", "-slot_time"}:
+            qs = qs.order_by(
+                "slot__start_time" if ordering == "slot_time" else "-slot__start_time"
+            )
+
+        return qs
 
     def update(self, request, *args, **kwargs):
         """Permite editar apenas 'notes' (PUT/PATCH)."""
@@ -225,7 +298,5 @@ class AppointmentDetailView(RetrieveAPIView):
         # - o próprio cliente do agendamento
         # - o salão (dono) via service.user ou professional.user
         return Appointment.objects.filter(
-            models.Q(client=user)
-            | models.Q(service__user=user)
-            | models.Q(professional__user=user)
+            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
         ).select_related("client", "service", "professional", "slot")
