@@ -19,6 +19,7 @@ from core.serializers import (
 )
 
 from django.db import transaction, models
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 
 from users.permissions import IsSalonOwnerOfAppointment
@@ -193,4 +194,22 @@ class SalonAppointmentViewSet(ModelViewSet):
                 "detail": "Exclusão de agendamentos não é permitida. Cancele o agendamento."
             },
             status=drf_status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+class MyAppointmentsListView(ListAPIView):
+    """
+    Lista os agendamentos do usuário autenticado (como cliente).
+    GET /api/me/appointments/
+    """
+
+    serializer_class = AppointmentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return (
+            Appointment.objects.filter(client=user)
+            .select_related("client", "service", "professional", "slot")
+            .order_by("-slot__start_time", "-created_at")
         )

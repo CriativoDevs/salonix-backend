@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 from core.views import (
     AppointmentCancelView,
     AppointmentCreateView,
+    MyAppointmentsListView,
     ProfessionalViewSet,
     PublicProfessionalListView,
     PublicSlotListView,
@@ -37,4 +38,6 @@ urlpatterns = [
         AppointmentCancelView.as_view(),
         name="appointment-cancel",
     ),
+    # meu histórico como cliente
+    path("me/appointments/", MyAppointmentsListView.as_view(), name="my-appointments"),
 ]
