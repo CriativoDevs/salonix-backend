@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "core",
     "users",
     "payments",
+    "reports",
 ]
 
 MIDDLEWARE = [
