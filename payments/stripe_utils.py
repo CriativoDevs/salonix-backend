@@ -1,10 +1,16 @@
-import stripe
 from django.conf import settings
 from .models import PaymentCustomer
 
 
-def get_stripe() -> stripe:
-    stripe.api_key = settings.STRIPE_API_KEY
+def get_stripe():
+    import stripe
+
+    api_key = getattr(settings, "STRIPE_API_KEY", None)
+    api_version = getattr(settings, "STRIPE_API_VERSION", None)
+    if api_key:
+        stripe.api_key = api_key
+    if api_version:
+        stripe.api_version = api_version
     return stripe
 
 
