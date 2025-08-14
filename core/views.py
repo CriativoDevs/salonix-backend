@@ -1,4 +1,5 @@
 from rest_framework import status as drf_status
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -21,13 +22,14 @@ from core.serializers import (
 
 from django.db import transaction
 from django.db.models import Q
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
 
 from users.permissions import IsSalonOwnerOfAppointment
 
-from datetime import datetime, time
+import csv
 
 
 class PublicServiceListView(ListAPIView):
@@ -187,42 +189,38 @@ class SalonAppointmentViewSet(ModelViewSet):
         if status_value in {"scheduled", "cancelled"}:
             qs = qs.filter(status=status_value)
 
-        # date_from / date_to (slot.start_time)
-        def _to_aware_start(dt_str):
-            # tenta datetime; se vier só data, usa início do dia
-            dt = parse_datetime(dt_str)
-            if dt is not None:
-                return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
-            d = parse_date(dt_str)
+        # -------- datas --------
+        date_from_raw = params.get("date_from")
+        date_to_raw = params.get("date_to")
+
+        def is_plain_date(s: str | None) -> bool:
+            return bool(s) and ("T" not in s) and (":" not in s)
+
+        # date_from
+        if is_plain_date(date_from_raw):
+            d = parse_date(date_from_raw)
             if d:
-                base = datetime.combine(d, time.min)
-                return timezone.make_aware(
-                    base, timezone=getattr(timezone, "get_current_timezone")()
-                )
-            return None
+                qs = qs.filter(slot__start_time__date__gte=d)
+        elif date_from_raw:
+            dt = parse_datetime(date_from_raw)
+            if dt is None:
+                raise ValidationError({"date_from": "Formato inválido."})
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            qs = qs.filter(slot__start_time__gte=dt)
 
-        def _to_aware_end(dt_str):
-            dt = parse_datetime(dt_str)
-            if dt is not None:
-                return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
-            d = parse_date(dt_str)
+        # date_to
+        if is_plain_date(date_to_raw):
+            d = parse_date(date_to_raw)
             if d:
-                base = datetime.combine(d, time.max)
-                return timezone.make_aware(
-                    base, timezone=getattr(timezone, "get_current_timezone")()
-                )
-            return None
-
-        date_from = params.get("date_from")
-        date_to = params.get("date_to")
-
-        start_dt = _to_aware_start(date_from) if date_from else None
-        end_dt = _to_aware_end(date_to) if date_to else None
-
-        if start_dt:
-            qs = qs.filter(slot__start_time__gte=start_dt)
-        if end_dt:
-            qs = qs.filter(slot__start_time__lte=end_dt)
+                qs = qs.filter(slot__start_time__date__lte=d)
+        elif date_to_raw:
+            dt = parse_datetime(date_to_raw)
+            if dt is None:
+                raise ValidationError({"date_to": "Formato inválido."})
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            qs = qs.filter(slot__start_time__lte=dt)
 
         # professional_id / service_id
         professional_id = params.get("professional_id")
@@ -382,6 +380,81 @@ class SalonAppointmentViewSet(ModelViewSet):
             },
             status=drf_status.HTTP_405_METHOD_NOT_ALLOWED,
         )
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export_csv(self, request, *args, **kwargs):
+        """
+        Exporta a lista de agendamentos do salão (respeitando os mesmos filtros
+        de listagem) em CSV.
+        """
+        # 1) Começa com o mesmo queryset filtrado da listagem
+        qs = self.get_queryset()
+
+        # 2) Fallback: se o parâmetro veio como data pura (YYYY-MM-DD),
+        # reforça o filtro por __date para evitar edge cases de TZ/microsegundos.
+        params = request.query_params
+        df = params.get("date_from")
+        dt = params.get("date_to")
+
+        d_from = parse_date(df) if df and len(df) == 10 else None
+        d_to = parse_date(dt) if dt and len(dt) == 10 else None
+
+        if d_from:
+            qs = qs.filter(slot__start_time__date__gte=d_from)
+        if d_to:
+            qs = qs.filter(slot__start_time__date__lte=d_to)
+
+        # 3) Materializa as linhas antes do streaming (evita DB depois do yield)
+        headers = [
+            "id",
+            "client_name",
+            "client_email",
+            "service_name",
+            "professional_name",
+            "slot_start_time",
+            "slot_end_time",
+            "status",
+            "notes",
+            "created_at",
+        ]
+
+        def row(a):
+            client_name = (
+                a.client.get_full_name()
+                or a.client.username
+                or (a.client.email or "").split("@")[0]
+            )
+            return [
+                a.id,
+                client_name,
+                a.client.email,
+                a.service.name,
+                a.professional.name,
+                a.slot.start_time.isoformat(),
+                a.slot.end_time.isoformat(),
+                a.status,
+                (a.notes or "").replace("\n", " ").strip(),
+                a.created_at.isoformat(),
+            ]
+
+        rows = [row(appt) for appt in qs]  # usa o qs final
+
+        class Echo:
+            def write(self, value):
+                return value
+
+        writer = csv.writer(Echo())
+
+        def generate():
+            yield writer.writerow(headers)
+            for r in rows:
+                yield writer.writerow(r)
+
+        ts = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"salon_appointments_{ts}.csv"
+        resp = StreamingHttpResponse(generate(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
 
 
 class MyAppointmentsListView(ListAPIView):
