@@ -19,15 +19,6 @@ SECRET_KEY = parser[ENV]["SECRET_KEY"]
 DEBUG = parser.getboolean(ENV, "DEBUG")
 ALLOWED_HOSTS = [h.strip() for h in parser[ENV]["ALLOWED_HOSTS"].split(",")]
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -144,6 +135,16 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        # taxa geral por usuário (ajuste se quiser)
+        "user": "1000/day",
+        # escopo específico para exportação CSV
+        "export_csv": "5/min",
+    },
 }
 
 from datetime import timedelta
