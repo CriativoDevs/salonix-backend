@@ -4,6 +4,7 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
@@ -381,7 +382,23 @@ class SalonAppointmentViewSet(ModelViewSet):
             status=drf_status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
-    @action(detail=False, methods=["get"], url_path="export")
+    MAX_EXPORT_ROWS = 20_000
+
+    def get_throttles(self):
+        # Aplica o escopo de throttle apenas no endpoint de exportação
+        if getattr(self, "action", None) == "export_csv":
+            self.throttle_scope = "export_csv"
+        else:
+            # Sem escopo nas demais ações do ViewSet (fica só o UserRateThrottle)
+            self.throttle_scope = None
+        return super().get_throttles()
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="export",
+        throttle_classes=[ScopedRateThrottle],
+    )
     def export_csv(self, request, *args, **kwargs):
         """
         Exporta a lista de agendamentos do salão (respeitando os mesmos filtros
@@ -437,7 +454,11 @@ class SalonAppointmentViewSet(ModelViewSet):
                 a.created_at.isoformat(),
             ]
 
-        rows = [row(appt) for appt in qs]  # usa o qs final
+        # aplica o limite de linhas (proteção)
+        # importante: não alteramos o comportamento normal — apenas
+        # truncamos quando exceder o teto e sinalizamos por header
+        limited_qs = qs[: self.MAX_EXPORT_ROWS]
+        rows = [row(appt) for appt in limited_qs]
 
         class Echo:
             def write(self, value):
@@ -452,9 +473,28 @@ class SalonAppointmentViewSet(ModelViewSet):
 
         ts = timezone.now().strftime("%Y%m%d_%H%M%S")
         filename = f"salon_appointments_{ts}.csv"
-        resp = StreamingHttpResponse(generate(), content_type="text/csv; charset=utf-8")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
+
+        response = StreamingHttpResponse(
+            generate(), content_type="text/csv; charset=utf-8"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        # headers de segurança/cache
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response["Pragma"] = "no-cache"
+        response["X-Content-Type-Options"] = "nosniff"
+
+        # sinaliza truncamento quando aplicável (sem quebrar clientes)
+        try:
+            total = qs.count()
+        except Exception:
+            total = None
+        if total is not None and total > len(rows):
+            response["X-Result-Truncated"] = "1"
+            response["X-Result-Total"] = str(total)
+            response["X-Result-Returned"] = str(len(rows))
+
+        return response
 
 
 class MyAppointmentsListView(ListAPIView):
