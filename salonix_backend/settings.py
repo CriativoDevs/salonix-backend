@@ -1,5 +1,6 @@
 import os
 import configparser
+import stripe
 
 from pathlib import Path
 
@@ -34,7 +35,7 @@ INSTALLED_APPS = [
     # APPS
     "core",
     "users",
-    "scheduling",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -167,3 +168,26 @@ EMAIL_USE_TLS = parser.getboolean(ENV, "EMAIL_USE_TLS")
 EMAIL_HOST_USER = parser[ENV]["EMAIL_HOST_USER"]
 EMAIL_HOST_PASSWORD = parser[ENV]["EMAIL_HOST_PASSWORD"]
 DEFAULT_FROM_EMAIL = parser[ENV]["DEFAULT_FROM_EMAIL"]
+
+# Stripe
+# Stripe
+STRIPE_API_KEY = parser[ENV].get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = parser[ENV].get("STRIPE_WEBHOOK_SECRET", "")
+
+# Prices (você já criou no Stripe; cole aqui)
+STRIPE_PRICE_MONTHLY_ID = parser[ENV].get("STRIPE_PRICE_MONTHLY_ID", "")
+STRIPE_PRICE_YEARLY_ID = parser[ENV].get("STRIPE_PRICE_YEARLY_ID", "")
+
+# URLs do front para redirecionar após checkout/portal
+STRIPE_SUCCESS_URL = parser[ENV].get(
+    "STRIPE_SUCCESS_URL",
+    "http://localhost:3000/billing/success?session_id={CHECKOUT_SESSION_ID}",
+)
+STRIPE_CANCEL_URL = parser[ENV].get(
+    "STRIPE_CANCEL_URL", "http://localhost:3000/billing/cancel"
+)
+STRIPE_PORTAL_RETURN_URL = parser[ENV].get(
+    "STRIPE_PORTAL_RETURN_URL", "http://localhost:3000/billing"
+)
+
+stripe.api_key = STRIPE_API_KEY
