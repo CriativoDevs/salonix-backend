@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
 class IsSalonOwnerOfAppointment(BasePermission):
@@ -23,3 +23,22 @@ class IsSalonOwnerOfAppointment(BasePermission):
                 or request.user == salon_user_from_service
             )
         )
+
+
+class IsSelf(BasePermission):
+    """
+    Garante que o usuário só acesse/edite os próprios recursos.
+    """
+
+    def has_object_permission(self, request, view, obj):
+        return getattr(obj, "user", None) == request.user or obj == request.user
+
+
+class HasProFeature(BasePermission):
+    """
+    Exemplo de permissão para endpoints premium.
+    """
+
+    def has_permission(self, request, view):
+        ff = getattr(request.user, "featureflags", None)
+        return bool(ff and ff.is_pro)

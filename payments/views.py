@@ -144,7 +144,10 @@ class StripeWebhookView(APIView):
             items = stripe_sub.get("items", {}).get("data", [])
             price_id = None
             if items:
-                price_id = items[0].get("price", {}).get("id")
+                # quando expand=["items.data.price"], vem o objeto price completo;
+                # caso contrário, pode vir só o id
+                price = items[0].get("price")
+                price_id = price.get("id") if isinstance(price, dict) else price
 
             sub, _ = Subscription.objects.update_or_create(
                 stripe_subscription_id=sub_id,
@@ -156,7 +159,51 @@ class StripeWebhookView(APIView):
                     "current_period_end": cpe_dt,
                 },
             )
-            return sub
+            return sub, cpe_dt
+
+        def update_feature_flags(user, stripe_sub, current_period_end_dt):
+            # evita import circular
+            from users.models import UserFeatureFlags
+
+            status = stripe_sub.get("status")
+            # tentar detectar plano pelo intervalo, quando possível
+            interval = None
+            items = stripe_sub.get("items", {}).get("data", [])
+            if items:
+                price = items[0].get("price")
+                if isinstance(price, dict):
+                    recurring = price.get("recurring") or {}
+                    interval = recurring.get("interval")
+
+            detected_plan = "yearly" if interval == "year" else "monthly"
+
+            # trial_end, quando presente
+            trial_end_ts = stripe_sub.get("trial_end")
+            trial_end_dt = (
+                timezone.datetime.fromtimestamp(trial_end_ts, tz=timezone.utc)
+                if trial_end_ts
+                else None
+            )
+
+            ff, _ = UserFeatureFlags.objects.get_or_create(user=user)
+            ff.is_pro = status in ("active", "trialing")
+            ff.pro_status = status
+            ff.pro_plan = detected_plan
+            # pro_since: se Stripe não fornecer start date, usamos agora como fallback
+            ff.pro_since = getattr(ff, "pro_since", None) or timezone.now()
+            ff.pro_until = current_period_end_dt
+            ff.trial_until = trial_end_dt
+            ff.save(
+                update_fields=[
+                    "is_pro",
+                    "pro_status",
+                    "pro_plan",
+                    "pro_since",
+                    "pro_until",
+                    "trial_until",
+                    "updated_at",
+                ]
+            )
 
         # Roteamento de eventos
         try:
@@ -175,15 +222,19 @@ class StripeWebhookView(APIView):
                             sub = stripe.Subscription.retrieve(
                                 subscription_id, expand=["items.data.price"]
                             )
+                            # garantir dict, não objeto custom
+                            if hasattr(sub, "to_dict"):
+                                sub = sub.to_dict()
                         except Exception:
                             sub = {
                                 "id": subscription_id,
-                                "status": "active",  # suposição segura para criar o registro
+                                "status": "active",  # fallback seguro para criar o registro
                                 "cancel_at_period_end": False,
                                 "current_period_end": None,
                                 "items": {"data": []},
                             }
-                        upsert_subscription(pc.user, sub)
+                        saved_sub, cpe_dt = upsert_subscription(pc.user, sub)
+                        update_feature_flags(pc.user, sub, cpe_dt)
 
             elif etype in {
                 "customer.subscription.created",
@@ -197,13 +248,15 @@ class StripeWebhookView(APIView):
                     .first()
                 )
                 if pc:
-                    upsert_subscription(pc.user, data)
+                    # aqui 'data' já é o objeto de assinatura enviado pelo webhook
+                    saved_sub, cpe_dt = upsert_subscription(pc.user, data)
+                    update_feature_flags(pc.user, data, cpe_dt)
 
             elif etype in {"invoice.payment_succeeded", "invoice.payment_failed"}:
-                # opcional: poderíamos logar/atualizar algo; assinatura atualizada virá via *subscription.updated*
+                # opcional: logs/telemetria; assinatura atualiza via customer.subscription.updated
                 pass
 
-        except Exception as e:
+        except Exception:
             # Não derruba o webhook por falhas pontuais
             return HttpResponse(status=200)
 
