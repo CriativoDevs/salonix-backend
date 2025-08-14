@@ -8,3 +8,4 @@ PyJWT==2.10.1
 pytest==8.4.1
 pytest-django==4.11.1
 sqlparse==0.5.3
+stripe==12.1.0
