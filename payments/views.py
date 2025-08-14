@@ -1,7 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework import status
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -71,7 +70,6 @@ class CreateCheckoutSession(APIView):
             "metadata": {"user_id": str(request.user.id)},
         }
 
-        s = stripe_utils.get_stripe()
         session = s.checkout.Session.create(**params)
         return Response({"checkout_url": session.url}, status=200)
 
@@ -162,11 +160,11 @@ class StripeWebhookView(APIView):
             return sub, cpe_dt
 
         def update_feature_flags(user, stripe_sub, current_period_end_dt):
-            # evita import circular
             from users.models import UserFeatureFlags
 
             status = stripe_sub.get("status")
-            # tentar detectar plano pelo intervalo, quando possível
+
+            # Detecta plano via interval
             interval = None
             items = stripe_sub.get("items", {}).get("data", [])
             if items:
@@ -174,10 +172,9 @@ class StripeWebhookView(APIView):
                 if isinstance(price, dict):
                     recurring = price.get("recurring") or {}
                     interval = recurring.get("interval")
-
             detected_plan = "yearly" if interval == "year" else "monthly"
 
-            # trial_end, quando presente
+            # trial_end
             trial_end_ts = stripe_sub.get("trial_end")
             trial_end_dt = (
                 timezone.datetime.fromtimestamp(trial_end_ts, tz=timezone.utc)
@@ -185,14 +182,24 @@ class StripeWebhookView(APIView):
                 else None
             )
 
+            # start_date (quando o Stripe enviar)
+            start_ts = stripe_sub.get("start_date")
+            start_dt = (
+                timezone.datetime.fromtimestamp(start_ts, tz=timezone.utc)
+                if start_ts
+                else None
+            )
+
             ff, _ = UserFeatureFlags.objects.get_or_create(user=user)
+
             ff.is_pro = status in ("active", "trialing")
             ff.pro_status = status
             ff.pro_plan = detected_plan
-            # pro_since: se Stripe não fornecer start date, usamos agora como fallback
-            ff.pro_since = getattr(ff, "pro_since", None) or timezone.now()
+            # mantém o valor existente se já houver; senão usa start_dt; fallback agora
+            ff.pro_since = ff.pro_since or start_dt or timezone.now()
             ff.pro_until = current_period_end_dt
             ff.trial_until = trial_end_dt
+
             ff.save(
                 update_fields=[
                     "is_pro",

@@ -1,6 +1,5 @@
 import os
 import configparser
-import stripe
 
 from pathlib import Path
 
@@ -170,7 +169,6 @@ EMAIL_HOST_PASSWORD = parser[ENV]["EMAIL_HOST_PASSWORD"]
 DEFAULT_FROM_EMAIL = parser[ENV]["DEFAULT_FROM_EMAIL"]
 
 # Stripe
-# Stripe
 STRIPE_API_KEY = parser[ENV].get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = parser[ENV].get("STRIPE_WEBHOOK_SECRET", "")
 
@@ -189,5 +187,4 @@ STRIPE_CANCEL_URL = parser[ENV].get(
 STRIPE_PORTAL_RETURN_URL = parser[ENV].get(
     "STRIPE_PORTAL_RETURN_URL", "http://localhost:3000/billing"
 )
-
-stripe.api_key = STRIPE_API_KEY
+STRIPE_API_VERSION = parser[ENV].get("STRIPE_API_VERSION", "")
