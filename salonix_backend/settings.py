@@ -145,6 +145,8 @@ REST_FRAMEWORK = {
         "user": "1000/day",
         # escopo específico para exportação CSV
         "export_csv": "5/min",
+        # escopo específico para reports
+        "reports": "60/min",
     },
 }
 
