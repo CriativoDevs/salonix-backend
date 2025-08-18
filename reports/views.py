@@ -10,6 +10,14 @@ from django.db.models.functions import TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
 
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiExample,
+)
+from drf_spectacular.types import OpenApiTypes
+
 from urllib.parse import urlencode
 
 from core.models import Appointment
@@ -126,6 +134,64 @@ def _set_pagination_headers(response, *, total, limit, offset, request):
     return response
 
 
+PARAM_FROM = OpenApiParameter(
+    name="from",
+    type=OpenApiTypes.DATETIME,
+    location=OpenApiParameter.QUERY,
+    description="Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.",
+    required=False,
+)
+PARAM_TO = OpenApiParameter(
+    name="to",
+    type=OpenApiTypes.DATETIME,
+    location=OpenApiParameter.QUERY,
+    description="Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.",
+    required=False,
+)
+PARAM_LIMIT = OpenApiParameter(
+    name="limit",
+    type=OpenApiTypes.INT,
+    location=OpenApiParameter.QUERY,
+    description="Limite de itens (padrão e máx. definidos em settings.REPORTS_PAGINATION).",
+    required=False,
+)
+PARAM_OFFSET = OpenApiParameter(
+    name="offset",
+    type=OpenApiTypes.INT,
+    location=OpenApiParameter.QUERY,
+    description="Deslocamento para paginação.",
+    required=False,
+)
+PARAM_INTERVAL = OpenApiParameter(
+    name="interval",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    description="Agrupamento por período.",
+    required=False,
+    enum=["day", "week", "month"],
+)
+
+
+@extend_schema(
+    tags=["Reports"],
+    summary="Resumo (mock inicial)",
+    responses={
+        200: {
+            "type": "object",
+            "properties": {
+                "range": {"type": "string", "example": "last_30_days"},
+                "generated_at": {"type": "string", "format": "date-time"},
+                "appointments_total": {"type": "integer", "example": 42},
+                "revenue_estimated": {
+                    "type": "number",
+                    "format": "float",
+                    "example": 1234.56,
+                },
+            },
+        },
+        403: OpenApiTypes.OBJECT,
+    },
+)
 class ReportsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -156,6 +222,35 @@ class _BaseReports(APIView):
             return Response({"detail": "Módulo de relatórios desativado."}, status=403)
 
 
+@extend_schema(
+    tags=["Reports"],
+    summary="Overview (contagens e receita)",
+    parameters=[PARAM_FROM, PARAM_TO],
+    responses={
+        200: {
+            "type": "object",
+            "properties": {
+                "appointments_total": {"type": "integer", "example": 120},
+                "appointments_completed": {"type": "integer", "example": 95},
+                "revenue_total": {"type": "number", "example": 155.0},
+                "avg_ticket": {"type": "number", "example": 51.67},
+            },
+        },
+        403: OpenApiTypes.OBJECT,
+    },
+    examples=[
+        OpenApiExample(
+            "Exemplo resposta",
+            value={
+                "appointments_total": 4,
+                "appointments_completed": 3,
+                "revenue_total": 155.0,
+                "avg_ticket": 51.67,
+            },
+            response_only=True,
+        )
+    ],
+)
 class OverviewReportView(_BaseReports):
     def get(self, request):
         denied = self._guard(request)
@@ -186,6 +281,27 @@ class OverviewReportView(_BaseReports):
         )
 
 
+@extend_schema(
+    tags=["Reports"],
+    summary="Top Services",
+    parameters=[PARAM_FROM, PARAM_TO, PARAM_LIMIT, PARAM_OFFSET],
+    responses={
+        200: {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "service_id": {"type": "integer", "example": 10},
+                    "service_name": {"type": "string", "example": "Corte de Cabelo"},
+                    "qty": {"type": "integer", "example": 2},
+                    "revenue": {"type": "number", "example": 75.00},
+                },
+            },
+            "description": "Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset, Link",
+        },
+        403: OpenApiTypes.OBJECT,
+    },
+)
 class TopServicesReportView(_BaseReports):
     def get(self, request):
         denied = self._guard(request)
@@ -229,6 +345,31 @@ class TopServicesReportView(_BaseReports):
         )
 
 
+@extend_schema(
+    tags=["Reports"],
+    summary="Série de receita por período",
+    parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL, PARAM_LIMIT, PARAM_OFFSET],
+    responses={
+        200: {
+            "type": "object",
+            "properties": {
+                "interval": {"type": "string", "enum": ["day", "week", "month"]},
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "period_start": {"type": "string", "format": "date-time"},
+                            "revenue": {"type": "number"},
+                        },
+                    },
+                },
+            },
+            "description": "Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset, Link",
+        },
+        403: OpenApiTypes.OBJECT,
+    },
+)
 class RevenueReportView(_BaseReports):
     def get(self, request):
         denied = self._guard(request)
@@ -271,6 +412,15 @@ class RevenueReportView(_BaseReports):
         )
 
 
+@extend_schema(
+    tags=["Reports"],
+    summary="Exportar overview (CSV)",
+    parameters=[PARAM_FROM, PARAM_TO],
+    responses={
+        200: OpenApiTypes.BINARY,  # representa payload binário (CSV)
+        403: OpenApiTypes.OBJECT,
+    },
+)
 class ExportOverviewCSVView(_BaseReports):
     """
     GET /api/reports/overview/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
