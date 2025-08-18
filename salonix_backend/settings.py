@@ -31,6 +31,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "rest_framework_simplejwt",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # APPS
     "core",
     "users",
@@ -150,6 +152,8 @@ REST_FRAMEWORK = {
     },
 }
 
+REST_FRAMEWORK.setdefault("DEFAULT_SCHEMA_CLASS", "drf_spectacular.openapi.AutoSchema")
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
@@ -196,4 +200,15 @@ STRIPE_API_VERSION = parser[ENV].get("STRIPE_API_VERSION", "")
 REPORTS_PAGINATION = {
     "DEFAULT_LIMIT": 50,  # o que usar quando não vier ?limit=
     "MAX_LIMIT": 500,  # teto duro para evitar respostas gigantes
+}
+
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Salonix API",
+    "DESCRIPTION": "Documentação dos relatórios e demais endpoints.",
+    "VERSION": "1.0.0",
+    # opcional:
+    # "SERVERS": [{"url": "http://localhost:8000", "description": "Local"}],
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": r"/api/",
 }
