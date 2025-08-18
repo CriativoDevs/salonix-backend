@@ -191,3 +191,9 @@ STRIPE_PORTAL_RETURN_URL = parser[ENV].get(
     "STRIPE_PORTAL_RETURN_URL", "http://localhost:3000/billing"
 )
 STRIPE_API_VERSION = parser[ENV].get("STRIPE_API_VERSION", "")
+
+# Pagination limits for reports
+REPORTS_PAGINATION = {
+    "DEFAULT_LIMIT": 50,  # o que usar quando não vier ?limit=
+    "MAX_LIMIT": 500,  # teto duro para evitar respostas gigantes
+}
