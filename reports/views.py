@@ -1,16 +1,20 @@
-# reports/views.py
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from django.db.models import Sum, Count, F
-from django.utils import timezone
 from django.db import models
+from django.db.models import Sum, Count, F
+from django.db.models.functions import TruncDay
+from django.http import HttpResponse
+from django.utils import timezone
 
 from core.models import Appointment
 from users.models import UserFeatureFlags
 from datetime import timedelta
+
+import csv
+import io
 
 COMPLETED_STATUSES = ("completed", "paid")
 
@@ -55,6 +59,10 @@ def _pick_price_source():
 
 DATE_FIELD = _pick_datetime_field(Appointment)
 APPT_PRICE_FIELD, SERVICE_PRICE_LOOKUP = _pick_price_source()
+
+
+def _price_sum():
+    return Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else Sum(F(SERVICE_PRICE_LOOKUP))
 
 
 def _date_range(request):
@@ -195,3 +203,75 @@ class RevenueReportView(_BaseReports):
 
         data = [{"period_start": r["bucket"], "revenue": r["revenue"] or 0} for r in qs]
         return Response({"interval": interval, "series": data})
+
+
+class ExportOverviewCSVView(_BaseReports):
+    """
+    GET /api/reports/overview/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+    Gera um CSV com:
+      - bloco de resumo (total agendamentos, completados, receita, ticket médio)
+      - série diária de receita (period_start, revenue)
+    """
+
+    throttle_scope = "export_csv"
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+
+        start, end = _date_range(request)
+        date_gte = {f"{DATE_FIELD}__gte": start}
+        date_lte = {f"{DATE_FIELD}__lte": end}
+
+        # Query base
+        base_qs = Appointment.objects.filter(**date_gte, **date_lte)
+        total_count = base_qs.count()
+
+        done_qs = base_qs.filter(status__in=COMPLETED_STATUSES)
+        done_count = done_qs.count()
+        revenue_total = done_qs.aggregate(total=_price_sum())["total"] or 0
+        avg_ticket = (revenue_total / done_count) if done_count else 0
+
+        # Série diária
+        series_qs = (
+            done_qs.annotate(bucket=TruncDay(DATE_FIELD))
+            .values("bucket")
+            .annotate(revenue=_price_sum())
+            .order_by("bucket")
+        )
+
+        # Monta CSV (duas seções com uma linha em branco)
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+
+        # Cabeçalho e resumo
+        writer.writerow(["Overview report"])
+        writer.writerow(["Period start", start.isoformat()])
+        writer.writerow(["Period end", end.isoformat()])
+        writer.writerow([])
+        writer.writerow(
+            [
+                "appointments_total",
+                "appointments_completed",
+                "revenue_total",
+                "avg_ticket",
+            ]
+        )
+        writer.writerow([total_count, done_count, revenue_total, avg_ticket])
+
+        # Linha em branco separadora
+        writer.writerow([])
+        writer.writerow(["period_start", "revenue"])
+
+        # 👉 iterator() evita carregar toda a queryset em memória
+        for row in series_qs.iterator(chunk_size=1000):
+            writer.writerow([row["bucket"].date().isoformat(), row["revenue"] or 0])
+
+        csv_content = buffer.getvalue()
+        buffer.close()
+
+        filename = f"overview_{start.date().isoformat()}_{end.date().isoformat()}.csv"
+        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
