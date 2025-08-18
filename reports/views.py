@@ -3,11 +3,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
+from django.conf import settings
 from django.db import models
 from django.db.models import Sum, Count, F
 from django.db.models.functions import TruncDay
 from django.http import HttpResponse
 from django.utils import timezone
+
+from urllib.parse import urlencode
 
 from core.models import Appointment
 from users.models import UserFeatureFlags
@@ -78,6 +81,51 @@ def _date_range(request):
     return start, end
 
 
+def _get_limit_offset(request):
+    cfg = getattr(settings, "REPORTS_PAGINATION", {})
+    default_limit = int(cfg.get("DEFAULT_LIMIT", 50))
+    max_limit = int(cfg.get("MAX_LIMIT", 500))
+
+    try:
+        limit = int(request.query_params.get("limit", default_limit))
+    except (TypeError, ValueError):
+        limit = default_limit
+
+    try:
+        offset = int(request.query_params.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    # sane bounds
+    limit = max(0, min(limit, max_limit))
+    offset = max(0, offset)
+    return limit, offset
+
+
+def _set_pagination_headers(response, *, total, limit, offset, request):
+    response["X-Total-Count"] = str(total)
+    response["X-Limit"] = str(limit)
+    response["X-Offset"] = str(offset)
+
+    # Link header (RFC 5988) com prev/next
+    links = []
+
+    def _url(new_offset):
+        q = request.query_params.copy()
+        q["offset"] = new_offset
+        q["limit"] = limit
+        return request.build_absolute_uri(f"{request.path}?{urlencode(q)}")
+
+    if offset > 0:
+        links.append(f'<{_url(max(0, offset - limit))}>; rel="prev"')
+    if offset + limit < total:
+        links.append(f'<{_url(offset + limit)}>; rel="next"')
+
+    if links:
+        response["Link"] = ", ".join(links)
+    return response
+
+
 class ReportsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -143,21 +191,27 @@ class TopServicesReportView(_BaseReports):
         denied = self._guard(request)
         if denied:
             return denied
+
         start, end = _date_range(request)
-        limit = int(request.query_params.get("limit", 10))
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
+        limit, offset = _get_limit_offset(request)
 
-        qs = Appointment.objects.filter(
+        base = Appointment.objects.filter(
             **date_gte, **date_lte, status__in=COMPLETED_STATUSES
         ).values("service_id", "service__name")
 
+        # agregados
         if APPT_PRICE_FIELD:
-            qs = qs.annotate(qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD))
+            base = base.annotate(qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD))
         else:
-            qs = qs.annotate(qty=Count("id"), revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+            base = base.annotate(qty=Count("id"), revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
 
-        qs = qs.order_by("-qty")[:limit]
+        # total de linhas agregadas (serviços distintos no período)
+        total = base.count()
+
+        # ordenação + janela
+        qs = base.order_by("-qty")[offset : offset + limit]
 
         data = [
             {
@@ -168,7 +222,11 @@ class TopServicesReportView(_BaseReports):
             }
             for r in qs
         ]
-        return Response(data)
+
+        resp = Response(data)
+        return _set_pagination_headers(
+            resp, total=total, limit=limit, offset=offset, request=request
+        )
 
 
 class RevenueReportView(_BaseReports):
@@ -176,6 +234,7 @@ class RevenueReportView(_BaseReports):
         denied = self._guard(request)
         if denied:
             return denied
+
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
         from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
@@ -185,8 +244,9 @@ class RevenueReportView(_BaseReports):
         )
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
+        limit, offset = _get_limit_offset(request)
 
-        base_qs = (
+        base = (
             Appointment.objects.filter(
                 **date_gte, **date_lte, status__in=COMPLETED_STATUSES
             )
@@ -195,14 +255,20 @@ class RevenueReportView(_BaseReports):
         )
 
         if APPT_PRICE_FIELD:
-            qs = base_qs.annotate(revenue=Sum(APPT_PRICE_FIELD)).order_by("bucket")
+            base = base.annotate(revenue=Sum(APPT_PRICE_FIELD))
         else:
-            qs = base_qs.annotate(revenue=Sum(F(SERVICE_PRICE_LOOKUP))).order_by(
-                "bucket"
-            )
+            base = base.annotate(revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+
+        total = base.count()
+
+        # mantemos ordem crescente por período; paginamos sobre ela
+        qs = base.order_by("bucket")[offset : offset + limit]
 
         data = [{"period_start": r["bucket"], "revenue": r["revenue"] or 0} for r in qs]
-        return Response({"interval": interval, "series": data})
+        resp = Response({"interval": interval, "series": data})
+        return _set_pagination_headers(
+            resp, total=total, limit=limit, offset=offset, request=request
+        )
 
 
 class ExportOverviewCSVView(_BaseReports):
