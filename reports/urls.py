@@ -1,5 +1,9 @@
 from django.urls import path
 from . import views
+from reports.views import (
+    ExportTopServicesCSVView,
+    ExportRevenueCSVView,
+)
 
 app_name = "reports"
 
@@ -13,4 +17,6 @@ urlpatterns = [
         views.ExportOverviewCSVView.as_view(),
         name="overview_export",
     ),
+    path("top-services/export/", ExportTopServicesCSVView.as_view()),
+    path("revenue/export/", ExportRevenueCSVView.as_view()),
 ]

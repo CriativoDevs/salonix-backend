@@ -512,3 +512,153 @@ class ExportOverviewCSVView(_BaseReports):
         resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
+
+
+@extend_schema(
+    tags=["Reports"],
+    summary="Exportar Top Services (CSV)",
+    parameters=[PARAM_FROM, PARAM_TO],
+    responses={200: OpenApiTypes.BINARY, 403: OpenApiTypes.OBJECT},
+)
+class ExportTopServicesCSVView(_BaseReports):
+    """
+    GET /api/reports/top-services/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    Gera CSV com as colunas:
+      - service_id
+      - service_name
+      - qty (quantidade de atendimentos completados no período)
+      - revenue (soma de receita estimada no período)
+    """
+
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+
+        start, end = _date_range(request)
+        date_gte = {f"{DATE_FIELD}__gte": start}
+        date_lte = {f"{DATE_FIELD}__lte": end}
+
+        base = Appointment.objects.filter(
+            **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+        ).values("service_id", "service__name")
+
+        if APPT_PRICE_FIELD:
+            base = base.annotate(qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD))
+        else:
+            base = base.annotate(qty=Count("id"), revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+
+        qs = base.order_by("-qty", "-revenue", "service__name")
+
+        buffer = io.StringIO()
+        w = csv.writer(buffer)
+
+        # cabeçalho + metadados do período
+        w.writerow(["Top Services report"])
+        w.writerow(["Period start", start.isoformat()])
+        w.writerow(["Period end", end.isoformat()])
+        w.writerow([])
+        w.writerow(["service_id", "service_name", "qty", "revenue"])
+
+        for row in qs.iterator(chunk_size=1000):
+            w.writerow(
+                [
+                    row["service_id"],
+                    row["service__name"],
+                    row["qty"] or 0,
+                    row["revenue"] or 0,
+                ]
+            )
+
+        csv_content = buffer.getvalue()
+        buffer.close()
+
+        filename = (
+            f"top_services_{start.date().isoformat()}_{end.date().isoformat()}.csv"
+        )
+        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+
+@extend_schema(
+    tags=["Reports"],
+    summary="Exportar Revenue Series (CSV)",
+    parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
+    responses={200: OpenApiTypes.BINARY, 403: OpenApiTypes.OBJECT},
+)
+class ExportRevenueCSVView(_BaseReports):
+    """
+    GET /api/reports/revenue/export/?from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month
+
+    Gera CSV com as colunas:
+      - period_start (início do bucket)
+      - revenue (soma no bucket)
+    """
+
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+
+        start, end = _date_range(request)
+        interval = request.query_params.get("interval", "day")
+        from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
+
+        trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
+            interval, TruncDay
+        )
+
+        date_gte = {f"{DATE_FIELD}__gte": start}
+        date_lte = {f"{DATE_FIELD}__lte": end}
+
+        base = (
+            Appointment.objects.filter(
+                **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+            )
+            .annotate(bucket=trunc(DATE_FIELD))
+            .values("bucket")
+        )
+
+        if APPT_PRICE_FIELD:
+            base = base.annotate(revenue=Sum(APPT_PRICE_FIELD))
+        else:
+            base = base.annotate(revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+
+        qs = base.order_by("bucket")
+
+        buffer = io.StringIO()
+        w = csv.writer(buffer)
+
+        # cabeçalho + metadados
+        w.writerow(["Revenue series report"])
+        w.writerow(["Interval", interval])
+        w.writerow(["Period start", start.isoformat()])
+        w.writerow(["Period end", end.isoformat()])
+        w.writerow([])
+        w.writerow(["period_start", "revenue"])
+
+        for row in qs.iterator(chunk_size=1000):
+            # bucket pode ser None se não houver dados, mas como filtramos por período, é seguro
+            dt = row["bucket"]
+            w.writerow(
+                [
+                    (dt.isoformat() if hasattr(dt, "isoformat") else str(dt)),
+                    row["revenue"] or 0,
+                ]
+            )
+
+        csv_content = buffer.getvalue()
+        buffer.close()
+
+        filename = f"revenue_{interval}_{start.date().isoformat()}_{end.date().isoformat()}.csv"
+        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
