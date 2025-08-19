@@ -130,6 +130,10 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# --- Throttle configurável para relatórios ---
+REPORTS_THROTTLE_REPORTS = parser[ENV].get("REPORTS_THROTTLE_REPORTS", "60/min")
+REPORTS_THROTTLE_EXPORT_CSV = parser[ENV].get("REPORTS_THROTTLE_EXPORT_CSV", "5/min")
+
 # REST_FRAMEWORK config
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -146,9 +150,9 @@ REST_FRAMEWORK = {
         # taxa geral por usuário (ajuste se quiser)
         "user": "1000/day",
         # escopo específico para exportação CSV
-        "export_csv": "5/min",
+        "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
-        "reports": "60/min",
+        "reports": REPORTS_THROTTLE_REPORTS,
     },
 }
 
