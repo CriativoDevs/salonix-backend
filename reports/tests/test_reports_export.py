@@ -1,10 +1,10 @@
-# reports/tests/test_reports_export.py
 import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 from users.models import UserFeatureFlags
 from django.test import override_settings
+from django.core.cache import cache
 
 User = get_user_model()
 
@@ -59,6 +59,7 @@ def test_export_overview_csv_ok_without_data():
     }
 )
 def test_export_overview_csv_throttled():
+    cache.clear()
     u = User.objects.create_user(
         username="csvlimit", email="csvlimit@e.com", password="x"
     )
