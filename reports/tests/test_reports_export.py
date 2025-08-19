@@ -40,6 +40,12 @@ def test_export_overview_csv_ok_without_data():
 
 @pytest.mark.django_db
 @override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "throttle-tests-overview",
+        }
+    },
     REST_FRAMEWORK={
         "DEFAULT_AUTHENTICATION_CLASSES": [
             "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -56,7 +62,7 @@ def test_export_overview_csv_ok_without_data():
             "reports": "60/min",
             "export_csv": "2/min",  # mais baixo para testar rapidamente
         },
-    }
+    },
 )
 def test_export_overview_csv_throttled():
     cache.clear()
@@ -81,3 +87,135 @@ def test_export_overview_csv_throttled():
     # terceira deve estourar o throttle
     r3 = c.get(url)
     assert r3.status_code in (429, 403)  # 429 esperado; 403 se algum guard falhar
+
+
+@pytest.mark.django_db
+def test_export_top_services_csv_ok_without_data():
+    u = User.objects.create_user(
+        username="csv_top", email="csv_top@e.com", password="x"
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=u, defaults={"is_pro": True, "reports_enabled": True}
+    )
+    c = APIClient()
+    c.force_authenticate(u)
+
+    now = timezone.now()
+    start = (now - timezone.timedelta(days=7)).date().isoformat()
+    end = now.date().isoformat()
+
+    r = c.get(f"/api/reports/top-services/export/?from={start}&to={end}")
+    assert r.status_code == 200
+    assert r["Content-Type"].startswith("text/csv")
+
+
+@pytest.mark.django_db
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "throttle-tests-overview",
+        }
+    },
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework_simplejwt.authentication.JWTAuthentication",
+        ],
+        "DEFAULT_PERMISSION_CLASSES": [
+            "rest_framework.permissions.IsAuthenticated",
+        ],
+        "DEFAULT_THROTTLE_CLASSES": [
+            "rest_framework.throttling.UserRateThrottle",
+            "rest_framework.throttling.ScopedRateThrottle",
+        ],
+        "DEFAULT_THROTTLE_RATES": {
+            "user": "1000/day",
+            "reports": "60/min",
+            "export_csv": "2/min",  # baixo para testar
+        },
+    },
+)
+def test_export_top_services_csv_throttled():
+    cache.clear()
+    u = User.objects.create_user(username="csv_top_thr", email="ct@e.com", password="x")
+    UserFeatureFlags.objects.update_or_create(
+        user=u, defaults={"is_pro": True, "reports_enabled": True}
+    )
+    c = APIClient()
+    c.force_authenticate(u)
+
+    now = timezone.now()
+    start = (now - timezone.timedelta(days=7)).date().isoformat()
+    end = now.date().isoformat()
+    url = f"/api/reports/top-services/export/?from={start}&to={end}"
+
+    assert c.get(url).status_code == 200
+    assert c.get(url).status_code == 200
+    assert c.get(url).status_code == 429
+
+
+@pytest.mark.django_db
+def test_export_revenue_csv_ok_without_data():
+    u = User.objects.create_user(
+        username="csv_rev", email="csv_rev@e.com", password="x"
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=u, defaults={"is_pro": True, "reports_enabled": True}
+    )
+    c = APIClient()
+    c.force_authenticate(u)
+
+    now = timezone.now()
+    start = (now - timezone.timedelta(days=7)).date().isoformat()
+    end = now.date().isoformat()
+
+    r = c.get(f"/api/reports/revenue/export/?from={start}&to={end}&interval=day")
+    assert r.status_code == 200
+    assert r["Content-Type"].startswith("text/csv")
+
+
+@pytest.mark.django_db
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "throttle-tests-overview",
+        }
+    },
+    REST_FRAMEWORK={
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework_simplejwt.authentication.JWTAuthentication",
+        ],
+        "DEFAULT_PERMISSION_CLASSES": [
+            "rest_framework.permissions.IsAuthenticated",
+        ],
+        "DEFAULT_THROTTLE_CLASSES": [
+            "rest_framework.throttling.UserRateThrottle",
+            "rest_framework.throttling.ScopedRateThrottle",
+        ],
+        "DEFAULT_THROTTLE_RATES": {
+            "user": "1000/day",
+            "reports": "60/min",
+            "export_csv": "2/min",
+        },
+    },
+)
+def test_export_revenue_csv_throttled():
+    cache.clear()
+    u = User.objects.create_user(
+        username="csv_rev_thr", email="crt@e.com", password="x"
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=u, defaults={"is_pro": True, "reports_enabled": True}
+    )
+    c = APIClient()
+    c.force_authenticate(u)
+
+    now = timezone.now()
+    start = (now - timezone.timedelta(days=7)).date().isoformat()
+    end = now.date().isoformat()
+    url = f"/api/reports/revenue/export/?from={start}&to={end}&interval=week"
+
+    assert c.get(url).status_code == 200
+    assert c.get(url).status_code == 200
+    assert c.get(url).status_code == 429
