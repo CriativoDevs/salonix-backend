@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from reports.throttling import PerUserScopedRateThrottle
+from rest_framework.exceptions import Throttled
 
 from django.conf import settings
 from django.db import models
@@ -22,12 +23,17 @@ from urllib.parse import urlencode
 
 from core.models import Appointment
 from users.models import UserFeatureFlags
+from reports.observability import observe_request, REPORTS_THROTTLED, track_csv
+
 from datetime import timedelta
 
 import csv
 import io
+import logging
+
 
 COMPLETED_STATUSES = ("completed", "paid")
+logger = logging.getLogger("reports")
 
 
 # === Helpers para adaptar aos nomes reais do teu modelo ===
@@ -232,6 +238,28 @@ class _BaseReports(APIView):
                 return []
         return [throttle() for throttle in self.throttle_classes]
 
+    def throttled(self, request, wait):
+        endpoint = request.path
+        REPORTS_THROTTLED.labels(endpoint=endpoint).inc()
+        logger.warning(
+            "reports_throttled",
+            extra={
+                "request_id": getattr(request, "request_id", "-"),
+                "endpoint": endpoint,
+                "user_id": getattr(request.user, "id", None),
+                "is_pro": getattr(
+                    getattr(
+                        UserFeatureFlags.objects.filter(user=request.user).first(),
+                        "is_pro",
+                        None,
+                    ),
+                    "__bool__",
+                    lambda: None,
+                )(),
+            },
+        )
+        super().throttled(request, wait)
+
 
 @extend_schema(
     tags=["Reports"],
@@ -266,6 +294,7 @@ class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @observe_request(endpoint="/api/reports/overview/")
     def get(self, request):
         denied = self._guard(request)
         if denied:
@@ -320,6 +349,7 @@ class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @observe_request(endpoint="/api/reports/top-services/")
     def get(self, request):
         denied = self._guard(request)
         if denied:
@@ -391,6 +421,7 @@ class RevenueReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @observe_request(endpoint="/api/reports/revenue/")
     def get(self, request):
         denied = self._guard(request)
         if denied:
@@ -452,6 +483,7 @@ class ExportOverviewCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
+    @observe_request(endpoint="/api/reports/overview/export/")
     def get(self, request):
         denied = self._guard(request)
         if denied:

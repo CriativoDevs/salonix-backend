@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "drf_spectacular",
     "drf_spectacular_sidecar",
+    "django_prometheus",
     # APPS
     "core",
     "users",
@@ -42,6 +43,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "salonix_backend.middleware.RequestIDMiddleware",
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -53,6 +57,10 @@ MIDDLEWARE = [
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+# opcional: flag ligada por padrão
+OBSERVABILITY_ENABLED = (
+    parser[ENV].get("OBSERVABILITY_ENABLED", "true").lower() == "true"
+)
 
 ROOT_URLCONF = "salonix_backend.urls"
 
@@ -215,4 +223,43 @@ SPECTACULAR_SETTINGS = {
     # "SERVERS": [{"url": "http://localhost:8000", "description": "Local"}],
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/",
+}
+
+LOG_LEVEL = parser[ENV].get("LOG_LEVEL", "INFO")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "kv": {
+            "format": "%(asctime)s level=%(levelname)s logger=%(name)s "
+            "msg=%(message)s request_id=%(request_id)s endpoint=%(endpoint)s "
+            "user_id=%(user_id)s is_pro=%(is_pro)s"
+        },
+    },
+    "filters": {
+        "request_context": {
+            "()": "django.utils.log.CallbackFilter",
+            "callback": lambda record: True,  # manter simples
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "kv",
+            "filters": ["request_context"],
+        },
+    },
+    "loggers": {
+        "reports": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+    },
 }
