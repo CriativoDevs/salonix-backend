@@ -3,7 +3,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from reports.throttling import PerUserScopedRateThrottle
-from rest_framework.exceptions import Throttled
 
 from django.conf import settings
 from django.db import models
@@ -23,7 +22,9 @@ from urllib.parse import urlencode
 
 from core.models import Appointment
 from users.models import UserFeatureFlags
-from reports.observability import observe_request, REPORTS_THROTTLED, track_csv
+from reports.observability import observe_request, REPORTS_THROTTLED
+from reports.utils.cache import cache_drf_response
+from reports.utils.guards import require_reports_enabled
 
 from datetime import timedelta
 
@@ -82,16 +83,23 @@ def _price_sum():
     return Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else Sum(F(SERVICE_PRICE_LOOKUP))
 
 
+def _parse_iso_dt(s: str):
+    """Aceita 'YYYY-MM-DD' ou datetime ISO; retorna datetime aware em timezone atual."""
+    if not s:
+        return None
+    dt = timezone.datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        # interpretar como horário local do server e tornar aware
+        return timezone.make_aware(dt)
+    return dt
+
+
 def _date_range(request):
-    to = request.query_params.get("to")
-    frm = request.query_params.get("from")
+    to_str = request.query_params.get("to")
+    from_str = request.query_params.get("from")
     now = timezone.now()
-    end = timezone.make_aware(timezone.datetime.fromisoformat(to)) if to else now
-    start = (
-        timezone.make_aware(timezone.datetime.fromisoformat(frm))
-        if frm
-        else end - timedelta(days=30)
-    )
+    end = _parse_iso_dt(to_str) or now
+    start = _parse_iso_dt(from_str) or (end - timedelta(days=30))
     return start, end
 
 
@@ -294,6 +302,15 @@ class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:overview:json",
+        ttl=settings.REPORTS_CACHE_TTL["overview_json"],
+        vary_on_params=[],  # sem from/to no JSON atual
+        vary_on_user=True,
+        view_label="overview",
+        format_label="json",
+    )
     @observe_request(endpoint="/api/reports/overview/")
     def get(self, request):
         denied = self._guard(request)
@@ -349,6 +366,15 @@ class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:top_services:json",
+        ttl=settings.REPORTS_CACHE_TTL["top_services_json"],
+        vary_on_params=["limit", "offset", "from", "to"],  # inclui paginação
+        vary_on_user=True,
+        view_label="top_services",
+        format_label="json",
+    )
     @observe_request(endpoint="/api/reports/top-services/")
     def get(self, request):
         denied = self._guard(request)
@@ -421,6 +447,21 @@ class RevenueReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:revenue:json",
+        ttl=settings.REPORTS_CACHE_TTL["revenue_json"],
+        vary_on_params=[
+            "interval",
+            "from",
+            "to",
+            "limit",
+            "offset",
+        ],  # inclui paginação
+        vary_on_user=True,
+        view_label="revenue",
+        format_label="json",
+    )
     @observe_request(endpoint="/api/reports/revenue/")
     def get(self, request):
         denied = self._guard(request)
@@ -483,6 +524,15 @@ class ExportOverviewCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:overview:csv",
+        ttl=settings.REPORTS_CACHE_TTL["overview_csv"],
+        vary_on_params=["from", "to"],
+        vary_on_user=True,
+        view_label="overview",
+        format_label="csv",
+    )
     @observe_request(endpoint="/api/reports/overview/export/")
     def get(self, request):
         denied = self._guard(request)
@@ -566,6 +616,15 @@ class ExportTopServicesCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:top_services:csv",
+        ttl=settings.REPORTS_CACHE_TTL["top_services_csv"],
+        vary_on_params=["from", "to"],
+        vary_on_user=True,
+        view_label="top_services",
+        format_label="csv",
+    )
     def get(self, request):
         denied = self._guard(request)
         if denied:
@@ -635,6 +694,15 @@ class ExportRevenueCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
+    @require_reports_enabled
+    @cache_drf_response(
+        prefix="reports:revenue:csv",
+        ttl=settings.REPORTS_CACHE_TTL["revenue_csv"],
+        vary_on_params=["interval", "from", "to"],
+        vary_on_user=True,
+        view_label="revenue",
+        format_label="csv",
+    )
     def get(self, request):
         denied = self._guard(request)
         if denied:
