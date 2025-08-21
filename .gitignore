@@ -211,3 +211,8 @@ __marimo__/
 /.venv/
 /.venv
 .venv/
+
+.DS_Store
+/.DS_Store/
+.DS_Store/
+DS_Store
