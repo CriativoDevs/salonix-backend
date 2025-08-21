@@ -263,3 +263,22 @@ LOGGING = {
         },
     },
 }
+
+# --- Cache backend (ok usar LocMem em dev) ---
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "salonix-cache",
+        "TIMEOUT": None,  # controlamos TTL por view
+    }
+}
+
+# --- TTLs de cache por endpoint (em segundos) ---
+REPORTS_CACHE_TTL = {
+    "overview_json": 30,
+    "top_services_json": 30,
+    "revenue_json": 30,
+    "overview_csv": 60,
+    "top_services_csv": 60,
+    "revenue_csv": 60,
+}
