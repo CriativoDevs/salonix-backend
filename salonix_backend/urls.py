@@ -8,6 +8,7 @@ from drf_spectacular.views import (
 )
 
 urlpatterns = [
+    path("", include("django_prometheus.urls")),
     path("admin/", admin.site.urls),
     path("api/", include("core.urls")),
     path("api/payments/stripe/", include("payments.urls", namespace="payments")),
