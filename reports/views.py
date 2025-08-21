@@ -14,7 +14,6 @@ from django.utils import timezone
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiParameter,
-    OpenApiExample,
 )
 from drf_spectacular.types import OpenApiTypes
 
@@ -23,6 +22,14 @@ from urllib.parse import urlencode
 from core.models import Appointment
 from users.models import UserFeatureFlags
 from reports.observability import observe_request, REPORTS_THROTTLED
+from reports.openapi import (
+    RESP_OVERVIEW_JSON,
+    RESP_TOP_SERVICES_JSON,
+    RESP_REVENUE_JSON,
+    RESP_CSV_OVERVIEW,
+    RESP_CSV_TOP_SERVICES,
+    RESP_CSV_REVENUE,
+)
 from reports.utils.cache import cache_drf_response
 from reports.utils.guards import require_reports_enabled
 
@@ -269,35 +276,6 @@ class _BaseReports(APIView):
         super().throttled(request, wait)
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Overview (contagens e receita)",
-    parameters=[PARAM_FROM, PARAM_TO],
-    responses={
-        200: {
-            "type": "object",
-            "properties": {
-                "appointments_total": {"type": "integer", "example": 120},
-                "appointments_completed": {"type": "integer", "example": 95},
-                "revenue_total": {"type": "number", "example": 155.0},
-                "avg_ticket": {"type": "number", "example": 51.67},
-            },
-        },
-        403: OpenApiTypes.OBJECT,
-    },
-    examples=[
-        OpenApiExample(
-            "Exemplo resposta",
-            value={
-                "appointments_total": 4,
-                "appointments_completed": 3,
-                "revenue_total": 155.0,
-                "avg_ticket": 51.67,
-            },
-            response_only=True,
-        )
-    ],
-)
 class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
@@ -311,11 +289,15 @@ class OverviewReportView(_BaseReports):
         view_label="overview",
         format_label="json",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Overview (contagens e receita)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={200: RESP_OVERVIEW_JSON, 403: OpenApiTypes.OBJECT},
+    )
     @observe_request(endpoint="/api/reports/overview/")
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
+
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
@@ -341,27 +323,6 @@ class OverviewReportView(_BaseReports):
         )
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Top Services",
-    parameters=[PARAM_FROM, PARAM_TO, PARAM_LIMIT, PARAM_OFFSET],
-    responses={
-        200: {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "service_id": {"type": "integer", "example": 10},
-                    "service_name": {"type": "string", "example": "Corte de Cabelo"},
-                    "qty": {"type": "integer", "example": 2},
-                    "revenue": {"type": "number", "example": 75.00},
-                },
-            },
-            "description": "Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset, Link",
-        },
-        403: OpenApiTypes.OBJECT,
-    },
-)
 class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
@@ -375,11 +336,14 @@ class TopServicesReportView(_BaseReports):
         view_label="top_services",
         format_label="json",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Top Services",
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_LIMIT, PARAM_OFFSET],
+        responses={200: RESP_TOP_SERVICES_JSON, 403: OpenApiTypes.OBJECT},
+    )
     @observe_request(endpoint="/api/reports/top-services/")
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
@@ -418,31 +382,6 @@ class TopServicesReportView(_BaseReports):
         )
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Série de receita por período",
-    parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL, PARAM_LIMIT, PARAM_OFFSET],
-    responses={
-        200: {
-            "type": "object",
-            "properties": {
-                "interval": {"type": "string", "enum": ["day", "week", "month"]},
-                "series": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "period_start": {"type": "string", "format": "date-time"},
-                            "revenue": {"type": "number"},
-                        },
-                    },
-                },
-            },
-            "description": "Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset, Link",
-        },
-        403: OpenApiTypes.OBJECT,
-    },
-)
 class RevenueReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
@@ -462,11 +401,14 @@ class RevenueReportView(_BaseReports):
         view_label="revenue",
         format_label="json",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Série de receita por período",
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL, PARAM_LIMIT, PARAM_OFFSET],
+        responses={200: RESP_REVENUE_JSON, 403: OpenApiTypes.OBJECT},
+    )
     @observe_request(endpoint="/api/reports/revenue/")
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
@@ -504,15 +446,6 @@ class RevenueReportView(_BaseReports):
         )
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Exportar overview (CSV)",
-    parameters=[PARAM_FROM, PARAM_TO],
-    responses={
-        200: OpenApiTypes.BINARY,  # representa payload binário (CSV)
-        403: OpenApiTypes.OBJECT,
-    },
-)
 class ExportOverviewCSVView(_BaseReports):
     """
     GET /api/reports/overview/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -533,11 +466,14 @@ class ExportOverviewCSVView(_BaseReports):
         view_label="overview",
         format_label="csv",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Exportar overview (CSV)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={200: RESP_CSV_OVERVIEW, 403: OpenApiTypes.OBJECT},
+    )
     @observe_request(endpoint="/api/reports/overview/export/")
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
@@ -596,12 +532,6 @@ class ExportOverviewCSVView(_BaseReports):
         return resp
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Exportar Top Services (CSV)",
-    parameters=[PARAM_FROM, PARAM_TO],
-    responses={200: OpenApiTypes.BINARY, 403: OpenApiTypes.OBJECT},
-)
 class ExportTopServicesCSVView(_BaseReports):
     """
     GET /api/reports/top-services/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -625,10 +555,13 @@ class ExportTopServicesCSVView(_BaseReports):
         view_label="top_services",
         format_label="csv",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Exportar Top Services (CSV)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={200: RESP_CSV_TOP_SERVICES, 403: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
@@ -676,12 +609,6 @@ class ExportTopServicesCSVView(_BaseReports):
         return resp
 
 
-@extend_schema(
-    tags=["Reports"],
-    summary="Exportar Revenue Series (CSV)",
-    parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
-    responses={200: OpenApiTypes.BINARY, 403: OpenApiTypes.OBJECT},
-)
 class ExportRevenueCSVView(_BaseReports):
     """
     GET /api/reports/revenue/export/?from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month
@@ -703,10 +630,13 @@ class ExportRevenueCSVView(_BaseReports):
         view_label="revenue",
         format_label="csv",
     )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Exportar Revenue Series (CSV)",
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
+        responses={200: RESP_CSV_REVENUE, 403: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
 
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
