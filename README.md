@@ -180,4 +180,34 @@ Sugestão de ajuste na sua seção “🔍 Smoke tests” para usar o Make:
 +Ou diretamente pelo script:
 +```bash
 +./scripts/smoke_reports.sh
-+```
+```
+
+---
+
+## 🌱 Seed (dados de demonstração)
+
+Cria usuários, profissionais, serviços, slots e alguns agendamentos (idempotente):
+
+```bash
+make seed        # roda o management command seed_demo
+# ou
+./scripts/seed.sh
+```
+
+---
+
+### 🔥 Smoke de cache dos relatórios
+
+Este script cria **1 appointment** como `client_smoke` e verifica se o endpoint
+`/api/reports/top-services/` muda **antes vs. depois**, provando que os
+*sinais* invalidam o cache dos relatórios corretamente.
+
+Pré-requisitos:
+- `make run` ativo em `http://localhost:8000`
+- `make seed` já executado (para dados de demonstração)
+- `curl` e `jq` instalados
+
+Rodar:
+```bash
+make smoke-cache
+```

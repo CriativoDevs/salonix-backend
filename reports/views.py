@@ -474,18 +474,18 @@ class ExportOverviewCSVView(_BaseReports):
     )
     @observe_request(endpoint="/api/reports/overview/export/")
     def get(self, request):
-
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
-        # Query base
         base_qs = Appointment.objects.filter(**date_gte, **date_lte)
         total_count = base_qs.count()
 
         done_qs = base_qs.filter(status__in=COMPLETED_STATUSES)
         done_count = done_qs.count()
-        revenue_total = done_qs.aggregate(total=_price_sum())["total"] or 0
+
+        # soma de receita (robusta para ambos os casos: price no Appointment ou via Service)
+        revenue_total = done_qs.aggregate(total=_price_sum()).get("total") or 0
         avg_ticket = (revenue_total / done_count) if done_count else 0
 
         # Série diária
@@ -496,15 +496,23 @@ class ExportOverviewCSVView(_BaseReports):
             .order_by("bucket")
         )
 
-        # Monta CSV (duas seções com uma linha em branco)
         buffer = io.StringIO()
         writer = csv.writer(buffer)
 
-        # Cabeçalho e resumo
+        # Cabeçalho + metadados
         writer.writerow(["Overview report"])
-        writer.writerow(["Period start", start.isoformat()])
-        writer.writerow(["Period end", end.isoformat()])
+        writer.writerow(
+            [
+                "Period start",
+                (start.isoformat() if hasattr(start, "isoformat") else str(start)),
+            ]
+        )
+        writer.writerow(
+            ["Period end", (end.isoformat() if hasattr(end, "isoformat") else str(end))]
+        )
         writer.writerow([])
+
+        # Bloco de resumo (cabeçalho estável)
         writer.writerow(
             [
                 "appointments_total",
@@ -513,15 +521,31 @@ class ExportOverviewCSVView(_BaseReports):
                 "avg_ticket",
             ]
         )
-        writer.writerow([total_count, done_count, revenue_total, avg_ticket])
+        writer.writerow(
+            [
+                int(total_count or 0),
+                int(done_count or 0),
+                float(revenue_total or 0),
+                float(avg_ticket or 0),
+            ]
+        )
 
-        # Linha em branco separadora
+        # Série (cabeçalho fixo)
         writer.writerow([])
         writer.writerow(["period_start", "revenue"])
 
-        # 👉 iterator() evita carregar toda a queryset em memória
+        # Itera com segurança; evita KeyError e None
         for row in series_qs.iterator(chunk_size=1000):
-            writer.writerow([row["bucket"].date().isoformat(), row["revenue"] or 0])
+            bucket = row.get("bucket")
+            revenue = row.get("revenue") or 0
+            # bucket pode ser datetime, date, ou None; normalize
+            if hasattr(bucket, "date"):
+                period = bucket.date().isoformat()
+            elif hasattr(bucket, "isoformat"):
+                period = bucket.isoformat()
+            else:
+                period = str(bucket) if bucket is not None else ""
+            writer.writerow([period, float(revenue)])
 
         csv_content = buffer.getvalue()
         buffer.close()
@@ -529,6 +553,10 @@ class ExportOverviewCSVView(_BaseReports):
         filename = f"overview_{start.date().isoformat()}_{end.date().isoformat()}.csv"
         resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        # cabeçalhos defensivos (opcional)
+        resp["X-Content-Type-Options"] = "nosniff"
+        resp["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp["Pragma"] = "no-cache"
         return resp
 
 

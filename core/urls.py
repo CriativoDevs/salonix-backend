@@ -8,6 +8,7 @@ from core.views import (
     AppointmentDetailView,
     MyAppointmentsListView,
     ProfessionalViewSet,
+    PublicServiceListView,
     PublicProfessionalListView,
     PublicSlotListView,
     SalonAppointmentViewSet,
@@ -27,12 +28,9 @@ urlpatterns = [
     path("", include(router.urls)),
     path("auth/", include("users.urls")),
     # Public routes
-    path(
-        "professionals/",
-        PublicProfessionalListView.as_view(),
-        name="public-professional-list",
-    ),
-    path("slots/", PublicSlotListView.as_view(), name="public-slot-list"),
+    path("public/services/", PublicServiceListView.as_view()),
+    path("public/professionals/", PublicProfessionalListView.as_view()),
+    path("public/slots/", PublicSlotListView.as_view()),
     path("appointments/", AppointmentCreateView.as_view(), name="appointment-create"),
     path(
         "appointments/<int:pk>/cancel/",
