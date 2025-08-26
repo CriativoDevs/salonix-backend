@@ -158,3 +158,26 @@ O projeto está em fase de MVP, priorizando:
 - Integração Stripe (assinaturas)
 
 Melhorias maiores (ex.: cache avançado, observabilidade full, IA, etc.) serão consideradas após entrega do MVP.
+
+---
+
+# README.md (patch mínimo para Smoke)
+
+Sugestão de ajuste na sua seção “🔍 Smoke tests” para usar o Make:
+
+ ## 🔍 Smoke tests
+```diff
+
+-- Para validar endpoints críticos de relatórios, use:
+-    ```bash
+-    ./scripts/smoke_reports.sh
+-    ```
++- Para validar endpoints críticos de relatórios:
++    ```bash
++    make smoke
++    ```
++
++Ou diretamente pelo script:
++```bash
++./scripts/smoke_reports.sh
++```
