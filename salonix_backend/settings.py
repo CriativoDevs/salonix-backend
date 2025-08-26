@@ -35,7 +35,7 @@ INSTALLED_APPS = [
     "drf_spectacular_sidecar",
     "django_prometheus",
     # APPS
-    "core",
+    "core.apps.CoreConfig",
     "users",
     "payments",
     "reports",
