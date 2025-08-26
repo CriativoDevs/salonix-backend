@@ -1,23 +1,65 @@
 import os
-import configparser
 
 from pathlib import Path
+from configparser import ConfigParser
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# ---- Loader com prioridade: ENV > .env > settings.ini ----
+try:
+    from dotenv import load_dotenv
+except ImportError:
+
+    def load_dotenv(*args, **kwargs):
+        return False
+
+
+# Carrega .env (sem sobreescrever env já setado)
+load_dotenv(BASE_DIR / ".env", override=False)
+
+
+def _read_ini():
+    ini_path = BASE_DIR / "settings.ini"
+
+    if not ini_path.exists():
+        return {}
+
+    parser = ConfigParser(interpolation=None)
+    parser.read(ini_path)
+    data = {}
+
+    # Mantem compatibilidade com suas seções atuais (dev/uat/prod)
+    for section in parser.sections():
+        for k, v in parser.items(section):
+            data.setdefault(section, {})
+            data[section][k.upper()] = v
+    return data
+
+
+INI_ALL = _read_ini()
+
+
+# Helper para ler configs: pega de ENV, senão .env (já carregado), senão INI[ENV]
+def env_get(name: str, default=None):
+    val = os.getenv(name)
+    if val is not None:
+        return val
+    section = os.getenv("DJANGO_ENV", "dev")
+    return (INI_ALL.get(section, {}) or {}).get(name.upper(), default)
+
+
 # Define qual ambiente está sendo usado
-ENV = os.getenv("DJANGO_ENV", "dev")  # Pode ser: dev, uat, prod
+ENV = os.getenv("DJANGO_ENV", "dev")  # dev, uat, prod
 
-# Lê o arquivo settings.ini
-ini_path = BASE_DIR / "settings.ini"
-parser = configparser.ConfigParser(interpolation=None)
-parser.read(ini_path)
-
-# Segurança
-SECRET_KEY = parser[ENV]["SECRET_KEY"]
-DEBUG = parser.getboolean(ENV, "DEBUG")
-ALLOWED_HOSTS = [h.strip() for h in parser[ENV]["ALLOWED_HOSTS"].split(",")]
+# Segurança / básico
+SECRET_KEY = env_get("SECRET_KEY", "dev-secret-key-change-me")
+DEBUG = str(env_get("DEBUG", "false")).lower() in {"1", "true", "yes", "on"}
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in str(env_get("ALLOWED_HOSTS", "localhost,127.0.0.1")).split(",")
+    if h.strip()
+]
 
 # Application definition
 
@@ -58,9 +100,7 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True
 
 # opcional: flag ligada por padrão
-OBSERVABILITY_ENABLED = (
-    parser[ENV].get("OBSERVABILITY_ENABLED", "true").lower() == "true"
-)
+OBSERVABILITY_ENABLED = str(env_get("OBSERVABILITY_ENABLED", "true")).lower() == "true"
 
 ROOT_URLCONF = "salonix_backend.urls"
 
@@ -84,17 +124,26 @@ WSGI_APPLICATION = "salonix_backend.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+DATABASE_URL = env_get("DATABASE_URL", f"sqlite:///{BASE_DIR/'db.sqlite3'}")
+try:
+    import dj_database_url  # type: ignore
 
-DATABASES = {
-    "default": {
-        "ENGINE": parser[ENV]["DATABASE_ENGINE"],
-        "NAME": parser[ENV]["DATABASE_NAME"],
-        "USER": parser[ENV].get("DATABASE_USER", ""),
-        "PASSWORD": parser[ENV].get("DATABASE_PASSWORD", ""),
-        "HOST": parser[ENV].get("DATABASE_HOST", ""),
-        "PORT": parser[ENV].get("DATABASE_PORT", ""),
-    }
-}
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+except Exception:
+    if str(DATABASE_URL).startswith("sqlite:///"):
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": str(DATABASE_URL).replace("sqlite:///", ""),
+            }
+        }
+    else:
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": str(BASE_DIR / "db.sqlite3"),
+            }
+        }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -139,8 +188,8 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Throttle configurável para relatórios ---
-REPORTS_THROTTLE_REPORTS = parser[ENV].get("REPORTS_THROTTLE_REPORTS", "60/min")
-REPORTS_THROTTLE_EXPORT_CSV = parser[ENV].get("REPORTS_THROTTLE_EXPORT_CSV", "5/min")
+REPORTS_THROTTLE_REPORTS = env_get("REPORTS_THROTTLE_REPORTS", "60/min")
+REPORTS_THROTTLE_EXPORT_CSV = env_get("REPORTS_THROTTLE_EXPORT_CSV", "5/min")
 
 # REST_FRAMEWORK config
 REST_FRAMEWORK = {
@@ -169,8 +218,8 @@ REST_FRAMEWORK.setdefault("DEFAULT_SCHEMA_CLASS", "drf_spectacular.openapi.AutoS
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(env_get("JWT_ACCESS_MIN", 60))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(env_get("JWT_REFRESH_DAYS", 7))),
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -179,41 +228,45 @@ AUTH_USER_MODEL = "users.CustomUser"
 
 # Email
 # Email configuration
-EMAIL_BACKEND = parser[ENV]["EMAIL_BACKEND"]
-EMAIL_HOST = parser[ENV]["EMAIL_HOST"]
-EMAIL_PORT = parser.getint(ENV, "EMAIL_PORT")
-EMAIL_USE_TLS = parser.getboolean(ENV, "EMAIL_USE_TLS")
-EMAIL_HOST_USER = parser[ENV]["EMAIL_HOST_USER"]
-EMAIL_HOST_PASSWORD = parser[ENV]["EMAIL_HOST_PASSWORD"]
-DEFAULT_FROM_EMAIL = parser[ENV]["DEFAULT_FROM_EMAIL"]
+EMAIL_BACKEND = env_get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = env_get("EMAIL_HOST", "")
+EMAIL_PORT = int(env_get("EMAIL_PORT", "25"))
+EMAIL_USE_TLS = str(env_get("EMAIL_USE_TLS", "false")).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+EMAIL_HOST_USER = env_get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env_get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = env_get("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 
 # Stripe
-STRIPE_API_KEY = parser[ENV].get("STRIPE_API_KEY", "")
-STRIPE_WEBHOOK_SECRET = parser[ENV].get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_API_KEY = env_get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = env_get("STRIPE_WEBHOOK_SECRET", "")
 
 # Prices (você já criou no Stripe; cole aqui)
-STRIPE_PRICE_MONTHLY_ID = parser[ENV].get("STRIPE_PRICE_MONTHLY_ID", "")
-STRIPE_PRICE_YEARLY_ID = parser[ENV].get("STRIPE_PRICE_YEARLY_ID", "")
+STRIPE_PRICE_MONTHLY_ID = env_get("STRIPE_PRICE_MONTHLY_ID", "")
+STRIPE_PRICE_YEARLY_ID = env_get("STRIPE_PRICE_YEARLY_ID", "")
 
 # URLs do front para redirecionar após checkout/portal
-STRIPE_SUCCESS_URL = parser[ENV].get(
+STRIPE_SUCCESS_URL = env_get(
     "STRIPE_SUCCESS_URL",
     "http://localhost:3000/billing/success?session_id={CHECKOUT_SESSION_ID}",
 )
-STRIPE_CANCEL_URL = parser[ENV].get(
-    "STRIPE_CANCEL_URL", "http://localhost:3000/billing/cancel"
-)
-STRIPE_PORTAL_RETURN_URL = parser[ENV].get(
+STRIPE_CANCEL_URL = env_get("STRIPE_CANCEL_URL", "http://localhost:3000/billing/cancel")
+STRIPE_PORTAL_RETURN_URL = env_get(
     "STRIPE_PORTAL_RETURN_URL", "http://localhost:3000/billing"
 )
-STRIPE_API_VERSION = parser[ENV].get("STRIPE_API_VERSION", "")
+STRIPE_API_VERSION = env_get("STRIPE_API_VERSION", "")
 
 # Pagination limits for reports
 REPORTS_PAGINATION = {
-    "DEFAULT_LIMIT": 50,  # o que usar quando não vier ?limit=
-    "MAX_LIMIT": 500,  # teto duro para evitar respostas gigantes
+    "DEFAULT_LIMIT": int(env_get("REPORTS_DEFAULT_LIMIT", "50")),
+    "MAX_LIMIT": int(env_get("REPORTS_MAX_LIMIT", "500")),
 }
-
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Salonix API",
@@ -225,7 +278,7 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/",
 }
 
-LOG_LEVEL = parser[ENV].get("LOG_LEVEL", "INFO")
+LOG_LEVEL = env_get("LOG_LEVEL", "INFO")
 
 LOGGING = {
     "version": 1,
@@ -264,21 +317,35 @@ LOGGING = {
     },
 }
 
-# --- Cache backend (ok usar LocMem em dev) ---
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "salonix-cache",
-        "TIMEOUT": None,  # controlamos TTL por view
+# --- Cache backend (CACHE_URL: locmem:// ou redis://host:port/db) ---
+CACHE_URL = env_get("CACHE_URL", "locmem://")
+if CACHE_URL.startswith("redis://"):
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": CACHE_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+            "KEY_PREFIX": "salonix",
+            "TIMEOUT": None,
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "salonix-cache",
+            "TIMEOUT": None,
+        }
+    }
 
 # --- TTLs de cache por endpoint (em segundos) ---
 REPORTS_CACHE_TTL = {
-    "overview_json": 30,
-    "top_services_json": 30,
-    "revenue_json": 30,
-    "overview_csv": 60,
-    "top_services_csv": 60,
-    "revenue_csv": 60,
+    "overview_json": int(env_get("TTL_OVERVIEW_JSON", "30")),
+    "top_services_json": int(env_get("TTL_TOP_SERVICES_JSON", "30")),
+    "revenue_json": int(env_get("TTL_REVENUE_JSON", "30")),
+    "overview_csv": int(env_get("TTL_OVERVIEW_CSV", "60")),
+    "top_services_csv": int(env_get("TTL_TOP_SERVICES_CSV", "60")),
+    "revenue_csv": int(env_get("TTL_REVENUE_CSV", "60")),
 }

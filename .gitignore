@@ -217,3 +217,9 @@ __marimo__/
 .DS_Store/
 /.DS_Store
 DS_Store
+
+# Arquivos de configuração locais
+.env
+.env.local
+.env.*.local
+settings.ini
