@@ -1,5 +1,6 @@
-from django.contrib.auth.models import User
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, UserFeatureFlags
 
@@ -67,3 +68,31 @@ class UserFeatureFlagsUpdateSerializer(UserFeatureFlagsSerializer):
 
     class Meta(UserFeatureFlagsSerializer.Meta):
         read_only_fields = UserFeatureFlagsSerializer.Meta.read_only_fields
+
+
+class EmailTokenObtainPairSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        password = attrs.get("password")
+
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            raise AuthenticationFailed("Incorrect credentials")
+
+        if not user.check_password(password):
+            raise AuthenticationFailed("User account is disabled.")
+
+        if not user.is_active:
+            raise AuthenticationFailed(
+                "No active account found with the given credentials"
+            )
+
+        refresh = RefreshToken.for_user(user)
+        return {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
