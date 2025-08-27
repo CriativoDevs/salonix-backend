@@ -196,6 +196,9 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
@@ -285,7 +288,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "kv": {
-            "format": "%(asctime)s level=%(levelname)s logger=%(name)s "
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s"
             "msg=%(message)s request_id=%(request_id)s endpoint=%(endpoint)s "
             "user_id=%(user_id)s is_pro=%(is_pro)s"
         },

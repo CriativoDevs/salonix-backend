@@ -1,11 +1,12 @@
 from rest_framework import generics
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import UserFeatureFlags
 
 from .serializers import (
+    EmailTokenObtainPairSerializer,
     UserRegistrationSerializer,
     UserFeatureFlagsSerializer,
     UserFeatureFlagsUpdateSerializer,
@@ -29,3 +30,7 @@ class MeFeatureFlagsView(RetrieveUpdateAPIView):
         if self.request.method in ("PATCH", "PUT"):
             return UserFeatureFlagsUpdateSerializer
         return UserFeatureFlagsSerializer
+
+
+class EmailTokenObtainPairView(TokenObtainPairView):
+    serializer_class = EmailTokenObtainPairSerializer

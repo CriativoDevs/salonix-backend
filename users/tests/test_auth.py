@@ -32,13 +32,12 @@ class TestAuthEndpoints:
         assert "password" in response.data
 
     def test_successful_login(self):
-        # Create user
         User.objects.create_user(
             username="lucas",
             email="lucas@example.com",
             password="testpass123",
         )
-        payload = {"username": "lucas", "password": "testpass123"}
+        payload = {"email": "lucas@example.com", "password": "testpass123"}
         response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.data
@@ -50,13 +49,11 @@ class TestAuthEndpoints:
             email="lucas@example.com",
             password="testpass123",
         )
-        response = self.client.post(
-            self.token_url, data={"username": "lucas", "password": "wrongpassword"}
-        )
+        payload = {"email": "lucas@example.com", "password": "wrongpassword"}
+        response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_login_with_nonexistent_user(self):
-        response = self.client.post(
-            self.token_url, data={"username": "doesnotexist", "password": "irrelevant"}
-        )
+        payload = {"email": "doesnotexist@example.com", "password": "irrelevant"}
+        response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
