@@ -91,7 +91,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    "salonix_backend.middleware.RequestIDMiddleware",
+    "salonix_backend.middleware.RequestLoggingMiddleware",  # Logging com X-Request-ID
+    "salonix_backend.middleware.SecurityHeadersMiddleware",  # Headers de segurança
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -293,44 +294,136 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/",
 }
 
+# =====================================================
+# LOGGING CONFIGURATION
+# =====================================================
+
+# Nível de log base
 LOG_LEVEL = env_get("LOG_LEVEL", "INFO")
 
+# Formato de log (json para produção, dev para desenvolvimento)
+LOG_FORMAT = env_get("LOG_FORMAT", "dev" if DEBUG else "json")
+
+# Arquivo de log (opcional)
+LOG_FILE = env_get("LOG_FILE", "")
+
+# Configuração de logging estruturado
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    # Formatadores
     "formatters": {
-        "kv": {
-            "format": "%(asctime)s %(levelname)s %(name)s %(message)s"
-            "msg=%(message)s request_id=%(request_id)s endpoint=%(endpoint)s "
-            "user_id=%(user_id)s is_pro=%(is_pro)s"
+        "json": {
+            "()": "salonix_backend.logging_utils.JSONFormatter",
+        },
+        "dev": {
+            "()": "salonix_backend.logging_utils.DevelopmentFormatter",
+        },
+        "simple": {
+            "format": "{asctime} {levelname} {name} {message}",
+            "style": "{",
         },
     },
+    # Filtros
     "filters": {
         "request_context": {
-            "()": "django.utils.log.CallbackFilter",
-            "callback": lambda record: True,  # manter simples
-        }
+            "()": "salonix_backend.logging_utils.RequestContextFilter",
+        },
     },
+    # Handlers
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "kv",
+            "formatter": LOG_FORMAT,
             "filters": ["request_context"],
+            "level": LOG_LEVEL,
         },
     },
+    # Loggers específicos
     "loggers": {
+        # Logger raiz do projeto
+        "salonix_backend": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        # Apps específicos
+        "core": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "users": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
         "reports": {
             "handlers": ["console"],
             "level": LOG_LEVEL,
             "propagate": False,
         },
-        "django.request": {
+        "notifications": {
             "handlers": ["console"],
             "level": LOG_LEVEL,
             "propagate": False,
         },
+        "payments": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        # Django internos
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",  # Apenas warnings e erros
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "WARNING" if not DEBUG else "DEBUG",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        # Bibliotecas externas
+        "stripe": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "requests": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+    # Logger raiz (fallback)
+    "root": {
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
     },
 }
+
+# Adicionar handler de arquivo se especificado
+if LOG_FILE:
+    LOGGING["handlers"]["file"] = {
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": LOG_FILE,
+        "maxBytes": 10 * 1024 * 1024,  # 10MB
+        "backupCount": 5,
+        "formatter": "json",
+        "filters": ["request_context"],
+        "level": LOG_LEVEL,
+    }
+
+    # Adicionar file handler a todos os loggers
+    for logger_name in LOGGING["loggers"]:
+        LOGGING["loggers"][logger_name]["handlers"].append("file")
+    LOGGING["root"]["handlers"].append("file")
 
 # --- Cache backend (CACHE_URL: locmem:// ou redis://host:port/db) ---
 CACHE_URL = env_get("CACHE_URL", "locmem://")
