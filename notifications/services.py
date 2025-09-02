@@ -245,7 +245,7 @@ class WebPushDriver(NotificationDriverBase):
                 "user_id": user.id,
                 "device_token": device.token[:20] + "...",  # Não logar token completo
                 "title": title,
-                "message": message,
+                "notification_message": message,  # Renomeado para evitar conflito
             },
         )
         return True
@@ -283,7 +283,7 @@ class MobilePushDriver(NotificationDriverBase):
                 "user_id": user.id,
                 "expo_token": device.token[:20] + "...",
                 "title": title,
-                "message": message,
+                "notification_message": message,  # Renomeado para evitar conflito
             },
         )
         return True
@@ -317,7 +317,7 @@ class SMSDriver(NotificationDriverBase):
                 "tenant_id": tenant.id,
                 "user_id": user.id,
                 "phone": user.phone_number,
-                "message": message,
+                "notification_message": message,  # Renomeado para evitar conflito
             },
         )
         return True
@@ -351,7 +351,7 @@ class WhatsAppDriver(NotificationDriverBase):
                 "tenant_id": tenant.id,
                 "user_id": user.id,
                 "phone": user.phone_number,
-                "message": f"{title}\n{message}",
+                "notification_message": f"{title}\n{message}",  # Renomeado para evitar conflito
             },
         )
         return True
