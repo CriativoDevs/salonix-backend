@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     # APPS
     "core.apps.CoreConfig",
     "users",
+    "notifications",
     "payments",
     "reports",
 ]

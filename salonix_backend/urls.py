@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/payments/stripe/", include("payments.urls", namespace="payments")),
     path("api/users/", include(("users.urls", "users"))),
     path("api/reports/", include("reports.urls")),
+    path("api/notifications/", include("notifications.urls")),
     # OpenAPI JSON/YAML
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # UIs

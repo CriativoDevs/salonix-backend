@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, UserFeatureFlags, Tenant
+from .models import CustomUser, UserFeatureFlags
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -96,31 +96,3 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
             "refresh": str(refresh),
             "access": str(refresh.access_token),
         }
-
-
-class TenantMetaSerializer(serializers.ModelSerializer):
-    """
-    Serializer para dados de branding/meta do tenant.
-    Usado no endpoint /api/tenant/meta para white-label.
-    """
-
-    class Meta:
-        model = Tenant
-        fields = [
-            "name",
-            "slug",
-            "logo_url",
-            "primary_color",
-            "secondary_color",
-            "timezone",
-            "currency",
-        ]
-        read_only_fields = [
-            "name",
-            "slug",
-            "logo_url",
-            "primary_color",
-            "secondary_color",
-            "timezone",
-            "currency",
-        ]
