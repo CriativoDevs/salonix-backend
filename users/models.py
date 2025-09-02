@@ -6,6 +6,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from .managers import CustomUserManager
+from .validators import validate_hex_color, validate_logo_image
 
 
 class Tenant(models.Model):
@@ -17,12 +18,27 @@ class Tenant(models.Model):
     slug = models.SlugField(unique=True, help_text="Identificador único (URL-friendly)")
 
     # Branding/White-label
-    logo_url = models.URLField(blank=True, null=True, help_text="URL do logo do salão")
+    logo = models.ImageField(
+        upload_to="tenant_logos/",
+        blank=True,
+        null=True,
+        validators=[validate_logo_image],
+        help_text="Logo do salão (PNG, JPG, SVG - max 2MB)",
+    )
+    logo_url = models.URLField(
+        blank=True, null=True, help_text="URL do logo do salão (para compatibilidade)"
+    )
     primary_color = models.CharField(
-        max_length=7, default="#3B82F6", help_text="Cor primária (hex) para branding"
+        max_length=7,
+        default="#3B82F6",
+        validators=[validate_hex_color],
+        help_text="Cor primária (hex) para branding",
     )
     secondary_color = models.CharField(
-        max_length=7, default="#1F2937", help_text="Cor secundária (hex) para branding"
+        max_length=7,
+        default="#1F2937",
+        validators=[validate_hex_color],
+        help_text="Cor secundária (hex) para branding",
     )
 
     # Configurações
@@ -99,6 +115,13 @@ class Tenant(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def get_logo_url(self):
+        """Retorna a URL do logo (upload ou URL externa)."""
+        if self.logo:
+            return self.logo.url
+        return self.logo_url
 
     # Métodos para verificação de feature flags baseados no plano
     def can_use_reports(self):

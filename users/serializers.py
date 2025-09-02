@@ -105,6 +105,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     """
 
     feature_flags = serializers.SerializerMethodField()
+    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -134,3 +135,39 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     def get_feature_flags(self, obj):
         """Retorna feature flags calculadas baseadas no plano"""
         return obj.get_feature_flags_dict()
+
+    def get_logo_url(self, obj):
+        """Retorna a URL do logo (upload ou URL externa)"""
+        return obj.get_logo_url
+
+
+class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para atualização de branding do tenant.
+    Permite upload de logo e atualização de cores.
+    """
+
+    class Meta:
+        model = Tenant
+        fields = [
+            "logo",
+            "logo_url",
+            "primary_color",
+            "secondary_color",
+        ]
+        extra_kwargs = {
+            "logo": {"required": False},
+            "logo_url": {"required": False},
+            "primary_color": {"required": False},
+            "secondary_color": {"required": False},
+        }
+
+    def validate(self, data):
+        """Validação customizada para branding"""
+        # Não permitir logo e logo_url ao mesmo tempo
+        if "logo" in data and data["logo"] and "logo_url" in data and data["logo_url"]:
+            raise serializers.ValidationError(
+                "Não é possível enviar 'logo' e 'logo_url' simultaneamente. Use apenas um."
+            )
+
+        return data
