@@ -223,3 +223,7 @@ DS_Store
 .env.local
 .env.*.local
 settings.ini
+
+BE_RULES.md
+BE_BUSINESS_BRIEF.md
+*.json
