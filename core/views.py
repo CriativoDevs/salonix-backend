@@ -20,21 +20,33 @@ from core.serializers import (
     ServiceSerializer,
     ScheduleSlotSerializer,
 )
-from core.mixins import TenantAwareMixin
+from core.mixins import TenantIsolatedMixin
 
 from django.db import transaction
 from django.db.models import Q
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
+from prometheus_client import Counter
 
 from users.permissions import IsSalonOwnerOfAppointment
+from core.utils.ics import ICSGenerator
 
 import csv
+import logging
+
+# Métricas Prometheus
+ICS_DOWNLOADS_TOTAL = Counter(
+    "ics_downloads_total",
+    "Total number of .ics calendar downloads",
+    ["tenant_id", "status"],
+)
+
+logger = logging.getLogger(__name__)
 
 
-class PublicServiceListView(TenantAwareMixin, ListAPIView):
+class PublicServiceListView(TenantIsolatedMixin, ListAPIView):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
     permission_classes = []
@@ -55,7 +67,7 @@ class PublicServiceListView(TenantAwareMixin, ListAPIView):
         return Service.objects.none()
 
 
-class PublicProfessionalListView(TenantAwareMixin, ListAPIView):
+class PublicProfessionalListView(TenantIsolatedMixin, ListAPIView):
     queryset = Professional.objects.filter(is_active=True)
     serializer_class = ProfessionalSerializer
     permission_classes = []
@@ -90,7 +102,7 @@ class PublicSlotListView(ListAPIView):
         ).order_by("start_time")
 
 
-class AppointmentCreateView(TenantAwareMixin, CreateAPIView):
+class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated]
@@ -168,7 +180,7 @@ class AppointmentCancelView(APIView):
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
 
 
-class ServiceViewSet(TenantAwareMixin, ModelViewSet):
+class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated]
@@ -182,7 +194,7 @@ class ServiceViewSet(TenantAwareMixin, ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        # O TenantAwareMixin já define o tenant, só precisamos do user
+        # O TenantIsolatedMixin já define o tenant, só precisamos do user
         tenant = getattr(self.request, "tenant", None)
         if tenant:
             serializer.save(user=self.request.user, tenant=tenant)
@@ -190,7 +202,7 @@ class ServiceViewSet(TenantAwareMixin, ModelViewSet):
             serializer.save(user=self.request.user)
 
 
-class ProfessionalViewSet(TenantAwareMixin, ModelViewSet):
+class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = Professional.objects.all()
     serializer_class = ProfessionalSerializer
     permission_classes = [IsAuthenticated]
@@ -211,7 +223,7 @@ class ProfessionalViewSet(TenantAwareMixin, ModelViewSet):
             serializer.save(user=self.request.user)
 
 
-class ScheduleSlotViewSet(TenantAwareMixin, ModelViewSet):
+class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
     permission_classes = [IsAuthenticated]
@@ -219,12 +231,12 @@ class ScheduleSlotViewSet(TenantAwareMixin, ModelViewSet):
     def perform_create(self, serializer):
         tenant = getattr(self.request, "tenant", None)
         if tenant:
-            super().perform_create(serializer)  # TenantAwareMixin já define tenant
+            super().perform_create(serializer)  # TenantIsolatedMixin já define tenant
         else:
             super().perform_create(serializer)
 
 
-class SalonAppointmentViewSet(TenantAwareMixin, ModelViewSet):
+class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
     """
     Endpoints para o SALÃO visualizar e editar seus agendamentos.
     - list/retrieve: vê apenas agendamentos do próprio salão
@@ -584,7 +596,7 @@ class SalonAppointmentViewSet(TenantAwareMixin, ModelViewSet):
         return response
 
 
-class MyAppointmentsListView(TenantAwareMixin, ListAPIView):
+class MyAppointmentsListView(TenantIsolatedMixin, ListAPIView):
     """
     Lista os agendamentos do usuário autenticado (como cliente).
     GET /api/me/appointments/
@@ -606,7 +618,7 @@ class MyAppointmentsListView(TenantAwareMixin, ListAPIView):
         )
 
 
-class AppointmentDetailView(TenantAwareMixin, RetrieveAPIView):
+class AppointmentDetailView(TenantIsolatedMixin, RetrieveAPIView):
     queryset = Appointment.objects.all()
     permission_classes = [IsAuthenticated]
     serializer_class = AppointmentDetailSerializer
@@ -622,3 +634,109 @@ class AppointmentDetailView(TenantAwareMixin, RetrieveAPIView):
         return qs.filter(
             Q(client=user) | Q(service__user=user) | Q(professional__user=user)
         ).select_related("client", "service", "professional", "slot")
+
+
+class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
+    """
+    GET /api/appointments/{id}/ics/
+
+    Download de arquivo .ics (iCalendar) para um agendamento específico.
+    Permite que clientes e donos do salão baixem eventos de calendário.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """Gerar e retornar arquivo .ics para download."""
+        user = request.user
+        tenant = request.tenant
+
+        if not tenant:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id="unknown", status="error").inc()
+            return Response(
+                {"detail": "Tenant não identificado."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Buscar agendamento com verificação de permissão
+            appointment = get_object_or_404(
+                Appointment.objects.select_related(
+                    "client", "service", "professional", "slot", "tenant"
+                )
+                .filter(
+                    # Filtro por tenant
+                    tenant=tenant,
+                    # Permissão: cliente do agendamento OU dono do salão
+                    **{
+                        "pk": pk,
+                    },
+                )
+                .filter(
+                    Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+                )
+            )
+
+            # Gerar conteúdo .ics
+            ics_content = ICSGenerator.generate_ics(appointment)
+            filename = ICSGenerator.get_filename(appointment)
+
+            # Criar response com headers apropriados
+            response = HttpResponse(
+                ics_content, content_type="text/calendar; charset=utf-8"
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+
+            # Métricas e logs
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="success").inc()
+
+            logger.info(
+                f"ICS download successful for appointment {appointment.id}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "appointment_id": appointment.id,
+                    "filename": filename,
+                },
+            )
+
+            return response
+
+        except Appointment.DoesNotExist:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="not_found").inc()
+
+            logger.warning(
+                f"ICS download failed - appointment {pk} not found or no permission",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "appointment_id": pk,
+                },
+            )
+
+            return Response(
+                {"detail": "Agendamento não encontrado ou sem permissão."},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+
+        except Exception as e:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="error").inc()
+
+            logger.error(
+                f"ICS download failed with error: {e}",
+                exc_info=True,
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "appointment_id": pk,
+                    "error": str(e),
+                },
+            )
+
+            return Response(
+                {"detail": "Erro interno do servidor."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

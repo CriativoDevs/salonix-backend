@@ -1,4 +1,5 @@
 import os
+import sys
 
 from pathlib import Path
 from configparser import ConfigParser
@@ -60,6 +61,10 @@ ALLOWED_HOSTS = [
     for h in str(env_get("ALLOWED_HOSTS", "localhost,127.0.0.1")).split(",")
     if h.strip()
 ]
+
+# Add testserver for tests
+if "test" in sys.argv or "pytest" in sys.modules:
+    ALLOWED_HOSTS.append("testserver")
 
 # Application definition
 

@@ -6,6 +6,7 @@ from core.views import (
     AppointmentCancelView,
     AppointmentCreateView,
     AppointmentDetailView,
+    AppointmentICSDownloadView,
     MyAppointmentsListView,
     ProfessionalViewSet,
     PublicServiceListView,
@@ -43,5 +44,11 @@ urlpatterns = [
         "appointments/<int:pk>/",
         AppointmentDetailView.as_view(),
         name="appointment-detail",
+    ),
+    # Download .ics calendar file
+    path(
+        "appointments/<int:pk>/ics/",
+        AppointmentICSDownloadView.as_view(),
+        name="appointment-ics-download",
     ),
 ]
