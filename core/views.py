@@ -187,7 +187,7 @@ class SalonAppointmentViewSet(ModelViewSet):
 
         # status
         status_value = params.get("status")
-        if status_value in {"scheduled", "cancelled"}:
+        if status_value in {"scheduled", "cancelled", "completed", "paid"}:
             qs = qs.filter(status=status_value)
 
         # -------- datas --------
@@ -311,9 +311,9 @@ class SalonAppointmentViewSet(ModelViewSet):
                 instance.slot = new_slot
                 instance.save(update_fields=["slot", "notes"])  # status inalterado aqui
 
-        # Cancelamento
+        # Alteração de status
         if new_status is not None:
-            if new_status not in ("scheduled", "cancelled"):
+            if new_status not in ("scheduled", "cancelled", "completed", "paid"):
                 raise ValidationError({"status": "Status inválido."})
 
             if new_status == "cancelled":
@@ -343,12 +343,31 @@ class SalonAppointmentViewSet(ModelViewSet):
                     )
                 except Exception as e:
                     print("Erro ao enviar e-mail de cancelamento:", str(e))
-            else:
-                # explicitamente voltar para 'scheduled' não altera slot; só persiste notas
-                if instance.status != "scheduled":
-                    instance.status = "scheduled"
-                    instance.cancelled_by = None
-                    instance.save(update_fields=["status", "cancelled_by", "notes"])
+
+            elif new_status in ("completed", "paid"):
+                # Transição para completed ou paid - slot continua ocupado
+                if instance.status == "cancelled":
+                    raise ValidationError(
+                        {
+                            "status": "Não é possível alterar status de agendamento cancelado."
+                        }
+                    )
+
+                instance.status = new_status
+                instance.save(update_fields=["status", "notes"])
+
+            elif new_status == "scheduled":
+                # Voltar para scheduled - só se não estiver cancelado
+                if instance.status == "cancelled":
+                    raise ValidationError(
+                        {
+                            "status": "Não é possível reagendar agendamento cancelado. Crie um novo agendamento."
+                        }
+                    )
+
+                instance.status = "scheduled"
+                instance.cancelled_by = None
+                instance.save(update_fields=["status", "cancelled_by", "notes"])
 
         # Caso só tenha mudado notes (sem slot/status), salva aqui
         if new_slot_id is None and new_status is None and "notes" in data:
