@@ -21,7 +21,8 @@ trap cleanup EXIT
 source "$(dirname "$0")/lib.sh"
 
 # Auth sempre via lib.sh (mais robusto)
-TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS")
+LOGIN_EMAIL="${LOGIN_EMAIL:-pro@e.com}"  # Email padrão para pro_smoke
+TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL")
 AUTH_HEADER="Authorization: Bearer $TOK"
 
 # --- HTTP helper ---

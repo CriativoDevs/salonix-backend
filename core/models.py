@@ -77,7 +77,12 @@ class Appointment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=20,
-        choices=[("scheduled", "Scheduled"), ("cancelled", "Cancelled")],
+        choices=[
+            ("scheduled", "Scheduled"),
+            ("cancelled", "Cancelled"),
+            ("completed", "Completed"),
+            ("paid", "Paid"),
+        ],
         default="scheduled",
     )
     cancelled_by = models.ForeignKey(
