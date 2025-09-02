@@ -8,12 +8,67 @@ from django.dispatch import receiver
 from .managers import CustomUserManager
 
 
+class Tenant(models.Model):
+    """
+    Modelo para multi-tenancy. Cada tenant representa um salão/organização.
+    """
+
+    name = models.CharField(max_length=255, help_text="Nome do salão/organização")
+    slug = models.SlugField(unique=True, help_text="Identificador único (URL-friendly)")
+
+    # Branding/White-label
+    logo_url = models.URLField(blank=True, null=True, help_text="URL do logo do salão")
+    primary_color = models.CharField(
+        max_length=7, default="#3B82F6", help_text="Cor primária (hex) para branding"
+    )
+    secondary_color = models.CharField(
+        max_length=7, default="#1F2937", help_text="Cor secundária (hex) para branding"
+    )
+
+    # Configurações
+    timezone = models.CharField(
+        max_length=50, default="Europe/Lisbon", help_text="Timezone do salão"
+    )
+    currency = models.CharField(
+        max_length=3, default="EUR", help_text="Moeda padrão (ISO 4217)"
+    )
+
+    # Metadados
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["slug"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class CustomUser(AbstractUser):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="users",
+        null=True,  # Temporário para testes
+        help_text="Tenant/salão ao qual o usuário pertence",
+    )
     salon_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     objects = CustomUserManager()
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant", "username"]),
+            models.Index(fields=["tenant", "email"]),
+        ]
+
     def __str__(self):
+        if self.tenant:
+            return f"{self.username} ({self.tenant.name})"
         return self.username
 
 

@@ -1,9 +1,11 @@
+# core/tests/test_me_appointments.py
 import pytest
-from datetime import timedelta
 from django.utils import timezone
+from datetime import timedelta
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
-from users.models import CustomUser
+from users.models import CustomUser, Tenant
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 
@@ -15,7 +17,7 @@ def test_me_appointments_requires_auth():
 
 
 @pytest.mark.django_db
-def test_me_appointments_lists_only_current_user(user_fixture):
+def test_me_appointments_lists_only_current_user(user_fixture, tenant_fixture):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 

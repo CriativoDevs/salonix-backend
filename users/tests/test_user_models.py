@@ -31,7 +31,8 @@ class TestCustomUserModel:
         user = User.objects.create_user(
             username="myuser", email="myuser@example.com", password="securepass"
         )
-        assert str(user) == "myuser"
+        # Com multi-tenant, o str agora inclui o nome do tenant
+        assert str(user) == "myuser (Test Default Salon)"
 
     def test_user_without_email_should_fail(self):
         with pytest.raises(ValueError):
