@@ -20,6 +20,7 @@ from core.serializers import (
     ServiceSerializer,
     ScheduleSlotSerializer,
 )
+from core.mixins import TenantAwareMixin
 
 from django.db import transaction
 from django.db.models import Q
@@ -33,16 +34,46 @@ from users.permissions import IsSalonOwnerOfAppointment
 import csv
 
 
-class PublicServiceListView(ListAPIView):
+class PublicServiceListView(TenantAwareMixin, ListAPIView):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
     permission_classes = []
 
+    def get_queryset(self):
+        # Para view pública, usar tenant do header ou parâmetro
+        tenant_slug = self.request.headers.get("X-Tenant-Slug") or self.request.GET.get(
+            "tenant"
+        )
+        if tenant_slug:
+            try:
+                from users.models import Tenant
 
-class PublicProfessionalListView(ListAPIView):
+                tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+                return Service.objects.filter(tenant=tenant)
+            except Tenant.DoesNotExist:
+                pass
+        return Service.objects.none()
+
+
+class PublicProfessionalListView(TenantAwareMixin, ListAPIView):
     queryset = Professional.objects.filter(is_active=True)
     serializer_class = ProfessionalSerializer
     permission_classes = []
+
+    def get_queryset(self):
+        # Para view pública, usar tenant do header ou parâmetro
+        tenant_slug = self.request.headers.get("X-Tenant-Slug") or self.request.GET.get(
+            "tenant"
+        )
+        if tenant_slug:
+            try:
+                from users.models import Tenant
+
+                tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+                return Professional.objects.filter(tenant=tenant, is_active=True)
+            except Tenant.DoesNotExist:
+                pass
+        return Professional.objects.none()
 
 
 class PublicSlotListView(ListAPIView):
@@ -59,7 +90,7 @@ class PublicSlotListView(ListAPIView):
         ).order_by("start_time")
 
 
-class AppointmentCreateView(CreateAPIView):
+class AppointmentCreateView(TenantAwareMixin, CreateAPIView):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated]
@@ -74,7 +105,12 @@ class AppointmentCreateView(CreateAPIView):
         # marca como reservado via helper do model
         slot.mark_booked()
 
-        appointment = serializer.save(client=self.request.user)
+        # Definir tenant e client
+        tenant = getattr(self.request, "tenant", None)
+        if tenant:
+            appointment = serializer.save(client=self.request.user, tenant=tenant)
+        else:
+            appointment = serializer.save(client=self.request.user)
 
         # Envia e-mail de confirmação
         try:
@@ -132,33 +168,63 @@ class AppointmentCancelView(APIView):
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
 
 
-class ServiceViewSet(ModelViewSet):
+class ServiceViewSet(TenantAwareMixin, ModelViewSet):
+    queryset = Service.objects.all()
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Service.objects.filter(user=self.request.user)
+        # Usar o mixin para filtrar por tenant
+        queryset = super().get_queryset()
+        # Adicionar filtro por user dentro do tenant
+        if hasattr(self.request, "user") and self.request.user.is_authenticated:
+            queryset = queryset.filter(user=self.request.user)
+        return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # O TenantAwareMixin já define o tenant, só precisamos do user
+        tenant = getattr(self.request, "tenant", None)
+        if tenant:
+            serializer.save(user=self.request.user, tenant=tenant)
+        else:
+            serializer.save(user=self.request.user)
 
 
-class ProfessionalViewSet(ModelViewSet):
+class ProfessionalViewSet(TenantAwareMixin, ModelViewSet):
     queryset = Professional.objects.all()
     serializer_class = ProfessionalSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        # Usar o mixin para filtrar por tenant
+        queryset = super().get_queryset()
+        # Adicionar filtro por user dentro do tenant
+        if hasattr(self.request, "user") and self.request.user.is_authenticated:
+            queryset = queryset.filter(user=self.request.user)
+        return queryset
+
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        tenant = getattr(self.request, "tenant", None)
+        if tenant:
+            serializer.save(user=self.request.user, tenant=tenant)
+        else:
+            serializer.save(user=self.request.user)
 
 
-class ScheduleSlotViewSet(ModelViewSet):
+class ScheduleSlotViewSet(TenantAwareMixin, ModelViewSet):
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
     permission_classes = [IsAuthenticated]
 
+    def perform_create(self, serializer):
+        tenant = getattr(self.request, "tenant", None)
+        if tenant:
+            super().perform_create(serializer)  # TenantAwareMixin já define tenant
+        else:
+            super().perform_create(serializer)
 
-class SalonAppointmentViewSet(ModelViewSet):
+
+class SalonAppointmentViewSet(TenantAwareMixin, ModelViewSet):
     """
     Endpoints para o SALÃO visualizar e editar seus agendamentos.
     - list/retrieve: vê apenas agendamentos do próprio salão
@@ -175,10 +241,12 @@ class SalonAppointmentViewSet(ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
+        # Usar o mixin para filtrar por tenant primeiro
+        qs = super().get_queryset()
+
+        # Depois filtrar por user dentro do tenant
         qs = (
-            Appointment.objects.filter(
-                Q(professional__user=user) | Q(service__user=user)
-            )
+            qs.filter(Q(professional__user=user) | Q(service__user=user))
             .select_related("client", "service", "professional", "slot")
             .order_by("-created_at")
         )
@@ -516,33 +584,41 @@ class SalonAppointmentViewSet(ModelViewSet):
         return response
 
 
-class MyAppointmentsListView(ListAPIView):
+class MyAppointmentsListView(TenantAwareMixin, ListAPIView):
     """
     Lista os agendamentos do usuário autenticado (como cliente).
     GET /api/me/appointments/
     """
 
+    queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
+        # Usar o mixin para filtrar por tenant primeiro
+        qs = super().get_queryset()
+
         return (
-            Appointment.objects.filter(client=user)
+            qs.filter(client=user)
             .select_related("client", "service", "professional", "slot")
             .order_by("-slot__start_time", "-created_at")
         )
 
 
-class AppointmentDetailView(RetrieveAPIView):
+class AppointmentDetailView(TenantAwareMixin, RetrieveAPIView):
+    queryset = Appointment.objects.all()
     permission_classes = [IsAuthenticated]
     serializer_class = AppointmentDetailSerializer
 
     def get_queryset(self):
         user = self.request.user
+        # Usar o mixin para filtrar por tenant primeiro
+        qs = super().get_queryset()
+
         # Acessível para:
         # - o próprio cliente do agendamento
         # - o salão (dono) via service.user ou professional.user
-        return Appointment.objects.filter(
+        return qs.filter(
             Q(client=user) | Q(service__user=user) | Q(professional__user=user)
         ).select_related("client", "service", "professional", "slot")

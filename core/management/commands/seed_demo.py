@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from core.models import Professional, Service, ScheduleSlot, Appointment
-from users.models import UserFeatureFlags
+from users.models import UserFeatureFlags, Tenant
 
 
 User = get_user_model()
@@ -22,6 +22,16 @@ class Command(BaseCommand):
         created_counts = {}
 
         with transaction.atomic():
+            # --- Tenant padrão ---
+            default_tenant, _ = Tenant.objects.get_or_create(
+                slug="default",
+                defaults={
+                    "name": "Default Salon",
+                    "primary_color": "#3B82F6",
+                    "secondary_color": "#1F2937",
+                },
+            )
+
             # --- Usuários ---
             admin, admin_created = User.objects.get_or_create(
                 username="admin",
@@ -29,6 +39,7 @@ class Command(BaseCommand):
                     "email": "admin@demo.local",
                     "is_staff": True,
                     "is_superuser": True,
+                    "tenant": default_tenant,
                 },
             )
             if admin_created:
@@ -38,7 +49,10 @@ class Command(BaseCommand):
 
             pro, pro_created = User.objects.get_or_create(
                 username="pro_smoke",
-                defaults={"email": "pro_smoke@demo.local"},
+                defaults={
+                    "email": "pro_smoke@demo.local",
+                    "tenant": default_tenant,
+                },
             )
             if pro_created:
                 pro.set_password("pro_smoke")
@@ -47,7 +61,10 @@ class Command(BaseCommand):
 
             client, client_created = User.objects.get_or_create(
                 username="client_smoke",
-                defaults={"email": "client_smoke@demo.local"},
+                defaults={
+                    "email": "client_smoke@demo.local",
+                    "tenant": default_tenant,
+                },
             )
             if client_created:
                 client.set_password("client_smoke")
@@ -66,10 +83,14 @@ class Command(BaseCommand):
 
             # --- Profissionais do salão do pro_smoke ---
             prof1, p1_new = Professional.objects.get_or_create(
-                user=pro, name="Alice", defaults={"is_active": True}
+                user=pro,
+                name="Alice",
+                defaults={"is_active": True, "tenant": default_tenant},
             )
             prof2, p2_new = Professional.objects.get_or_create(
-                user=pro, name="Bruno", defaults={"is_active": True}
+                user=pro,
+                name="Bruno",
+                defaults={"is_active": True, "tenant": default_tenant},
             )
             created_counts["professionals_created"] = int(p1_new) + int(p2_new)
 
@@ -77,17 +98,29 @@ class Command(BaseCommand):
             svc1, s1_new = Service.objects.get_or_create(
                 user=pro,
                 name="Corte Feminino",
-                defaults={"price_eur": Decimal("25.00"), "duration_minutes": 45},
+                defaults={
+                    "price_eur": Decimal("25.00"),
+                    "duration_minutes": 45,
+                    "tenant": default_tenant,
+                },
             )
             svc2, s2_new = Service.objects.get_or_create(
                 user=pro,
                 name="Corte Masculino",
-                defaults={"price_eur": Decimal("18.00"), "duration_minutes": 30},
+                defaults={
+                    "price_eur": Decimal("18.00"),
+                    "duration_minutes": 30,
+                    "tenant": default_tenant,
+                },
             )
             svc3, s3_new = Service.objects.get_or_create(
                 user=pro,
                 name="Coloração",
-                defaults={"price_eur": Decimal("55.00"), "duration_minutes": 60},
+                defaults={
+                    "price_eur": Decimal("55.00"),
+                    "duration_minutes": 60,
+                    "tenant": default_tenant,
+                },
             )
             created_counts["services_created"] = int(s1_new) + int(s2_new) + int(s3_new)
 
@@ -111,7 +144,11 @@ class Command(BaseCommand):
                             professional=prof,
                             start_time=start,
                             end_time=end,
-                            defaults={"is_available": True, "status": "available"},
+                            defaults={
+                                "is_available": True,
+                                "status": "available",
+                                "tenant": default_tenant,
+                            },
                         )
                         slots_created += int(created)
             created_counts["slots_created"] = slots_created
@@ -137,6 +174,7 @@ class Command(BaseCommand):
                         "service": service,
                         "status": status,
                         "notes": "",
+                        "tenant": default_tenant,
                     },
                 )
                 if created:

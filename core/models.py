@@ -1,10 +1,16 @@
 from django.conf import settings
 from django.db import models
 
-from users.models import CustomUser
+from users.models import CustomUser, Tenant
 
 
 class Service(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="services",
+        null=True,  # Temporário para testes
+    )
     user = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, related_name="services"
     )
@@ -14,11 +20,24 @@ class Service(models.Model):
     )
     price_eur = models.DecimalField(max_digits=6, decimal_places=2)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "user"]),
+        ]
+
     def __str__(self):
-        return f"{self.name} ({self.price_eur}€)"
+        tenant_name = self.tenant.name if self.tenant else "No Tenant"
+        return f"{self.name} ({self.price_eur}€) - {tenant_name}"
 
 
 class Professional(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="professionals",
+        null=True,  # Temporário para testes
+    )
     user = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, related_name="professionals"
     )
@@ -26,11 +45,25 @@ class Professional(models.Model):
     bio = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "user"]),
+            models.Index(fields=["tenant", "is_active"]),
+        ]
+
     def __str__(self):
-        return self.name
+        tenant_name = self.tenant.name if self.tenant else "No Tenant"
+        return f"{self.name} - {tenant_name}"
 
 
 class ScheduleSlot(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="schedule_slots",
+        null=True,  # Temporário para testes
+    )
     professional = models.ForeignKey(
         Professional, on_delete=models.CASCADE, related_name="slots"
     )
@@ -45,6 +78,14 @@ class ScheduleSlot(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="available"
     )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "professional"]),
+            models.Index(fields=["tenant", "start_time"]),
+            models.Index(fields=["tenant", "is_available"]),
+        ]
 
     def __str__(self):
         return f"{self.professional.name} | {self.start_time} - {self.end_time}"
@@ -61,6 +102,12 @@ class ScheduleSlot(models.Model):
 
 
 class Appointment(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="appointments",
+        null=True,  # Temporário para testes
+    )
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="appointments"
     )
@@ -93,7 +140,16 @@ class Appointment(models.Model):
         related_name="cancelled_appointments",
     )
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "client"]),
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "created_at"]),
+            models.Index(fields=["tenant", "service"]),
+            models.Index(fields=["tenant", "professional"]),
+        ]
+
     def __str__(self):
-        return (
-            f"{self.client.username} - {self.service.name} com {self.professional.name}"
-        )
+        tenant_name = self.tenant.name if self.tenant else "No Tenant"
+        return f"{self.client.username} - {self.service.name} com {self.professional.name} ({tenant_name})"
