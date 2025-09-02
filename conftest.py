@@ -19,6 +19,13 @@ def setup_default_tenant(db):
         name="Test Default Salon",
         primary_color="#3B82F6",
         secondary_color="#1F2937",
+        # Habilitar features para testes
+        plan_tier="standard",
+        reports_enabled=True,
+        pwa_admin_enabled=True,
+        pwa_client_enabled=True,
+        push_web_enabled=True,
+        push_mobile_enabled=True,
     )
 
     # Monkey patch para definir tenant automaticamente em objetos que não têm
@@ -49,7 +56,8 @@ def setup_default_tenant(db):
         return original_appointment_save(self, *args, **kwargs)
 
     def user_save_with_tenant(self, *args, **kwargs):
-        if self.tenant_id is None:
+        # Só definir tenant se não foi explicitamente definido como None
+        if self.tenant_id is None and not hasattr(self, "_tenant_explicitly_none"):
             self.tenant = tenant
         return original_user_save(self, *args, **kwargs)
 

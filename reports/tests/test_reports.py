@@ -304,7 +304,19 @@ def test_reports_revenue_series_day_ok():
 
 @pytest.mark.django_db
 def test_reports_guard_403_when_disabled():
-    user = User.objects.create_user(username="free", password="x", email="f@e.com")
+    # Criar tenant sem reports habilitados
+    from users.models import Tenant
+
+    tenant = Tenant.objects.create(
+        slug="basic-tenant",
+        name="Basic Salon",
+        plan_tier=Tenant.PLAN_BASIC,  # Basic não tem reports
+        reports_enabled=False,  # Explicitamente desabilitado
+    )
+
+    user = User.objects.create_user(
+        username="free", password="x", email="f@e.com", tenant=tenant
+    )
     UserFeatureFlags.objects.update_or_create(
         user=user, defaults={"is_pro": False, "reports_enabled": False}
     )
@@ -320,4 +332,4 @@ def test_reports_guard_403_when_disabled():
     ):
         r = c.get(path)
         assert r.status_code == 403
-        assert "desativado" in r.data["detail"].lower()
+        assert "permission" in r.data["detail"].lower()
