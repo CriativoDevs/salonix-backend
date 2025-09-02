@@ -33,6 +33,59 @@ class Tenant(models.Model):
         max_length=3, default="EUR", help_text="Moeda padrão (ISO 4217)"
     )
 
+    # Planos e Feature Flags
+    PLAN_BASIC = "basic"
+    PLAN_STANDARD = "standard"
+    PLAN_PRO = "pro"
+    PLAN_CHOICES = [
+        (PLAN_BASIC, "Basic"),
+        (PLAN_STANDARD, "Standard"),
+        (PLAN_PRO, "Pro"),
+    ]
+
+    plan_tier = models.CharField(
+        max_length=20,
+        choices=PLAN_CHOICES,
+        default=PLAN_BASIC,
+        help_text="Nível do plano contratado",
+    )
+    addons_enabled = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Lista de addons habilitados (ex: ['rn_admin', 'rn_client'])",
+    )
+
+    # Feature Flags - Módulos
+    reports_enabled = models.BooleanField(
+        default=False, help_text="Habilita módulo de relatórios"
+    )
+    pwa_admin_enabled = models.BooleanField(
+        default=True, help_text="Habilita PWA Admin"
+    )
+    pwa_client_enabled = models.BooleanField(
+        default=False, help_text="Habilita PWA Cliente"
+    )
+    rn_admin_enabled = models.BooleanField(
+        default=False, help_text="Habilita app nativo Admin (React Native)"
+    )
+    rn_client_enabled = models.BooleanField(
+        default=False, help_text="Habilita app nativo Cliente (React Native)"
+    )
+
+    # Feature Flags - Canais de Notificação
+    push_web_enabled = models.BooleanField(
+        default=False, help_text="Habilita notificações web push"
+    )
+    push_mobile_enabled = models.BooleanField(
+        default=False, help_text="Habilita notificações mobile push"
+    )
+    sms_enabled = models.BooleanField(
+        default=False, help_text="Habilita notificações SMS"
+    )
+    whatsapp_enabled = models.BooleanField(
+        default=False, help_text="Habilita notificações WhatsApp"
+    )
+
     # Metadados
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -46,6 +99,80 @@ class Tenant(models.Model):
 
     def __str__(self):
         return self.name
+
+    # Métodos para verificação de feature flags baseados no plano
+    def can_use_reports(self):
+        """Verifica se pode usar relatórios (Standard+)"""
+        return self.reports_enabled or self.plan_tier in [
+            self.PLAN_STANDARD,
+            self.PLAN_PRO,
+        ]
+
+    def can_use_pwa_client(self):
+        """Verifica se pode usar PWA Cliente (Standard+)"""
+        return self.pwa_client_enabled or self.plan_tier in [
+            self.PLAN_STANDARD,
+            self.PLAN_PRO,
+        ]
+
+    def can_use_white_label(self):
+        """Verifica se pode usar white-label (Pro apenas)"""
+        return self.plan_tier == self.PLAN_PRO
+
+    def can_use_native_apps(self):
+        """Verifica se pode usar apps nativos (Pro + addons)"""
+        return self.plan_tier == self.PLAN_PRO and (
+            "rn_admin" in self.addons_enabled or "rn_client" in self.addons_enabled
+        )
+
+    def can_use_advanced_notifications(self):
+        """Verifica se pode usar SMS/WhatsApp (Pro + configuração)"""
+        return self.plan_tier == self.PLAN_PRO and (
+            self.sms_enabled or self.whatsapp_enabled
+        )
+
+    def get_enabled_notification_channels(self):
+        """Retorna lista de canais de notificação habilitados"""
+        channels = ["in_app"]  # Sempre habilitado
+
+        if self.push_web_enabled:
+            channels.append("push_web")
+        if self.push_mobile_enabled:
+            channels.append("push_mobile")
+        if self.sms_enabled and self.can_use_advanced_notifications():
+            channels.append("sms")
+        if self.whatsapp_enabled and self.can_use_advanced_notifications():
+            channels.append("whatsapp")
+
+        return channels
+
+    def get_feature_flags_dict(self):
+        """Retorna dicionário com todas as feature flags para APIs"""
+        return {
+            "plan_tier": self.plan_tier,
+            "addons_enabled": self.addons_enabled,
+            "modules": {
+                "reports_enabled": self.can_use_reports(),
+                "pwa_admin_enabled": self.pwa_admin_enabled,
+                "pwa_client_enabled": self.can_use_pwa_client(),
+                "rn_admin_enabled": self.rn_admin_enabled
+                and self.can_use_native_apps(),
+                "rn_client_enabled": self.rn_client_enabled
+                and self.can_use_native_apps(),
+            },
+            "notifications": {
+                "push_web": self.push_web_enabled,
+                "push_mobile": self.push_mobile_enabled,
+                "sms": self.sms_enabled and self.can_use_advanced_notifications(),
+                "whatsapp": self.whatsapp_enabled
+                and self.can_use_advanced_notifications(),
+                "enabled_channels": self.get_enabled_notification_channels(),
+            },
+            "branding": {
+                "white_label_enabled": self.can_use_white_label(),
+                "custom_domain_enabled": self.can_use_white_label(),
+            },
+        }
 
 
 class CustomUser(AbstractUser):

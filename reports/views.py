@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from reports.throttling import PerUserScopedRateThrottle
+from users.feature_flags import RequiresFeatureFlag
 
 from django.conf import settings
 from django.db import models
@@ -31,7 +32,8 @@ from reports.openapi import (
     RESP_CSV_REVENUE,
 )
 from reports.utils.cache import cache_drf_response
-from reports.utils.guards import require_reports_enabled
+
+# from reports.utils.guards import require_reports_enabled  # Removido - usando permissions agora
 
 from datetime import timedelta
 
@@ -234,14 +236,17 @@ class ReportsSummaryView(APIView):
 
 
 class _BaseReports(APIView):
-    permission_classes = [IsAuthenticated]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
-    def _guard(self, request):
-        ff, _ = UserFeatureFlags.objects.get_or_create(user=request.user)
-        if not (ff.is_pro and ff.reports_enabled):
-            return Response({"detail": "Módulo de relatórios desativado."}, status=403)
+    def get_permissions(self):
+        """Retorna permissions incluindo feature flag de reports"""
+        return [
+            IsAuthenticated(),
+            RequiresFeatureFlag(
+                "reports", "Módulo de relatórios não habilitado para este plano."
+            ),
+        ]
 
     # garanta que 403 prevaleça sobre throttle
     def get_throttles(self):
@@ -280,7 +285,6 @@ class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:overview:json",
         ttl=settings.REPORTS_CACHE_TTL["overview_json"],
@@ -327,7 +331,6 @@ class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:top_services:json",
         ttl=settings.REPORTS_CACHE_TTL["top_services_json"],
@@ -386,7 +389,6 @@ class RevenueReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:revenue:json",
         ttl=settings.REPORTS_CACHE_TTL["revenue_json"],
@@ -457,7 +459,6 @@ class ExportOverviewCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:overview:csv",
         ttl=settings.REPORTS_CACHE_TTL["overview_csv"],
@@ -574,7 +575,6 @@ class ExportTopServicesCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:top_services:csv",
         ttl=settings.REPORTS_CACHE_TTL["top_services_csv"],
@@ -649,7 +649,6 @@ class ExportRevenueCSVView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
-    @require_reports_enabled
     @cache_drf_response(
         prefix="reports:revenue:csv",
         ttl=settings.REPORTS_CACHE_TTL["revenue_csv"],

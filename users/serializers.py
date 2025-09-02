@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, UserFeatureFlags
+from .models import CustomUser, UserFeatureFlags, Tenant
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -96,3 +96,41 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
             "refresh": str(refresh),
             "access": str(refresh.access_token),
         }
+
+
+class TenantMetaSerializer(serializers.ModelSerializer):
+    """
+    Serializer para informações públicas do tenant (branding + feature flags).
+    Usado pelo endpoint /api/users/tenant/meta/
+    """
+
+    feature_flags = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tenant
+        fields = [
+            "name",
+            "slug",
+            "logo_url",
+            "primary_color",
+            "secondary_color",
+            "timezone",
+            "currency",
+            "plan_tier",
+            "feature_flags",
+        ]
+        read_only_fields = [
+            "name",
+            "slug",
+            "logo_url",
+            "primary_color",
+            "secondary_color",
+            "timezone",
+            "currency",
+            "plan_tier",
+            "feature_flags",
+        ]
+
+    def get_feature_flags(self, obj):
+        """Retorna feature flags calculadas baseadas no plano"""
+        return obj.get_feature_flags_dict()

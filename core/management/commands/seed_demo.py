@@ -23,14 +23,32 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             # --- Tenant padrão ---
-            default_tenant, _ = Tenant.objects.get_or_create(
+            default_tenant, tenant_created = Tenant.objects.get_or_create(
                 slug="default",
                 defaults={
                     "name": "Default Salon",
                     "primary_color": "#3B82F6",
                     "secondary_color": "#1F2937",
+                    # Configurar plano Standard para demo
+                    "plan_tier": "standard",
+                    # Habilitar features para demo
+                    "reports_enabled": True,
+                    "pwa_admin_enabled": True,
+                    "pwa_client_enabled": True,
+                    "push_web_enabled": True,
+                    "push_mobile_enabled": True,
                 },
             )
+
+            # Se tenant já existia, atualizar feature flags para demo
+            if not tenant_created:
+                default_tenant.plan_tier = "standard"
+                default_tenant.reports_enabled = True
+                default_tenant.pwa_admin_enabled = True
+                default_tenant.pwa_client_enabled = True
+                default_tenant.push_web_enabled = True
+                default_tenant.push_mobile_enabled = True
+                default_tenant.save()
 
             # --- Usuários ---
             admin, admin_created = User.objects.get_or_create(
