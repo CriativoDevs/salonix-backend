@@ -3,14 +3,63 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, UserFeatureFlags, Tenant
+from salonix_backend.validators import (
+    validate_phone_number,
+    sanitize_text_input,
+    sanitize_phone_number,
+)
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = CustomUser
         fields = ["id", "username", "email", "password", "salon_name", "phone_number"]
+
+    def validate_username(self, value):
+        """Validar e sanitizar nome de usuário."""
+        sanitized = sanitize_text_input(value, max_length=150)
+        if not sanitized:
+            raise serializers.ValidationError("Nome de usuário é obrigatório.")
+
+        # Verificar se não contém apenas espaços
+        if not sanitized.strip():
+            raise serializers.ValidationError(
+                "Nome de usuário não pode ser apenas espaços."
+            )
+
+        return sanitized
+
+    def validate_salon_name(self, value):
+        """Validar e sanitizar nome do salão."""
+        if value:
+            return sanitize_text_input(value, max_length=255)
+        return value
+
+    def validate_phone_number(self, value):
+        """Validar e sanitizar número de telefone."""
+        if value:
+            sanitized = sanitize_phone_number(value)
+            validate_phone_number(sanitized)
+            return sanitized
+        return value
+
+    def validate_password(self, value):
+        """Validar força da senha."""
+        if len(value) < 8:
+            raise serializers.ValidationError("Senha deve ter pelo menos 8 caracteres.")
+
+        # Verificar se tem pelo menos uma letra e um número
+        has_letter = any(c.isalpha() for c in value)
+        has_number = any(c.isdigit() for c in value)
+
+        if not (has_letter and has_number):
+            raise serializers.ValidationError(
+                "Senha deve conter pelo menos uma letra e um número."
+            )
+
+        return value
 
     def create(self, validated_data):
         user = CustomUser.objects.create_user(
