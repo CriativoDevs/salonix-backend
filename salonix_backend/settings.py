@@ -58,7 +58,7 @@ SECRET_KEY = env_get("SECRET_KEY", "dev-secret-key-change-me")
 DEBUG = str(env_get("DEBUG", "false")).lower() in {"1", "true", "yes", "on"}
 ALLOWED_HOSTS = [
     h.strip()
-    for h in str(env_get("ALLOWED_HOSTS", "localhost,127.0.0.1")).split(",")
+    for h in str(env_get("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0")).split(",")
     if h.strip()
 ]
 
@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     "drf_spectacular_sidecar",
     "django_prometheus",
     # APPS
+    "salonix_backend",
     "core.apps.CoreConfig",
     "users",
     "notifications",
@@ -116,7 +117,9 @@ ROOT_URLCONF = "salonix_backend.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [
+            BASE_DIR / "salonix_backend" / "templates",
+        ],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -454,11 +457,11 @@ if CACHE_URL.startswith("redis://"):
             "VERSION": 1,
         }
     }
-    
+
     # Cache para sessões (opcional, melhora performance)
     SESSION_ENGINE = "django.contrib.sessions.backends.cache"
     SESSION_CACHE_ALIAS = "default"
-    
+
 # Configuração Local Memory (desenvolvimento/fallback)
 else:
     CACHES = {

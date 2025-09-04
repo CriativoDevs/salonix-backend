@@ -9,9 +9,12 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
+# Import admin completo
+from salonix_backend.admin import admin_site
+
 urlpatterns = [
     path("", include("django_prometheus.urls")),
-    path("admin/", admin.site.urls),
+    path("admin/", admin_site.urls),
     path("api/", include("core.urls")),
     path("api/payments/stripe/", include("payments.urls", namespace="payments")),
     path("api/users/", include(("users.urls", "users"))),
