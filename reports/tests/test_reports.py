@@ -332,4 +332,6 @@ def test_reports_guard_403_when_disabled():
     ):
         r = c.get(path)
         assert r.status_code == 403
-        assert "permission" in r.data["detail"].lower()
+        # Com novo sistema de erros, a estrutura mudou
+        assert "error" in r.data
+        assert "permission" in r.data["error"]["message"].lower()

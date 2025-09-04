@@ -28,8 +28,10 @@ class TestAuthEndpoints:
     def test_registration_missing_fields(self):
         response = self.client.post(self.register_url, data={"email": "x@x.com"})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "username" in response.data
-        assert "password" in response.data
+        # Com novo sistema de erros, a estrutura mudou
+        assert "error" in response.data
+        assert "username" in response.data["error"]["details"]
+        assert "password" in response.data["error"]["details"]
 
     def test_successful_login(self):
         User.objects.create_user(

@@ -233,6 +233,9 @@ REST_FRAMEWORK = {
 }
 
 REST_FRAMEWORK.setdefault("DEFAULT_SCHEMA_CLASS", "drf_spectacular.openapi.AutoSchema")
+REST_FRAMEWORK["EXCEPTION_HANDLER"] = (
+    "salonix_backend.error_handling.custom_exception_handler"
+)
 
 from datetime import timedelta
 

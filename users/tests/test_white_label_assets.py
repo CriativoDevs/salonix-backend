@@ -358,8 +358,10 @@ class TestTenantMetaEndpoint:
         data = {"primary_color": "#000000"}
         response = self.client.patch(url, data)
 
+        # Com novo sistema de erros, formato padronizado
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "não possui tenant" in response.data["detail"]
+        assert "error" in response.data
+        assert "não possui tenant" in response.data["error"]["message"]
 
 
 @pytest.mark.django_db

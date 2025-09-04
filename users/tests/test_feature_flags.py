@@ -273,15 +273,20 @@ class TestTenantMetaEndpoint:
         url = reverse("tenant_meta")
         response = self.client.get(url, {"tenant": "non-existent"})
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        # Com novo sistema de erros, retorna 400 com formato padronizado
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "error" in response.data
+        assert "não encontrado" in response.data["error"]["message"]
 
     def test_tenant_meta_missing_param(self):
         """Teste endpoint sem parâmetro tenant."""
         url = reverse("tenant_meta")
         response = self.client.get(url)
 
+        # Com novo sistema de erros, formato padronizado
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "obrigatório" in response.json()["detail"]
+        assert "error" in response.data
+        assert "obrigatório" in response.data["error"]["message"]
 
     def test_tenant_meta_inactive_tenant(self):
         """Teste endpoint com tenant inativo."""
@@ -294,7 +299,10 @@ class TestTenantMetaEndpoint:
         url = reverse("tenant_meta")
         response = self.client.get(url, {"tenant": "inactive-salon"})
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+        # Com novo sistema de erros, retorna 400 com formato padronizado
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "error" in response.data
+        assert "inativo" in response.data["error"]["message"]
 
 
 @pytest.mark.django_db
