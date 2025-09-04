@@ -425,8 +425,14 @@ if LOG_FILE:
         LOGGING["loggers"][logger_name]["handlers"].append("file")
     LOGGING["root"]["handlers"].append("file")
 
-# --- Cache backend (CACHE_URL: locmem:// ou redis://host:port/db) ---
+# =====================================================
+# CACHE CONFIGURATION (Redis + Fallbacks)
+# =====================================================
+
+# Cache URL: redis://host:port/db ou locmem:// para desenvolvimento
 CACHE_URL = env_get("CACHE_URL", "locmem://")
+
+# Configuração Redis (produção recomendada)
 if CACHE_URL.startswith("redis://"):
     CACHES = {
         "default": {
@@ -434,17 +440,36 @@ if CACHE_URL.startswith("redis://"):
             "LOCATION": CACHE_URL,
             "OPTIONS": {
                 "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "CONNECTION_POOL_KWARGS": {
+                    "retry_on_timeout": True,
+                    "socket_connect_timeout": 5,
+                    "socket_timeout": 5,
+                    "max_connections": 50,
+                },
+                "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+                "IGNORE_EXCEPTIONS": True,  # Graceful fallback em caso de erro Redis
             },
             "KEY_PREFIX": "salonix",
-            "TIMEOUT": None,
+            "TIMEOUT": 300,  # 5 minutos por padrão
+            "VERSION": 1,
         }
     }
+    
+    # Cache para sessões (opcional, melhora performance)
+    SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+    SESSION_CACHE_ALIAS = "default"
+    
+# Configuração Local Memory (desenvolvimento/fallback)
 else:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "salonix-cache",
-            "TIMEOUT": None,
+            "TIMEOUT": 300,  # 5 minutos por padrão
+            "OPTIONS": {
+                "MAX_ENTRIES": 1000,
+                "CULL_FREQUENCY": 3,
+            },
         }
     }
 
