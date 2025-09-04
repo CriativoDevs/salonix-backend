@@ -5,6 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from salonix_backend.error_handling import (
+    TenantError,
+    ErrorCodes,
+    validate_required_fields,
+)
 from .models import UserFeatureFlags, Tenant
 
 from .serializers import (
@@ -65,33 +70,31 @@ class TenantMetaView(APIView):
                 "X-Tenant-Slug"
             )
             if not tenant_slug:
-                raise ValueError(
-                    "Parâmetro 'tenant' ou header 'X-Tenant-Slug' é obrigatório."
+                raise TenantError(
+                    "Parâmetro 'tenant' ou header 'X-Tenant-Slug' é obrigatório",
+                    code=ErrorCodes.VALIDATION_REQUIRED_FIELD,
                 )
         else:
             # Para PATCH: usar tenant do usuário autenticado
             if not hasattr(request.user, "tenant") or not request.user.tenant:
-                raise ValueError("Usuário não possui tenant associado.")
+                raise TenantError(
+                    "Usuário não possui tenant associado",
+                    code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+                )
             return request.user.tenant
 
         try:
             return Tenant.objects.get(slug=tenant_slug, is_active=True)
         except Tenant.DoesNotExist:
-            raise ValueError(f"Tenant '{tenant_slug}' não encontrado ou inativo.")
+            raise TenantError(
+                f"Tenant '{tenant_slug}' não encontrado ou inativo",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
 
     def get(self, request):
         """Retornar metadados do tenant especificado"""
-        try:
-            tenant = self.get_tenant(request)
-        except ValueError as e:
-            return Response(
-                {"detail": str(e)},
-                status=(
-                    status.HTTP_400_BAD_REQUEST
-                    if "obrigatório" in str(e)
-                    else status.HTTP_404_NOT_FOUND
-                ),
-            )
+        # TenantError será tratado automaticamente pelo custom_exception_handler
+        tenant = self.get_tenant(request)
 
         # Serializar dados do tenant
         serializer = TenantMetaSerializer(tenant)

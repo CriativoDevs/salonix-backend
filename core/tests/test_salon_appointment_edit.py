@@ -128,7 +128,9 @@ def test_reschedule_to_occupied_slot_returns_400(base_setup):
         f"/api/salon/appointments/{appt.id}/", {"slot": busy_slot.id}, format="json"
     )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    assert "slot" in resp.data
+    # Com novo sistema de erros, a estrutura mudou
+    assert "error" in resp.data
+    assert "slot" in resp.data["error"]["details"]
 
 
 @pytest.mark.django_db
