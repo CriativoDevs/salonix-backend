@@ -28,7 +28,7 @@ class NotificationService:
     def send_notification(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         channels: List[str],
         notification_type: str,
         title: str,
@@ -115,7 +115,7 @@ class NotificationService:
     def test_channel(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         channel: str,
         message: str = "Teste de notificação",
     ) -> bool:
@@ -136,7 +136,7 @@ class NotificationService:
     def _log_notification(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         channel: str,
         notification_type: str,
         title: str,
@@ -166,7 +166,7 @@ class NotificationDriverBase:
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,
@@ -182,7 +182,7 @@ class InAppNotificationDriver(NotificationDriverBase):
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,
@@ -218,7 +218,7 @@ class WebPushDriver(NotificationDriverBase):
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,
@@ -257,7 +257,7 @@ class MobilePushDriver(NotificationDriverBase):
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,
@@ -295,7 +295,7 @@ class SMSDriver(NotificationDriverBase):
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,
@@ -329,7 +329,7 @@ class WhatsAppDriver(NotificationDriverBase):
     def send(
         self,
         tenant: Tenant,
-        user: User,
+        user: Any,
         notification_type: str,
         title: str,
         message: str,

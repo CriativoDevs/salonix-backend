@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from typing import Any, cast
 from django.test import TestCase
 from django.utils import timezone
 
@@ -395,7 +396,7 @@ class ValidationIntegrationTestCase(TestCase):
 
         # Testar preço inválido (se constraint estiver ativa)
         try:
-            with transaction.atomic():
+            with cast(Any, transaction.atomic()):
                 service = Service(
                     tenant=self.tenant,
                     user=self.user,
@@ -516,7 +517,7 @@ class ConstraintTestCase(TestCase):
 
         # Tentar criar segundo serviço com mesmo nome
         try:
-            with transaction.atomic():
+            with cast(Any, transaction.atomic()):
                 Service.objects.create(
                     tenant=self.tenant,
                     user=self.user,
@@ -531,7 +532,7 @@ class ConstraintTestCase(TestCase):
     def test_tenant_color_format_constraint(self):
         """Testa constraint de formato de cor hexadecimal."""
         try:
-            with transaction.atomic():
+            with cast(Any, transaction.atomic()):
                 tenant = Tenant(
                     name="Invalid Color Tenant",
                     slug="invalid-color",

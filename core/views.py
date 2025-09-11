@@ -16,6 +16,7 @@ from core.models import Appointment, Professional, Service, ScheduleSlot
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
+    BulkAppointmentSerializer,
     ProfessionalSerializer,
     ServiceSerializer,
     ScheduleSlotSerializer,
@@ -35,11 +36,31 @@ from core.utils.ics import ICSGenerator
 
 import csv
 import logging
+from typing import Any, Dict, List, Optional, cast
 
 # Métricas Prometheus
 ICS_DOWNLOADS_TOTAL = Counter(
     "ics_downloads_total",
     "Total number of .ics calendar downloads",
+    ["tenant_id", "status"],
+)
+
+BULK_APPOINTMENTS_TOTAL = Counter(
+    "bulk_appointments_created_total",
+    "Total number of bulk appointments created",
+    ["tenant_id", "status"],
+)
+
+BULK_APPOINTMENTS_SIZE = Counter(
+    "bulk_appointments_average_size",
+    "Average size of bulk appointments",
+    ["tenant_id"],
+)
+
+# Errors counter (separate from total with status)
+BULK_APPOINTMENTS_ERRORS = Counter(
+    "bulk_appointments_errors_total",
+    "Total number of bulk appointment errors",
     ["tenant_id", "status"],
 )
 
@@ -108,7 +129,8 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        slot = serializer.validated_data["slot"]
+        data = cast(Dict[str, Any], serializer.validated_data)
+        slot = data["slot"]
         if (not slot.is_available) or (slot.status != "available"):
             raise ValidationError(
                 "Este horário já foi agendado ou não está disponível."
@@ -140,6 +162,162 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
             print("Falha ao enviar e-mail:", e)
 
 
+class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
+    """
+    POST /api/appointments/bulk/
+
+    Criar múltiplos agendamentos em uma única transação atômica.
+    Todos os agendamentos são criados ou nenhum é criado.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # fonte única da verdade para tenant
+        tenant = getattr(request.user, "tenant", None) or getattr(
+            request, "tenant", None
+        )
+
+        serializer = BulkAppointmentSerializer(
+            data=request.data, context={"request": request}
+        )
+        if not serializer.is_valid():
+            tenant_id = tenant.id if tenant else "unknown"
+            BULK_APPOINTMENTS_TOTAL.labels(
+                tenant_id=tenant_id, status="validation_error"
+            ).inc()
+            BULK_APPOINTMENTS_ERRORS.labels(
+                tenant_id=tenant_id, status="validation_error"
+            ).inc()
+            return Response(serializer.errors, status=drf_status.HTTP_400_BAD_REQUEST)
+
+        data = cast(Dict[str, Any], serializer.validated_data)
+        user = request.user
+
+        try:
+            # garantir consistência com o tenant resolvido
+            service = Service.objects.get(
+                id=cast(int, data["service_id"]), tenant=tenant
+            )
+            professional = Professional.objects.get(
+                id=cast(int, data["professional_id"]), tenant=tenant
+            )
+
+            appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
+            slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
+            slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
+
+            with cast(Any, transaction.atomic()):
+                appointments = []
+                for appt_data in appointments_list:
+                    slot = next(s for s in slots if s.id == appt_data["slot_id"])
+                    slot.mark_booked()
+                    appointment = Appointment.objects.create(
+                        client=user,
+                        service=service,
+                        professional=professional,
+                        slot=slot,
+                        notes=str(
+                            appt_data.get("notes") or data.get("notes") or ""
+                        ),
+                        status="scheduled",
+                        tenant=tenant,
+                    )
+                    appointments.append(appointment)
+
+            from decimal import Decimal
+
+            count = len(appointments)
+
+            # use price_eur (fallback para price se existir)
+            raw_unit = getattr(service, "price_eur", None)
+            if raw_unit is None:
+                raw_unit = getattr(service, "price", 0)
+
+            try:
+                unit_price = Decimal(str(raw_unit))
+            except Exception:
+                unit_price = Decimal("0")
+
+            total_value = float(unit_price * count)
+
+            tenant_label = tenant.id if tenant is not None else "unknown"
+            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="success").inc()
+            BULK_APPOINTMENTS_SIZE.labels(tenant_id=tenant_label).inc(len(appointments))
+
+            # log estruturado de sucesso (exatamente 1 vez)
+            logger.info(
+                "Bulk appointments created successfully",
+                extra={
+                    "tenant_id": getattr(tenant, "id", None),
+                    "user_id": user.id,
+                    "service_id": service.id,  # <-- necessário
+                    "professional_id": professional.id,  # <-- necessário
+                    "appointments_count": count,  # <-- o teste espera esta chave
+                    "appointment_ids": [a.id for a in appointments],
+                    "total_value": total_value,  # <-- o teste valida 25.0 quando count=1
+                },
+            )
+
+            # payload que os testes esperam
+            serialized = AppointmentSerializer(
+                appointments, many=True, context={"request": request}
+            ).data
+            message = f"{count} agendamentos criados com sucesso" if count != 1 else "1 agendamento criado com sucesso"
+
+            return Response(
+                {
+                    "success": True,
+                    "appointment_ids": [a.id for a in appointments],
+                    "appointments_created": count,
+                    "total_value": total_value,  # <-- o teste valida 75.0 (3 * 25.00)
+                    "service_name": service.name,
+                    "professional_name": professional.name,
+                    "appointments": serialized,
+                    "message": message,
+                },
+                status=drf_status.HTTP_201_CREATED,
+            )
+
+        except ValidationError as e:
+            # se cair aqui por alguma validação de negócio extra
+            BULK_APPOINTMENTS_TOTAL.labels(
+                tenant_id=(tenant.id if tenant else "unknown"),
+                status="validation_error",
+            ).inc()
+            BULK_APPOINTMENTS_ERRORS.labels(
+                tenant_id=(tenant.id if tenant else "unknown"),
+                status="validation_error",
+            ).inc()
+            return Response({"detail": str(e)}, status=drf_status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            # garante 500 para o teste que mocka .create
+            tenant_id = tenant.id if tenant else "unknown"
+            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_id, status="error").inc()
+            BULK_APPOINTMENTS_ERRORS.labels(tenant_id=tenant_id, status="error").inc()
+            logger.error(
+                f"Bulk appointments creation failed: {e}",
+                exc_info=True,
+                extra={
+                    "tenant_id": tenant_id,
+                    "user_id": getattr(request.user, "id", None),
+                    "service_id": (
+                        data.get("service_id") if isinstance(data, dict) else None
+                    ),
+                    "professional_id": (
+                        data.get("professional_id") if isinstance(data, dict) else None
+                    ),
+                    "slot_ids": slot_ids if "slot_ids" in locals() else None,
+                    "error": str(e),
+                },
+            )
+            return Response(
+                {"detail": "Erro interno do servidor."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -157,7 +335,7 @@ class AppointmentCancelView(APIView):
                 {"detail": "Este agendamento já foi cancelado."}, status=400
             )
 
-        with transaction.atomic():
+        with cast(Any, transaction.atomic()):
             appointment.status = "cancelled"
             appointment.cancelled_by = request.user
             appointment.slot.mark_available()  # já salva o slot
@@ -266,24 +444,24 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
         params = self.request.query_params
 
         # status
-        status_value = params.get("status")
+        status_value = cast(Optional[str], params.get("status"))
         if status_value in {"scheduled", "cancelled", "completed", "paid"}:
             qs = qs.filter(status=status_value)
 
         # -------- datas --------
-        date_from_raw = params.get("date_from")
-        date_to_raw = params.get("date_to")
+        date_from_raw = cast(Optional[str], params.get("date_from"))
+        date_to_raw = cast(Optional[str], params.get("date_to"))
 
         def is_plain_date(s: str | None) -> bool:
             return bool(s) and ("T" not in s) and (":" not in s)
 
         # date_from
         if is_plain_date(date_from_raw):
-            d = parse_date(date_from_raw)
+            d = parse_date(cast(str, date_from_raw))
             if d:
                 qs = qs.filter(slot__start_time__date__gte=d)
         elif date_from_raw:
-            dt = parse_datetime(date_from_raw)
+            dt = parse_datetime(cast(str, date_from_raw))
             if dt is None:
                 raise ValidationError({"date_from": "Formato inválido."})
             if timezone.is_naive(dt):
@@ -292,11 +470,11 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
 
         # date_to
         if is_plain_date(date_to_raw):
-            d = parse_date(date_to_raw)
+            d = parse_date(cast(str, date_to_raw))
             if d:
                 qs = qs.filter(slot__start_time__date__lte=d)
         elif date_to_raw:
-            dt = parse_datetime(date_to_raw)
+            dt = parse_datetime(cast(str, date_to_raw))
             if dt is None:
                 raise ValidationError({"date_to": "Formato inválido."})
             if timezone.is_naive(dt):
@@ -304,16 +482,16 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             qs = qs.filter(slot__start_time__lte=dt)
 
         # professional_id / service_id
-        professional_id = params.get("professional_id")
+        professional_id = cast(Optional[str], params.get("professional_id"))
         if professional_id:
             qs = qs.filter(professional_id=professional_id)
 
-        service_id = params.get("service_id")
+        service_id = cast(Optional[str], params.get("service_id"))
         if service_id:
             qs = qs.filter(service_id=service_id)
 
         # ordering
-        ordering = params.get("ordering")
+        ordering = cast(Optional[str], params.get("ordering"))
         if ordering in {"created_at", "-created_at"}:
             qs = qs.order_by(ordering)
         elif ordering in {"slot_time", "-slot_time"}:
@@ -382,7 +560,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                     {"slot": "Horário selecionado não está disponível."}
                 )
 
-            with transaction.atomic():
+            with cast(Any, transaction.atomic()):
                 old_slot = ScheduleSlot.objects.select_for_update().get(
                     pk=instance.slot_id
                 )
@@ -402,7 +580,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                         {"status": "Este agendamento já foi cancelado."}
                     )
 
-                with transaction.atomic():
+                with cast(Any, transaction.atomic()):
                     instance.status = "cancelled"
                     instance.cancelled_by = request.user
                     instance.slot.mark_available()
@@ -631,9 +809,10 @@ class AppointmentDetailView(TenantIsolatedMixin, RetrieveAPIView):
         # Acessível para:
         # - o próprio cliente do agendamento
         # - o salão (dono) via service.user ou professional.user
-        return qs.filter(
-            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
-        ).select_related("client", "service", "professional", "slot")
+        cond_any = cast(Any, Q(client=user))
+        cond_any = cond_any | cast(Any, Q(service__user=user))
+        cond_any = cond_any | cast(Any, Q(professional__user=user))
+        return qs.filter(cond_any).select_related("client", "service", "professional", "slot")
 
 
 class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
@@ -673,7 +852,9 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
                     },
                 )
                 .filter(
-                    Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+                    (cast(Any, Q(client=user))
+                     | cast(Any, Q(service__user=user))
+                     | cast(Any, Q(professional__user=user)))
                 )
             )
 
@@ -683,7 +864,7 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
 
             # Criar response com headers apropriados
             response = HttpResponse(
-                ics_content, content_type="text/calendar; charset=utf-8"
+                ics_content.encode("utf-8"), content_type="text/calendar; charset=utf-8"
             )
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
             response["Cache-Control"] = "no-cache, no-store, must-revalidate"

@@ -4,6 +4,8 @@ import pytest
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
+from django.http import HttpResponse
+from typing import cast
 from users.models import CustomUser
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
@@ -43,6 +45,7 @@ def test_export_csv_basic(user_fixture):
     )
 
     resp = client.get("/api/salon/appointments/export/")
+    resp = cast(HttpResponse, resp)
     assert resp.status_code == 200
     assert resp["Content-Type"].startswith("text/csv")
     assert "attachment; filename=" in resp["Content-Disposition"]
@@ -142,6 +145,7 @@ def test_export_respects_filters_and_isolation(user_fixture):
         "/api/salon/appointments/export/?status=scheduled&date_to="
         + start_a.date().isoformat()
     )
+    resp = cast(HttpResponse, resp)
     assert resp.status_code == 200
 
     content = b"".join(resp.streaming_content).decode("utf-8")
@@ -153,6 +157,7 @@ def test_export_respects_filters_and_isolation(user_fixture):
     # O 'other' não deve ver nada do owner
     c_other = _auth_client(other)
     resp_other = c_other.get("/api/salon/appointments/export/")
+    resp_other = cast(HttpResponse, resp_other)
     assert resp_other.status_code == 200
     content_other = b"".join(resp_other.streaming_content).decode("utf-8")
     rows_other = list(csv.reader(io.StringIO(content_other)))

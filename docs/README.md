@@ -7,6 +7,7 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 ### **🎯 Documentos Estratégicos**
 - [`ESTRATEGIA_DESENVOLVIMENTO.md`](./ESTRATEGIA_DESENVOLVIMENTO.md) - Estratégia de desenvolvimento em fases
 - [`MVP_STATUS_ATUAL.md`](./MVP_STATUS_ATUAL.md) - Status atual do MVP (95% completo)
+- [`BE_BUSINESS_BRIEF.md`](./BE_BUSINESS_BRIEF.md) - Alinhamento de negócio e implicações BE
 
 ### **🏗️ Documentos Técnicos**
 - [`ARQUITETURA_SISTEMA.md`](./ARQUITETURA_SISTEMA.md) - Arquitetura técnica completa
@@ -51,13 +52,12 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 ## 📊 **Status do Projeto**
 
 ### **✅ MVP Backend: 95% Completo**
-- 16 funcionalidades principais implementadas
-- 243 testes passando (100%)
+- 17 funcionalidades principais implementadas
+- 261 testes passando (100%)
 - Django Admin customizado funcional
 - Sistema de cache otimizado
 
 ### **🚀 Próximas Implementações**
-- BE-MULTI-APPOINTMENTS: Agendamentos múltiplos
 - BE-CLIENT-METRICS: Métricas de clientes
 
 ### **📱 Comunicação Real**
@@ -125,4 +125,4 @@ python manage.py check
 ---
 
 *Documentação mantida pela equipe Salonix*  
-*Última atualização: 4 Setembro 2025*
+*Última atualização: 11 Setembro 2025*

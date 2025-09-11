@@ -113,6 +113,20 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Validação de datas futuras
 - ✅ Limites de agendamento por usuário
 
+#### **Agendamentos Múltiplos (BE-153)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `core/views.py` - `BulkAppointmentCreateView` (`POST /api/appointments/bulk/`)
+- `core/serializers.py` - `BulkAppointmentSerializer`
+
+**Características**:
+- ✅ Criação de múltiplos agendamentos em uma só operação
+- ✅ Transação atômica (todos ou nenhum)
+- ✅ Validações em lote: disponibilidade, profissional único, sem duplicidade, datas futuras
+- ✅ Limite de 10 agendamentos por lote
+- ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`
+- ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
+
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**
@@ -334,13 +348,11 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 
 ## 🚀 **Próximas Implementações**
 
-### **📅 Agendamentos Múltiplos (BE-153)**
-**Status**: ⏳ Planejado  
-**Descrição**: Sistema para agendar múltiplos dias em uma transação
-
 ### **📊 Métricas de Clientes (BE-154)**
 **Status**: ⏳ Planejado  
 **Descrição**: Analytics de clientes ativos/inativos, LTV, churn
+
+ 
 
 ## 📚 **Documentos Relacionados**
 

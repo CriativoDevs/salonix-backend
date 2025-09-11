@@ -1,8 +1,9 @@
 from django.apps import AppConfig
+from typing import ClassVar
 
 
 class CoreConfig(AppConfig):
-    default_auto_field = "django.db.models.BigAutoField"
+    default_auto_field: ClassVar[str] = "django.db.models.BigAutoField"
     name = "core"
 
     def ready(self) -> None:

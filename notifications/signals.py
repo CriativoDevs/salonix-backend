@@ -102,13 +102,15 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
 
     try:
         # Enviar notificação
+        title_str = title or ""
+        message_str = message or ""
         results = notification_service.send_notification(
             tenant=instance.tenant,
             user=instance.client,
             channels=channels,
             notification_type=notification_type,
-            title=title,
-            message=message,
+            title=title_str,
+            message=message_str,
             metadata=metadata,
         )
 

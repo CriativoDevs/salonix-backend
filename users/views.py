@@ -123,14 +123,13 @@ class TenantMetaView(APIView):
         )
         if serializer.is_valid():
             # Limpar logo anterior se novo logo for enviado
-            if (
-                "logo" in serializer.validated_data
-                and serializer.validated_data["logo"]
-            ):
+            from typing import Any, Dict, cast
+            vdata = cast(Dict[str, Any], serializer.validated_data)
+            if vdata.get("logo"):
                 if tenant.logo:
                     tenant.logo.delete(save=False)  # Não salvar ainda
                 # Limpar logo_url se logo for enviado
-                serializer.validated_data["logo_url"] = None
+                vdata["logo_url"] = None
 
             serializer.save()
 

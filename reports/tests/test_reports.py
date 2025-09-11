@@ -4,6 +4,7 @@ from decimal import Decimal
 from datetime import timedelta
 from django.utils import timezone
 from django.db import models
+from typing import Any, Type, cast
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 
@@ -42,7 +43,9 @@ def _resolve_fk(model, *candidate_names):
     """Retorna (field, related_model) para o primeiro FK cujo nome está em candidate_names."""
     for f in model._meta.fields:
         if isinstance(f, models.ForeignKey) and f.name in set(candidate_names):
-            return f, f.remote_field.model
+            rf = getattr(f, "remote_field", None)
+            if rf is not None:
+                return f, rf.model
     return None, None
 
 
@@ -50,8 +53,10 @@ def _first_fk_by_related_name(model, related_model_name):
     """Procura um FK cujo modelo-relacionado tenha o nome dado (ex.: 'Slot')."""
     for f in model._meta.fields:
         if isinstance(f, models.ForeignKey):
-            if f.remote_field.model.__name__.lower() == related_model_name.lower():
-                return f, f.remote_field.model
+            rf = getattr(f, "remote_field", None)
+            if rf is not None:
+                if rf.model.__name__.lower() == related_model_name.lower():
+                    return f, rf.model
     return None, None
 
 
@@ -96,8 +101,10 @@ def _minimal_instance(model, preset=None):
             data[f.name] = timezone.now().time()
         elif isinstance(f, models.ForeignKey):
             # cria minimamente o relacionado
-            rel_obj = _minimal_instance(f.remote_field.model)
-            data[f.name] = rel_obj
+            rf = getattr(f, "remote_field", None)
+            if rf is not None:
+                rel_obj = _minimal_instance(rf.model)
+                data[f.name] = rel_obj
 
     return model.objects.create(**data)
 
@@ -108,6 +115,8 @@ def _get_or_create_client(user):
     client_fk, ClientModel = _resolve_fk(Appointment, "client", "customer")
     if not client_fk:
         return {}, None  # sem FK de cliente
+    assert ClientModel is not None
+    ClientModel = cast(Type[models.Model], ClientModel)
     payload = {}
     # popular campos comuns
     fields = {f.name for f in ClientModel._meta.fields}
@@ -133,6 +142,8 @@ def _get_or_create_professional(user):
     prof_fk, ProfModel = _resolve_fk(Appointment, "professional", "staff", "employee")
     if not prof_fk:
         return {}, None
+    assert ProfModel is not None
+    ProfModel = cast(Type[models.Model], ProfModel)
     fields = {f.name for f in ProfModel._meta.fields}
     payload = {}
     if "user" in fields:
@@ -158,6 +169,8 @@ def _make_slot_for(when, service, professional, user):
         slot_fk, SlotModel = _first_fk_by_related_name(Appointment, "Slot")
     if not slot_fk:
         return {}  # Appointment não exige slot
+    assert SlotModel is not None
+    SlotModel = cast(Type[models.Model], SlotModel)
 
     # montar payload mínimo para Slot
     payload = {}

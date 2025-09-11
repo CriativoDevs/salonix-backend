@@ -3,6 +3,7 @@ import pytz
 import pytest
 from rest_framework.test import APIClient
 from core.models import Service, Professional, ScheduleSlot, Appointment
+from typing import cast
 
 
 @pytest.mark.django_db
@@ -18,7 +19,10 @@ def test_create_service(user_fixture):
 
     assert response.status_code == 201
     assert Service.objects.count() == 1
-    assert Service.objects.first().name == "Corte Masculino"
+    service_created = Service.objects.first()
+    assert service_created is not None
+    service_created = cast(Service, service_created)
+    assert service_created.name == "Corte Masculino"
 
 
 @pytest.mark.django_db
@@ -37,7 +41,10 @@ def test_create_professional(user_fixture):
 
     assert response.status_code == 201
     assert Professional.objects.count() == 1
-    assert Professional.objects.first().name == "Lucas Silva"
+    professional_created = Professional.objects.first()
+    assert professional_created is not None
+    professional_created = cast(Professional, professional_created)
+    assert professional_created.name == "Lucas Silva"
 
 
 @pytest.mark.django_db
@@ -69,6 +76,8 @@ def test_create_slot(user_fixture):
     assert response.status_code == 201
     assert ScheduleSlot.objects.count() == 1
     slot = ScheduleSlot.objects.first()
+    assert slot is not None
+    slot = cast(ScheduleSlot, slot)
     assert slot.professional == professional
     assert slot.is_available is True
 
@@ -115,6 +124,8 @@ def test_create_appointment(user_fixture):
     assert response.status_code == 201
     assert Appointment.objects.count() == 1
     appointment = Appointment.objects.first()
+    assert appointment is not None
+    appointment = cast(Appointment, appointment)
     assert appointment.client == user_fixture
     assert appointment.service == service
     assert appointment.professional == professional

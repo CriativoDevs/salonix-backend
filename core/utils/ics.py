@@ -5,7 +5,7 @@ Utilitário para geração de arquivos .ics (iCalendar) para agendamentos.
 import hashlib
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.utils import timezone
-from typing import Dict, Any
+from typing import Dict, Any, cast
 
 from core.models import Appointment
 
@@ -35,14 +35,16 @@ class ICSGenerator:
         if isinstance(start_time, str):
             # Fallback para testes - assumir formato ISO
             try:
-                start_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            except:
+                s = cast(str, start_time)
+                start_time = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except Exception:
                 start_time = timezone.now()
 
         if isinstance(end_time, str):
             try:
-                end_time = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-            except:
+                e = cast(str, end_time)
+                end_time = datetime.fromisoformat(e.replace("Z", "+00:00"))
+            except Exception:
                 end_time = start_time + timedelta(hours=1)
 
         # Converter para UTC se necessário
@@ -90,7 +92,7 @@ class ICSGenerator:
             ics_content.append(f"LOCATION:{location}")
 
         # Status baseado no status do agendamento
-        status = ICSGenerator._get_ics_status(appointment.status)
+        status = ICSGenerator._get_ics_status(cast(str, appointment.status))
         ics_content.append(f"STATUS:{status}")
 
         # Finalizar evento
@@ -174,8 +176,9 @@ class ICSGenerator:
         start_time = appointment.slot.start_time
         if isinstance(start_time, str):
             try:
-                start_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-            except:
+                s = cast(str, start_time)
+                start_time = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except Exception:
                 start_time = timezone.now()
 
         if hasattr(start_time, "strftime"):

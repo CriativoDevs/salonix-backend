@@ -358,12 +358,12 @@ def custom_exception_handler(exc, context):
             field_errors = []
             for field, errors in exc.detail.items():
                 if isinstance(errors, list):
-                    field_errors.append(f"{field}: {', '.join(errors)}")
+                    field_errors.append(f"{field}: {', '.join(map(str, errors))}")
                 else:
-                    field_errors.append(f"{field}: {errors}")
+                    field_errors.append(f"{field}: {str(errors)}")
             error_message = "Dados inválidos: " + "; ".join(field_errors)
         elif isinstance(exc.detail, list):
-            error_message = "; ".join(exc.detail)
+            error_message = "; ".join(map(str, exc.detail))
 
     # Para exceções do Salonix, incluir detalhes
     if isinstance(exc, SalonixError):

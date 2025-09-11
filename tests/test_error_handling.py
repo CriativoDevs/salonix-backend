@@ -16,6 +16,7 @@ from unittest.mock import patch, MagicMock
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
+from typing import Any, cast
 from rest_framework import status
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
 
@@ -268,8 +269,9 @@ class CustomExceptionHandlerTestCase(APITestCase):
         response = custom_exception_handler(exc, context)
 
         # Verificar formato da resposta
-        self.assertIn("error", response.data)
-        error = response.data["error"]
+        data = cast(dict[str, Any], response.data)
+        self.assertIn("error", data)
+        error = cast(dict[str, Any], data["error"])
 
         self.assertIn("code", error)
         self.assertIn("message", error)
@@ -292,8 +294,8 @@ class CustomExceptionHandlerTestCase(APITestCase):
         # Testar com SalonixError customizado
         exc = TenantError("Tenant não encontrado")
         response = custom_exception_handler(exc, context)
-
-        error = response.data["error"]
+        data = cast(dict[str, Any], response.data)
+        error = cast(dict[str, Any], data["error"])
         # TenantError herda de BusinessError que herda de SalonixError
         self.assertTrue(error["code"].startswith("E"))  # Qualquer código E válido
         self.assertIn("Tenant não encontrado", error["message"])
@@ -313,7 +315,8 @@ class CustomExceptionHandlerTestCase(APITestCase):
         response = custom_exception_handler(exc, context)
 
         self.assertEqual(response.status_code, 500)
-        error = response.data["error"]
+        data = cast(dict[str, Any], response.data)
+        error = cast(dict[str, Any], data["error"])
         self.assertEqual(error["code"], ErrorCodes.SYSTEM_INTERNAL_ERROR)
         self.assertIn("Erro interno do servidor", error["message"])
 
@@ -353,7 +356,8 @@ class UtilityFunctionsTestCase(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-        error = response.data["error"]
+        data = cast(dict[str, Any], response.data)
+        error = cast(dict[str, Any], data.get("error"))
         self.assertEqual(error["code"], ErrorCodes.VALIDATION_INVALID_VALUE)
         self.assertEqual(error["message"], "Erro de teste")
         self.assertEqual(error["details"]["field"], "value")
@@ -377,9 +381,10 @@ class IntegrationTestCase(APITestCase):
         response = self.client.get("/api/users/tenant/meta/")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("error", response.data)
+        data = cast(dict[str, Any], response.data)
+        self.assertIn("error", data)
 
-        error = response.data["error"]
+        error = cast(dict[str, Any], data["error"])
         self.assertEqual(error["code"], ErrorCodes.VALIDATION_REQUIRED_FIELD)
         self.assertIn("obrigatório", error["message"])
 
@@ -388,9 +393,10 @@ class IntegrationTestCase(APITestCase):
         response = self.client.get("/api/users/tenant/meta/?tenant=inexistente")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("error", response.data)
+        data = cast(dict[str, Any], response.data)
+        self.assertIn("error", data)
 
-        error = response.data["error"]
+        error = cast(dict[str, Any], data["error"])
         self.assertEqual(error["code"], ErrorCodes.BUSINESS_TENANT_NOT_FOUND)
         self.assertIn("não encontrado", error["message"])
 
@@ -400,7 +406,8 @@ class IntegrationTestCase(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         # Não deve haver campo 'error' na resposta de sucesso
-        self.assertNotIn("error", response.data)
+        data = cast(dict[str, Any], response.data)
+        self.assertNotIn("error", data)
 
 
 @override_settings(
