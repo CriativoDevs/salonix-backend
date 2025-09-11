@@ -385,3 +385,30 @@ class BulkAppointmentSerializer(serializers.Serializer):
                 )
 
         return data
+
+
+class AppointmentSeriesSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    client_id = serializers.IntegerField(read_only=True)
+    service_id = serializers.IntegerField(read_only=True)
+    professional_id = serializers.IntegerField(read_only=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    recurrence_rule = serializers.CharField(required=False, allow_blank=True)
+    count = serializers.IntegerField(required=False, allow_null=True)
+    until = serializers.DateField(required=False, allow_null=True)
+    appointments = AppointmentSerializer(many=True, read_only=True)
+
+    def to_representation(self, instance):
+        return {
+            "id": instance.id,
+            "client_id": instance.client_id,
+            "service_id": instance.service_id,
+            "professional_id": instance.professional_id,
+            "notes": instance.notes or "",
+            "recurrence_rule": instance.recurrence_rule or "",
+            "count": instance.count,
+            "until": instance.until,
+            "appointments": AppointmentSerializer(
+                instance.appointments.all().order_by("slot__start_time"), many=True
+            ).data,
+        }

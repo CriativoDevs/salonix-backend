@@ -3,6 +3,7 @@ from django.db import models
 from typing import Any, cast
 
 from users.models import CustomUser, Tenant
+from django.conf import settings as dj_settings
 
 
 class Service(models.Model):
@@ -31,6 +32,37 @@ class Service(models.Model):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"
         return f"{self.name} ({self.price_eur}€) - {tenant_name}"
 
+
+class AppointmentSeries(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="appointment_series",
+        null=True,  # Temporário para testes
+    )
+    client = models.ForeignKey(
+        dj_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="series"
+    )
+    service = models.ForeignKey(
+        'Service', on_delete=models.CASCADE, related_name="series"
+    )
+    professional = models.ForeignKey(
+        'Professional', on_delete=models.CASCADE, related_name="series"
+    )
+    notes = models.TextField(blank=True, null=True)
+    recurrence_rule = models.CharField(max_length=100, blank=True, null=True)
+    count = models.PositiveIntegerField(blank=True, null=True)
+    until = models.DateField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "client"]),
+        ]
+
+    def __str__(self):
+        return f"Series<{self.id}> {self.service.name} / {self.professional.name}"
 
 class Professional(models.Model):
     tenant = models.ForeignKey(
@@ -139,6 +171,13 @@ class Appointment(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="cancelled_appointments",
+    )
+    series = models.ForeignKey(
+        AppointmentSeries,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appointments",
     )
 
     class Meta:

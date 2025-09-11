@@ -318,6 +318,128 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             )
 
 
+class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        tenant = getattr(request.user, "tenant", None) or getattr(
+            request, "tenant", None
+        )
+        serializer = BulkAppointmentSerializer(
+            data=request.data, context={"request": request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=drf_status.HTTP_400_BAD_REQUEST)
+
+        data = cast(Dict[str, Any], serializer.validated_data)
+        user = request.user
+
+        try:
+            service = Service.objects.get(
+                id=cast(int, data["service_id"]), tenant=tenant
+            )
+            professional = Professional.objects.get(
+                id=cast(int, data["professional_id"]), tenant=tenant
+            )
+
+            appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
+            slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
+            slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
+
+            from core.models import AppointmentSeries
+
+            with transaction.atomic():
+                series = AppointmentSeries.objects.create(
+                    tenant=tenant,
+                    client=user,
+                    service=service,
+                    professional=professional,
+                    notes=str(data.get("notes", "")),
+                    recurrence_rule=None,
+                )
+
+                appointments = []
+                for appt_data in appointments_list:
+                    slot = next(s for s in slots if s.id == appt_data["slot_id"])
+                    slot.mark_booked()
+                    appointment = Appointment.objects.create(
+                        client=user,
+                        service=service,
+                        professional=professional,
+                        slot=slot,
+                        notes=str(
+                            appt_data.get("notes") or data.get("notes") or ""
+                        ),
+                        status="scheduled",
+                        tenant=tenant,
+                        series=series,
+                    )
+                    appointments.append(appointment)
+
+            from decimal import Decimal
+
+            count = len(appointments)
+            raw_unit = getattr(service, "price_eur", None)
+            if raw_unit is None:
+                raw_unit = getattr(service, "price", 0)
+            try:
+                unit_price = Decimal(str(raw_unit))
+            except Exception:
+                unit_price = Decimal("0")
+            total_value = float(unit_price * count)
+
+            serialized = AppointmentSerializer(
+                appointments, many=True, context={"request": request}
+            ).data
+
+            return Response(
+                {
+                    "success": True,
+                    "series_id": series.id,
+                    "appointment_ids": [a.id for a in appointments],
+                    "appointments_created": count,
+                    "total_value": total_value,
+                    "service_name": service.name,
+                    "professional_name": professional.name,
+                    "appointments": serialized,
+                    "message": (
+                        f"{count} agendamentos criados na série {series.id}"
+                        if count != 1
+                        else f"1 agendamento criado na série {series.id}"
+                    ),
+                },
+                status=drf_status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            logger.error(
+                f"Series creation failed: {e}",
+                exc_info=True,
+                extra={
+                    "tenant_id": getattr(tenant, "id", None),
+                    "user_id": getattr(request.user, "id", None),
+                },
+            )
+            return Response(
+                {"detail": "Erro interno do servidor."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    from core.models import AppointmentSeries
+    queryset = AppointmentSeries.objects.all()
+    from core.serializers import AppointmentSeriesSerializer
+    serializer_class = AppointmentSeriesSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        return qs.filter(
+            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        )
+
+
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
 

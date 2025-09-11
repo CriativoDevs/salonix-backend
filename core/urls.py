@@ -9,6 +9,8 @@ from core.views import (
     AppointmentICSDownloadView,
     BulkAppointmentCreateView,
     MyAppointmentsListView,
+    AppointmentSeriesCreateView,
+    AppointmentSeriesDetailView,
     ProfessionalViewSet,
     PublicServiceListView,
     PublicProfessionalListView,
@@ -38,6 +40,16 @@ urlpatterns = [
         "appointments/bulk/",
         BulkAppointmentCreateView.as_view(),
         name="appointment-bulk-create",
+    ),
+    path(
+        "appointments/series/",
+        AppointmentSeriesCreateView.as_view(),
+        name="appointment-series-create",
+    ),
+    path(
+        "appointments/series/<int:pk>/",
+        AppointmentSeriesDetailView.as_view(),
+        name="appointment-series-detail",
     ),
     path(
         "appointments/<int:pk>/cancel/",
