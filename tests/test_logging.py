@@ -224,7 +224,7 @@ class TestRequestLoggingMiddleware:
         request.request_id = "test-123"
         request.start_time = 1234567890.0
 
-        response = HttpResponse("OK")
+        response = HttpResponse(b"OK")
 
         with patch("time.time", return_value=1234567890.1):
             processed_response = self.middleware.process_response(request, response)
@@ -253,7 +253,7 @@ class TestRequestLoggingMiddleware:
         request.start_time = 1234567890.0
         request.user = self.user
 
-        response = HttpResponse("OK")
+        response = HttpResponse(b"OK")
         response.status_code = 200
 
         with patch("time.time", return_value=1234567890.1):

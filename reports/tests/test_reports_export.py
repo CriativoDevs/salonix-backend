@@ -1,6 +1,8 @@
 import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
+from django.http import HttpResponse
+from typing import cast
 from django.contrib.auth import get_user_model
 from users.models import UserFeatureFlags
 from django.test import override_settings
@@ -25,6 +27,7 @@ def test_export_overview_csv_ok_without_data():
     end = now.date().isoformat()
 
     r = c.get(f"/api/reports/overview/export/?from={start}&to={end}")
+    r = cast(HttpResponse, r)
     assert r.status_code == 200
     # content-type
     assert r["Content-Type"].startswith("text/csv")
@@ -105,6 +108,7 @@ def test_export_top_services_csv_ok_without_data():
     end = now.date().isoformat()
 
     r = c.get(f"/api/reports/top-services/export/?from={start}&to={end}")
+    r = cast(HttpResponse, r)
     assert r.status_code == 200
     assert r["Content-Type"].startswith("text/csv")
 
@@ -170,6 +174,7 @@ def test_export_revenue_csv_ok_without_data():
     end = now.date().isoformat()
 
     r = c.get(f"/api/reports/revenue/export/?from={start}&to={end}&interval=day")
+    r = cast(HttpResponse, r)
     assert r.status_code == 200
     assert r["Content-Type"].startswith("text/csv")
 

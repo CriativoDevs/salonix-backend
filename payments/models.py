@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from typing import Any, cast
 from django.utils import timezone
 
 User = settings.AUTH_USER_MODEL
@@ -31,7 +32,7 @@ class Subscription(models.Model):
     status = models.CharField(max_length=32, choices=STATUS_CHOICES)
     price_id = models.CharField(max_length=255, blank=True, null=True)
     current_period_end = models.DateTimeField(blank=True, null=True)
-    cancel_at_period_end = models.BooleanField(default=False)
+    cancel_at_period_end = models.BooleanField(default=cast(Any, False))
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -47,6 +48,7 @@ class Subscription(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in {"trialing", "active"} and (
-            not self.cancel_at_period_end
-            or (self.current_period_end and self.current_period_end > timezone.now())
+            not self.cancel_at_period_endor(
+                self.current_period_end and self.current_period_end > timezone.now()
+            )
         )

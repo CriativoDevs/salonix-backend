@@ -21,7 +21,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         created_counts = {}
 
-        with transaction.atomic():
+        from typing import Any, cast
+        with cast(Any, transaction.atomic()):
             # --- Tenant padrão ---
             default_tenant, tenant_created = Tenant.objects.get_or_create(
                 slug="default",

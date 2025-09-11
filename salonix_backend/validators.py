@@ -151,7 +151,8 @@ class PriceValidator:
             )
 
         # Validar casas decimais (máximo 2)
-        if decimal_value.as_tuple().exponent < -2:
+        from typing import cast
+        if cast(int, decimal_value.as_tuple().exponent) < -2:
             raise ValidationError(
                 "Preço não pode ter mais de 2 casas decimais.", code="too_many_decimals"
             )

@@ -12,7 +12,7 @@ try:
     from dotenv import load_dotenv
 except ImportError:
 
-    def load_dotenv(*args, **kwargs):
+    def load_dotenv(*args, **kwargs) -> bool:
         return False
 
 
@@ -42,12 +42,26 @@ INI_ALL = _read_ini()
 
 
 # Helper para ler configs: pega de ENV, senão .env (já carregado), senão INI[ENV]
+from typing import Any, cast
+
 def env_get(name: str, default=None):
     val = os.getenv(name)
     if val is not None:
         return val
     section = os.getenv("DJANGO_ENV", "dev")
     return (INI_ALL.get(section, {}) or {}).get(name.upper(), default)
+
+
+def env_int(name: str, default: int) -> int:
+    v = env_get(name, default)
+    try:
+        return int(str(v))
+    except Exception:
+        return default
+
+
+def env_str(name: str, default: str) -> str:
+    return str(env_get(name, default))
 
 
 # Define qual ambiente está sendo usado
@@ -240,8 +254,8 @@ REST_FRAMEWORK["EXCEPTION_HANDLER"] = (
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(env_get("JWT_ACCESS_MIN", 60))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(env_get("JWT_REFRESH_DAYS", 7))),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MIN", 60)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 7)),
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -254,7 +268,7 @@ EMAIL_BACKEND = env_get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
 EMAIL_HOST = env_get("EMAIL_HOST", "")
-EMAIL_PORT = int(env_get("EMAIL_PORT", "25"))
+EMAIL_PORT = env_int("EMAIL_PORT", 25)
 EMAIL_USE_TLS = str(env_get("EMAIL_USE_TLS", "false")).lower() in {
     "1",
     "true",
@@ -286,8 +300,8 @@ STRIPE_API_VERSION = env_get("STRIPE_API_VERSION", "")
 
 # Pagination limits for reports
 REPORTS_PAGINATION = {
-    "DEFAULT_LIMIT": int(env_get("REPORTS_DEFAULT_LIMIT", "50")),
-    "MAX_LIMIT": int(env_get("REPORTS_MAX_LIMIT", "500")),
+    "DEFAULT_LIMIT": env_int("REPORTS_DEFAULT_LIMIT", 50),
+    "MAX_LIMIT": env_int("REPORTS_MAX_LIMIT", 500),
 }
 
 SPECTACULAR_SETTINGS = {
@@ -436,7 +450,7 @@ if LOG_FILE:
 # =====================================================
 
 # Cache URL: redis://host:port/db ou locmem:// para desenvolvimento
-CACHE_URL = env_get("CACHE_URL", "locmem://")
+CACHE_URL: str = env_str("CACHE_URL", "locmem://")
 
 # Configuração Redis (produção recomendada)
 if CACHE_URL.startswith("redis://"):
@@ -481,10 +495,10 @@ else:
 
 # --- TTLs de cache por endpoint (em segundos) ---
 REPORTS_CACHE_TTL = {
-    "overview_json": int(env_get("TTL_OVERVIEW_JSON", "30")),
-    "top_services_json": int(env_get("TTL_TOP_SERVICES_JSON", "30")),
-    "revenue_json": int(env_get("TTL_REVENUE_JSON", "30")),
-    "overview_csv": int(env_get("TTL_OVERVIEW_CSV", "60")),
-    "top_services_csv": int(env_get("TTL_TOP_SERVICES_CSV", "60")),
-    "revenue_csv": int(env_get("TTL_REVENUE_CSV", "60")),
+    "overview_json": env_int("TTL_OVERVIEW_JSON", 30),
+    "top_services_json": env_int("TTL_TOP_SERVICES_JSON", 30),
+    "revenue_json": env_int("TTL_REVENUE_JSON", 30),
+    "overview_csv": env_int("TTL_OVERVIEW_CSV", 60),
+    "top_services_csv": env_int("TTL_TOP_SERVICES_CSV", 60),
+    "revenue_csv": env_int("TTL_REVENUE_CSV", 60),
 }

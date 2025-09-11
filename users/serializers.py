@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from typing import Any, Dict, cast
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -62,12 +63,13 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        data = cast(Dict[str, Any], validated_data)
         user = CustomUser.objects.create_user(
-            username=validated_data["username"],
-            email=validated_data.get("email"),
-            password=validated_data["password"],
-            salon_name=validated_data.get("salon_name", ""),
-            phone_number=validated_data.get("phone_number", ""),
+            username=data["username"],
+            email=data.get("email"),
+            password=data["password"],
+            salon_name=data.get("salon_name", ""),
+            phone_number=data.get("phone_number", ""),
         )
         return user
 

@@ -1,5 +1,6 @@
 from django.conf import settings
 from .models import PaymentCustomer
+from typing import Optional, cast
 
 
 def get_stripe():
@@ -24,9 +25,10 @@ def get_or_create_customer(user):
         return sc.stripe_customer_id
 
     # cria Customer no Stripe
+    from typing import Any
     cust = s.Customer.create(
-        email=user.email or None,
-        name=(user.get_full_name() or user.username or None),
+        email=cast(Any, getattr(user, "email", None)),
+        name=cast(Any, (getattr(user, "get_full_name", lambda: None)() or getattr(user, "username", None))),
         metadata={"user_id": str(user.id)},
     )
     sc = PaymentCustomer.objects.create(user=user, stripe_customer_id=cust["id"])

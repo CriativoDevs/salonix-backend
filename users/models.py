@@ -2,6 +2,8 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from typing import Any
+from typing import Any, cast
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -73,37 +75,37 @@ class Tenant(models.Model):
 
     # Feature Flags - Módulos
     reports_enabled = models.BooleanField(
-        default=False, help_text="Habilita módulo de relatórios"
+        default=cast(Any, False), help_text="Habilita módulo de relatórios"
     )
     pwa_admin_enabled = models.BooleanField(
-        default=True, help_text="Habilita PWA Admin"
+        default=cast(Any, True), help_text="Habilita PWA Admin"
     )
     pwa_client_enabled = models.BooleanField(
-        default=False, help_text="Habilita PWA Cliente"
+        default=cast(Any, False), help_text="Habilita PWA Cliente"
     )
     rn_admin_enabled = models.BooleanField(
-        default=False, help_text="Habilita app nativo Admin (React Native)"
+        default=cast(Any, False), help_text="Habilita app nativo Admin (React Native)"
     )
     rn_client_enabled = models.BooleanField(
-        default=False, help_text="Habilita app nativo Cliente (React Native)"
+        default=cast(Any, False), help_text="Habilita app nativo Cliente (React Native)"
     )
 
     # Feature Flags - Canais de Notificação
     push_web_enabled = models.BooleanField(
-        default=False, help_text="Habilita notificações web push"
+        default=cast(Any, False), help_text="Habilita notificações web push"
     )
     push_mobile_enabled = models.BooleanField(
-        default=False, help_text="Habilita notificações mobile push"
+        default=cast(Any, False), help_text="Habilita notificações mobile push"
     )
     sms_enabled = models.BooleanField(
-        default=False, help_text="Habilita notificações SMS"
+        default=cast(Any, False), help_text="Habilita notificações SMS"
     )
     whatsapp_enabled = models.BooleanField(
-        default=False, help_text="Habilita notificações WhatsApp"
+        default=cast(Any, False), help_text="Habilita notificações WhatsApp"
     )
 
     # Metadados
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=cast(Any, True))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -144,8 +146,10 @@ class Tenant(models.Model):
 
     def can_use_native_apps(self):
         """Verifica se pode usar apps nativos (Pro + addons)"""
+        from typing import Any, cast
+        addons = cast(list[str], (self.addons_enabled or []))
         return self.plan_tier == self.PLAN_PRO and (
-            "rn_admin" in self.addons_enabled or "rn_client" in self.addons_enabled
+            "rn_admin" in addons or "rn_client" in addons
         )
 
     def can_use_advanced_notifications(self):
@@ -208,7 +212,7 @@ class CustomUser(AbstractUser):
     )
     salon_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    objects = CustomUserManager()
+    objects: Any = CustomUserManager()
 
     class Meta:
         indexes = [
@@ -250,7 +254,7 @@ class UserFeatureFlags(models.Model):
     )
 
     # Controle Pro (preenchido via webhooks/adm)
-    is_pro = models.BooleanField(default=False)
+    is_pro = models.BooleanField(default=cast(Any, False))
     pro_status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default=STATUS_INCOMPLETE
     )
@@ -262,11 +266,11 @@ class UserFeatureFlags(models.Model):
     trial_until = models.DateTimeField(blank=True, null=True)
 
     # Módulos opcionais (o salão pode ligar/desligar)
-    sms_enabled = models.BooleanField(default=False)
-    email_enabled = models.BooleanField(default=True)  # notificações por e‑mail
-    reports_enabled = models.BooleanField(default=False)
-    audit_log_enabled = models.BooleanField(default=False)
-    i18n_enabled = models.BooleanField(default=False)
+    sms_enabled = models.BooleanField(default=cast(Any, False))
+    email_enabled = models.BooleanField(default=cast(Any, True))  # notificações por e‑mail
+    reports_enabled = models.BooleanField(default=cast(Any, False))
+    audit_log_enabled = models.BooleanField(default=cast(Any, False))
+    i18n_enabled = models.BooleanField(default=cast(Any, False))
 
     # Auditoria mínima
     updated_at = models.DateTimeField(auto_now=True)

@@ -2,6 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.db.utils import IntegrityError
 from django.core.exceptions import ValidationError
+from typing import Any, cast
 
 User = get_user_model()
 
@@ -37,11 +38,11 @@ class TestCustomUserModel:
     def test_user_without_email_should_fail(self):
         with pytest.raises(ValueError):
             User.objects.create_user(
-                username="noemail", email=None, password="testpass"
+                username="noemail", email=cast(Any, None), password="testpass"
             )
 
     def test_user_without_username_should_fail(self):
         with pytest.raises(ValueError):
             User.objects.create_user(
-                username=None, email="x@x.com", password="testpass"
+                username=cast(Any, None), email="x@x.com", password="testpass"
             )

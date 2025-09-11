@@ -50,7 +50,7 @@ class NotificationAdmin(admin.ModelAdmin):
                 "sms": "💬",
                 "whatsapp": "📞",
             }
-            return " ".join([channel_icons.get(ch, ch) for ch in channels])
+            return " ".join([str(channel_icons.get(ch, ch)) for ch in channels])
         return "-"
 
     channels.short_description = "Canais"

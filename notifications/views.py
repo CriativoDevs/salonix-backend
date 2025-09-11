@@ -4,6 +4,7 @@ from rest_framework import generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from typing import Any, Dict, cast
 from rest_framework.views import APIView
 from core.mixins import TenantIsolatedMixin
 from .models import Notification, NotificationDevice, NotificationLog
@@ -137,13 +138,13 @@ class NotificationDeviceRegisterView(TenantIsolatedMixin, generics.CreateAPIView
         existing_device = NotificationDevice.objects.filter(
             tenant=self.request.tenant,
             user=self.request.user,
-            device_type=serializer.validated_data["device_type"],
-            token=serializer.validated_data["token"],
+            device_type=cast(Dict[str, Any], serializer.validated_data)["device_type"],
+            token=cast(Dict[str, Any], serializer.validated_data)["token"],
         ).first()
 
         if existing_device:
             # Atualizar device existente
-            existing_device.is_active = serializer.validated_data.get("is_active", True)
+            existing_device.is_active = cast(Dict[str, Any], serializer.validated_data).get("is_active", True)
             existing_device.save()
 
             logger.info(
@@ -195,8 +196,9 @@ class NotificationTestView(TenantIsolatedMixin, APIView):
         serializer = NotificationTestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        channel = serializer.validated_data["channel"]
-        message = serializer.validated_data["message"]
+        v = cast(Dict[str, Any], serializer.validated_data)
+        channel = v["channel"]
+        message = v["message"]
 
         # Testar o canal
         success = notification_service.test_channel(

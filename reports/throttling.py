@@ -12,7 +12,8 @@ class PerUserScopedRateThrottle(ScopedRateThrottle):
     # DRF chama sem parâmetros
     def get_rate(self):
         # self.scope já foi setado em allow_request() pelo DRF
-        return api_settings.DEFAULT_THROTTLE_RATES.get(self.scope)
+        rates = api_settings.DEFAULT_THROTTLE_RATES or {}
+        return rates.get(self.scope)
 
     def get_cache_key(self, request, view):
         # garante que self.scope esteja setado (por segurança)

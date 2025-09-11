@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from typing import Any, cast
 
 from users.models import CustomUser, Tenant
 
@@ -43,7 +44,7 @@ class Professional(models.Model):
     )
     name = models.CharField(max_length=100)
     bio = models.TextField(blank=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=cast(Any, True))
 
     class Meta:
         indexes = [
@@ -69,7 +70,7 @@ class ScheduleSlot(models.Model):
     )
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    is_available = models.BooleanField(default=True)
+    is_available = models.BooleanField(default=cast(Any, True))
     STATUS_CHOICES = [
         ("available", "Available"),
         ("booked", "Booked"),

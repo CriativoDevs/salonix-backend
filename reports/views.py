@@ -10,6 +10,7 @@ from django.db import models
 from django.db.models import Sum, Count, F
 from django.db.models.functions import TruncDay
 from django.http import HttpResponse
+from typing import Any, Optional
 from django.utils import timezone
 
 from drf_spectacular.utils import (
@@ -89,7 +90,8 @@ APPT_PRICE_FIELD, SERVICE_PRICE_LOOKUP = _pick_price_source()
 
 
 def _price_sum():
-    return Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else Sum(F(SERVICE_PRICE_LOOKUP))
+    from typing import cast
+    return Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else Sum(F(cast(str, SERVICE_PRICE_LOOKUP)))
 
 
 def _parse_iso_dt(s: str):
@@ -218,7 +220,7 @@ PARAM_INTERVAL = OpenApiParameter(
 class ReportsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request) -> HttpResponse:
         flags, _ = UserFeatureFlags.objects.get_or_create(user=request.user)
         if not flags.reports_enabled:
             return Response(
@@ -314,7 +316,7 @@ class OverviewReportView(_BaseReports):
         if APPT_PRICE_FIELD:
             revenue = done.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0
         else:
-            revenue = done.aggregate(total=Sum(F(SERVICE_PRICE_LOOKUP)))["total"] or 0
+            revenue = done.aggregate(total=_price_sum())["total"] or 0
 
         avg_ticket = (revenue / done_count) if done_count else 0
         return Response(
@@ -361,7 +363,7 @@ class TopServicesReportView(_BaseReports):
         if APPT_PRICE_FIELD:
             base = base.annotate(qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD))
         else:
-            base = base.annotate(qty=Count("id"), revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+            base = base.annotate(qty=Count("id"), revenue=_price_sum())
 
         # total de linhas agregadas (serviços distintos no período)
         total = base.count()
@@ -434,7 +436,7 @@ class RevenueReportView(_BaseReports):
         if APPT_PRICE_FIELD:
             base = base.annotate(revenue=Sum(APPT_PRICE_FIELD))
         else:
-            base = base.annotate(revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+            base = base.annotate(revenue=_price_sum())
 
         total = base.count()
 
@@ -537,22 +539,24 @@ class ExportOverviewCSVView(_BaseReports):
 
         # Itera com segurança; evita KeyError e None
         for row in series_qs.iterator(chunk_size=1000):
-            bucket = row.get("bucket")
+            bucket: Optional[Any] = row.get("bucket")
             revenue = row.get("revenue") or 0
             # bucket pode ser datetime, date, ou None; normalize
-            if hasattr(bucket, "date"):
+            if bucket is None:
+                period = ""
+            elif hasattr(bucket, "date"):
                 period = bucket.date().isoformat()
             elif hasattr(bucket, "isoformat"):
                 period = bucket.isoformat()
             else:
-                period = str(bucket) if bucket is not None else ""
+                period = str(bucket)
             writer.writerow([period, float(revenue)])
 
         csv_content = buffer.getvalue()
         buffer.close()
 
         filename = f"overview_{start.date().isoformat()}_{end.date().isoformat()}.csv"
-        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         # cabeçalhos defensivos (opcional)
         resp["X-Content-Type-Options"] = "nosniff"
@@ -589,7 +593,7 @@ class ExportTopServicesCSVView(_BaseReports):
         parameters=[PARAM_FROM, PARAM_TO],
         responses={200: RESP_CSV_TOP_SERVICES, 403: OpenApiTypes.OBJECT},
     )
-    def get(self, request):
+    def get(self, request) -> HttpResponse:
 
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
@@ -602,7 +606,7 @@ class ExportTopServicesCSVView(_BaseReports):
         if APPT_PRICE_FIELD:
             base = base.annotate(qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD))
         else:
-            base = base.annotate(qty=Count("id"), revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+            base = base.annotate(qty=Count("id"), revenue=_price_sum())
 
         qs = base.order_by("-qty", "-revenue", "service__name")
 
@@ -632,7 +636,7 @@ class ExportTopServicesCSVView(_BaseReports):
         filename = (
             f"top_services_{start.date().isoformat()}_{end.date().isoformat()}.csv"
         )
-        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
 
@@ -663,7 +667,7 @@ class ExportRevenueCSVView(_BaseReports):
         parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
         responses={200: RESP_CSV_REVENUE, 403: OpenApiTypes.OBJECT},
     )
-    def get(self, request):
+    def get(self, request) -> HttpResponse:
 
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
@@ -687,7 +691,7 @@ class ExportRevenueCSVView(_BaseReports):
         if APPT_PRICE_FIELD:
             base = base.annotate(revenue=Sum(APPT_PRICE_FIELD))
         else:
-            base = base.annotate(revenue=Sum(F(SERVICE_PRICE_LOOKUP)))
+            base = base.annotate(revenue=_price_sum())
 
         qs = base.order_by("bucket")
 
@@ -716,6 +720,6 @@ class ExportRevenueCSVView(_BaseReports):
         buffer.close()
 
         filename = f"revenue_{interval}_{start.date().isoformat()}_{end.date().isoformat()}.csv"
-        resp = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp

@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.db import models
 from django.forms import TextInput, Select
 from .models import CustomUser, Tenant, UserFeatureFlags
+from typing import Any, cast
 
 
 @admin.register(Tenant)
@@ -172,9 +173,14 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ["username", "email", "salon_name", "tenant__name"]
 
     # Adicionar campos do tenant aos fieldsets
-    fieldsets = UserAdmin.fieldsets + (
-        ("Informações do Salão", {"fields": ("tenant", "salon_name", "phone_number")}),
+    base_fieldsets: list[Any] = list(UserAdmin.fieldsets or [])
+    base_fieldsets.append(
+        (
+            "Informações do Salão",
+            {"fields": ("tenant", "salon_name", "phone_number")},
+        )
     )
+    fieldsets = base_fieldsets
 
     def tenant_name(self, obj):
         """Exibe nome do tenant com link."""
