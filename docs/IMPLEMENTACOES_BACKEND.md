@@ -127,6 +127,21 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`
 - ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
 
+#### **Atualização de Séries (BE-191)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `core/views.py` - `AppointmentSeriesDetailView.patch`
+- `core/serializers.py` - `AppointmentSeriesUpdateSerializer`
+- `core/tests/test_appointment_series_patch.py` - Testes end-to-end
+
+**Características**:
+- ✅ PATCH `/api/appointments/series/{id}/` com `action=cancel_all | edit_upcoming`
+- ✅ Cancelamento em massa de ocorrências futuras com liberação de slots
+- ✅ Edição de próximas ocorrências (notas + remarcação) com validações de disponibilidade
+- ✅ Transação atômica para todas as operações de série
+- ✅ Resposta padronizada `{ success, series_id, affected_count, appointment_ids, message }`
+- ✅ Métricas Prometheus: `appointment_series_updated_total{tenant_id,action,status}` e `appointment_series_errors_total{tenant_id,action,error_type}`
+
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**

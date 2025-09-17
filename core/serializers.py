@@ -412,3 +412,34 @@ class AppointmentSeriesSerializer(serializers.Serializer):
                 instance.appointments.all().order_by("slot__start_time"), many=True
             ).data,
         }
+
+
+class AppointmentSeriesUpdateSerializer(serializers.Serializer):
+    """Serializer para operações de atualização em séries de agendamentos."""
+
+    ACTION_CHOICES = ("cancel_all", "edit_upcoming")
+
+    action = serializers.ChoiceField(choices=ACTION_CHOICES)
+    start_from = serializers.DateTimeField(required=False, allow_null=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    slot_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=False
+    )
+
+    def validate_slot_ids(self, value):
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Não é permitido repetir slot IDs.")
+        return value
+
+    def validate(self, attrs):
+        action = attrs.get("action")
+
+        if action == "edit_upcoming":
+            notes = attrs.get("notes")
+            slot_ids = attrs.get("slot_ids")
+            if notes is None and slot_ids is None:
+                raise serializers.ValidationError(
+                    "Para 'edit_upcoming' informe ao menos 'notes' ou 'slot_ids'."
+                )
+
+        return attrs

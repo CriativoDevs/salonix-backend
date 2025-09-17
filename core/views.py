@@ -12,10 +12,12 @@ from core.email_utils import (
     send_appointment_confirmation_email,
     send_appointment_cancellation_email,
 )
-from core.models import Appointment, Professional, Service, ScheduleSlot
+from core.models import Appointment, AppointmentSeries, Professional, Service, ScheduleSlot
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
+    AppointmentSeriesSerializer,
+    AppointmentSeriesUpdateSerializer,
     BulkAppointmentSerializer,
     ProfessionalSerializer,
     ServiceSerializer,
@@ -62,6 +64,18 @@ BULK_APPOINTMENTS_ERRORS = Counter(
     "bulk_appointments_errors_total",
     "Total number of bulk appointment errors",
     ["tenant_id", "status"],
+)
+
+APPOINTMENT_SERIES_UPDATED_TOTAL = Counter(
+    "appointment_series_updated_total",
+    "Total number of series update operations",
+    ["tenant_id", "action", "status"],
+)
+
+APPOINTMENT_SERIES_ERRORS_TOTAL = Counter(
+    "appointment_series_errors_total",
+    "Total number of series update errors",
+    ["tenant_id", "action", "error_type"],
 )
 
 logger = logging.getLogger(__name__)
@@ -346,8 +360,6 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
 
-            from core.models import AppointmentSeries
-
             with transaction.atomic():
                 series = AppointmentSeries.objects.create(
                     tenant=tenant,
@@ -427,9 +439,7 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
 
 class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
     permission_classes = [IsAuthenticated]
-    from core.models import AppointmentSeries
     queryset = AppointmentSeries.objects.all()
-    from core.serializers import AppointmentSeriesSerializer
     serializer_class = AppointmentSeriesSerializer
 
     def get_queryset(self):
@@ -438,6 +448,242 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
         return qs.filter(
             Q(client=user) | Q(service__user=user) | Q(professional__user=user)
         )
+
+    def patch(self, request, *args, **kwargs):
+        series = self.get_object()
+        tenant = getattr(request, "tenant", None) or series.tenant
+        tenant_id_label = getattr(tenant, "id", "unknown") or "unknown"
+
+        update_serializer = AppointmentSeriesUpdateSerializer(
+            data=request.data,
+            context={"request": request, "series": series, "tenant": tenant},
+        )
+
+        if not update_serializer.is_valid():
+            action = request.data.get("action", "unknown")
+            APPOINTMENT_SERIES_ERRORS_TOTAL.labels(
+                tenant_id=tenant_id_label, action=action, error_type="validation_error"
+            ).inc()
+            return Response(
+                update_serializer.errors, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        data = cast(Dict[str, Any], update_serializer.validated_data)
+        action = cast(str, data["action"])
+        start_from = cast(
+            Any, data.get("start_from")
+        ) or timezone.now()  # atrasa para agora por padrão
+
+        upcoming = list(
+            series.appointments.filter(slot__start_time__gte=start_from)
+            .select_related("slot")
+            .order_by("slot__start_time")
+        )
+
+        try:
+            with transaction.atomic():
+                if action == "cancel_all":
+                    payload = self._handle_cancel_all(
+                        request=request,
+                        series=series,
+                        upcoming=upcoming,
+                    )
+                else:
+                    payload = self._handle_edit_upcoming(
+                        request=request,
+                        series=series,
+                        upcoming=upcoming,
+                        data=data,
+                        tenant=tenant,
+                    )
+        except ValidationError as exc:
+            APPOINTMENT_SERIES_ERRORS_TOTAL.labels(
+                tenant_id=tenant_id_label, action=action, error_type="validation_error"
+            ).inc()
+            detail = getattr(exc, "detail", None) or exc.args or {
+                "detail": "Requisição inválida",
+            }
+            return Response(detail, status=drf_status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:  # pragma: no cover - guard para falhas imprevisíveis
+            APPOINTMENT_SERIES_ERRORS_TOTAL.labels(
+                tenant_id=tenant_id_label, action=action, error_type="exception"
+            ).inc()
+            logger.error(
+                "appointment_series_patch_error",
+                exc_info=True,
+                extra={
+                    "tenant_id": tenant_id_label,
+                    "series_id": series.id,
+                    "action": action,
+                    "user_id": getattr(request.user, "id", None),
+                },
+            )
+            return Response(
+                {"detail": "Erro interno ao atualizar série."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        APPOINTMENT_SERIES_UPDATED_TOTAL.labels(
+            tenant_id=tenant_id_label, action=action, status="success"
+        ).inc()
+
+        logger.info(
+            "appointment_series_patch_success",
+            extra={
+                "tenant_id": tenant_id_label,
+                "series_id": series.id,
+                "action": action,
+                "affected_count": payload.get("affected_count", 0),
+            },
+        )
+
+        return Response(payload, status=drf_status.HTTP_200_OK)
+
+    def _handle_cancel_all(
+        self,
+        *,
+        request,
+        series: AppointmentSeries,
+        upcoming: List[Appointment],
+    ) -> Dict[str, Any]:
+        affected_ids: List[int] = []
+
+        for appointment in upcoming:
+            # Liberar slot independentemente do status atual
+            if appointment.slot:
+                appointment.slot.mark_available()
+
+            if appointment.status != "cancelled":
+                appointment.status = "cancelled"
+                appointment.cancelled_by = request.user
+                appointment.save(update_fields=["status", "cancelled_by"])
+
+            affected_ids.append(appointment.id)
+
+        message = (
+            "Nenhum agendamento futuro encontrado para cancelar."
+            if not affected_ids
+            else f"{len(affected_ids)} agendamentos futuros cancelados."
+        )
+
+        return {
+            "success": True,
+            "series_id": series.id,
+            "action": "cancel_all",
+            "affected_count": len(affected_ids),
+            "appointment_ids": affected_ids,
+            "message": message,
+        }
+
+    def _handle_edit_upcoming(
+        self,
+        *,
+        request,
+        series: AppointmentSeries,
+        upcoming: List[Appointment],
+        data: Dict[str, Any],
+        tenant,
+    ) -> Dict[str, Any]:
+        notes = data.get("notes")
+        slot_ids = cast(Optional[List[int]], data.get("slot_ids"))
+
+        if slot_ids:
+            if len(slot_ids) != len(upcoming):
+                raise ValidationError(
+                    {"slot_ids": ["Quantidade de slots não corresponde aos agendamentos futuros."]}
+                )
+
+            slots_qs = (
+                ScheduleSlot.objects.select_for_update()
+                .filter(id__in=slot_ids, tenant=tenant)
+            )
+            slots_map = {slot.id: slot for slot in slots_qs}
+            missing = [slot_id for slot_id in slot_ids if slot_id not in slots_map]
+            if missing:
+                raise ValidationError(
+                    {"slot_ids": [f"Slots não encontrados: {missing}"]}
+                )
+
+            invalid_professional = [
+                slot_id
+                for slot_id, slot in slots_map.items()
+                if slot.professional_id != series.professional_id
+            ]
+            if invalid_professional:
+                raise ValidationError(
+                    {
+                        "slot_ids": [
+                            "Todos os slots devem pertencer ao mesmo profissional da série."
+                        ]
+                    }
+                )
+
+        affected_ids: List[int] = []
+        updated_notes = False
+
+        if not upcoming:
+            if notes is not None:
+                series.notes = notes
+                series.save(update_fields=["notes"])
+                updated_notes = True
+
+            return {
+                "success": True,
+                "series_id": series.id,
+                "action": "edit_upcoming",
+                "affected_count": 0,
+                "appointment_ids": affected_ids,
+                "message": "Nenhum agendamento futuro encontrado para atualizar.",
+            }
+
+        for idx, appointment in enumerate(upcoming):
+            fields_to_update: List[str] = []
+
+            if notes is not None:
+                appointment.notes = notes
+                fields_to_update.append("notes")
+                updated_notes = True
+
+            if slot_ids:
+                desired_slot_id = slot_ids[idx]
+                desired_slot = slots_map[desired_slot_id]
+
+                if desired_slot_id != appointment.slot_id:
+                    if desired_slot.is_available is False or desired_slot.status != "available":
+                        raise ValidationError(
+                            {"slot_ids": [f"Slot {desired_slot_id} não está disponível."]}
+                        )
+
+                    if appointment.slot:
+                        appointment.slot.mark_available()
+
+                    appointment.slot = desired_slot
+                    fields_to_update.append("slot")
+                    desired_slot.mark_booked()
+
+            if fields_to_update:
+                appointment.save(update_fields=list(set(fields_to_update)))
+
+            affected_ids.append(appointment.id)
+
+        if updated_notes:
+            series.notes = notes
+            series.save(update_fields=["notes"])
+
+        message = (
+            "Notas atualizadas para os agendamentos futuros."
+            if notes is not None and not slot_ids
+            else "Agendamentos futuros atualizados com sucesso."
+        )
+
+        return {
+            "success": True,
+            "series_id": series.id,
+            "action": "edit_upcoming",
+            "affected_count": len(affected_ids),
+            "appointment_ids": affected_ids,
+            "message": message,
+        }
 
 
 class AppointmentCancelView(APIView):
