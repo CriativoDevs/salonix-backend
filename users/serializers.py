@@ -134,14 +134,14 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
         try:
             user = CustomUser.objects.get(email=email)
         except CustomUser.DoesNotExist:
-            raise AuthenticationFailed("Incorrect credentials")
+            raise AuthenticationFailed("Credenciais inválidas.")
 
         if not user.check_password(password):
-            raise AuthenticationFailed("User account is disabled.")
+            raise AuthenticationFailed("Credenciais inválidas.")
 
         if not user.is_active:
             raise AuthenticationFailed(
-                "No active account found with the given credentials"
+                "Conta inativa. Entre em contato com o suporte."
             )
 
         refresh = RefreshToken.for_user(user)
