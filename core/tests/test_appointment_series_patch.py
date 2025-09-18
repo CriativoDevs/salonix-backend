@@ -224,3 +224,139 @@ def test_series_edit_upcoming_slot_count_mismatch(user_fixture):
 
     assert response.status_code == 400
     assert "slot_ids" in response.json()
+
+
+@pytest.mark.django_db
+def test_series_occurrence_cancel_success(user_fixture):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    service = Service.objects.create(
+        user=user_fixture, name="Massagem", price_eur=60, duration_minutes=60
+    )
+    professional = Professional.objects.create(user=user_fixture, name="Clara")
+    series = AppointmentSeries.objects.create(
+        tenant=user_fixture.tenant,
+        client=user_fixture,
+        service=service,
+        professional=professional,
+    )
+
+    now = timezone.now()
+    slot = ScheduleSlot.objects.create(
+        professional=professional,
+        start_time=now + timedelta(days=1),
+        end_time=now + timedelta(days=1, minutes=60),
+    )
+    slot.mark_booked()
+    appointment = Appointment.objects.create(
+        client=user_fixture,
+        service=service,
+        professional=professional,
+        slot=slot,
+        series=series,
+        status="scheduled",
+    )
+
+    response = client.post(
+        f"/api/appointments/series/{series.id}/occurrence/{appointment.id}/cancel/",
+        format="json",
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["appointment_id"] == appointment.id
+
+    appointment.refresh_from_db()
+    slot.refresh_from_db()
+    assert appointment.status == "cancelled"
+    assert appointment.cancelled_by == user_fixture
+    assert slot.is_available is True
+    assert slot.status == "available"
+
+
+@pytest.mark.django_db
+def test_series_occurrence_cancel_past_fails(user_fixture):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    service = Service.objects.create(
+        user=user_fixture, name="Limpeza", price_eur=40, duration_minutes=45
+    )
+    professional = Professional.objects.create(user=user_fixture, name="Bruno")
+    series = AppointmentSeries.objects.create(
+        tenant=user_fixture.tenant,
+        client=user_fixture,
+        service=service,
+        professional=professional,
+    )
+
+    now = timezone.now()
+    slot = ScheduleSlot.objects.create(
+        professional=professional,
+        start_time=now - timedelta(days=1),
+        end_time=now - timedelta(days=1) + timedelta(minutes=45),
+    )
+    slot.mark_booked()
+    appointment = Appointment.objects.create(
+        client=user_fixture,
+        service=service,
+        professional=professional,
+        slot=slot,
+        series=series,
+        status="scheduled",
+    )
+
+    response = client.post(
+        f"/api/appointments/series/{series.id}/occurrence/{appointment.id}/cancel/",
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "detail" in response.json()
+
+
+@pytest.mark.django_db
+def test_series_occurrence_cancel_forbidden(user_fixture, django_user_model):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    other_user = django_user_model.objects.create_user(
+        username="tenant-two",
+        password="pass",
+        email="tenant-two@example.com",
+    )
+
+    service = Service.objects.create(
+        user=other_user, name="SPA", price_eur=90, duration_minutes=90
+    )
+    professional = Professional.objects.create(user=other_user, name="Helena")
+    series = AppointmentSeries.objects.create(
+        tenant=other_user.tenant,
+        client=other_user,
+        service=service,
+        professional=professional,
+    )
+
+    now = timezone.now()
+    slot = ScheduleSlot.objects.create(
+        professional=professional,
+        start_time=now + timedelta(days=2),
+        end_time=now + timedelta(days=2, minutes=90),
+    )
+    slot.mark_booked()
+    appointment = Appointment.objects.create(
+        client=other_user,
+        service=service,
+        professional=professional,
+        slot=slot,
+        series=series,
+        status="scheduled",
+    )
+
+    response = client.post(
+        f"/api/appointments/series/{series.id}/occurrence/{appointment.id}/cancel/"
+    )
+
+    assert response.status_code == 403
