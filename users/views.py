@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from drf_spectacular.utils import extend_schema
+
 from salonix_backend.error_handling import (
     TenantError,
     ErrorCodes,
@@ -91,6 +93,7 @@ class TenantMetaView(APIView):
                 code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
             )
 
+    @extend_schema(responses=TenantMetaSerializer)
     def get(self, request):
         """Retornar metadados do tenant especificado"""
         # TenantError será tratado automaticamente pelo custom_exception_handler
@@ -100,6 +103,10 @@ class TenantMetaView(APIView):
         serializer = TenantMetaSerializer(tenant)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        request=TenantBrandingUpdateSerializer,
+        responses=TenantMetaSerializer,
+    )
     def patch(self, request):
         """Atualizar branding do tenant (logo, cores)"""
         try:
@@ -124,6 +131,7 @@ class TenantMetaView(APIView):
         if serializer.is_valid():
             # Limpar logo anterior se novo logo for enviado
             from typing import Any, Dict, cast
+
             vdata = cast(Dict[str, Any], serializer.validated_data)
             if vdata.get("logo"):
                 if tenant.logo:

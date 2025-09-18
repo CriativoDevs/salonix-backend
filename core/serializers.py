@@ -443,3 +443,42 @@ class AppointmentSeriesUpdateSerializer(serializers.Serializer):
                 )
 
         return attrs
+
+
+class BulkAppointmentResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    appointment_ids = serializers.ListField(child=serializers.IntegerField())
+    appointments_created = serializers.IntegerField()
+    total_value = serializers.FloatField()
+    service_name = serializers.CharField()
+    professional_name = serializers.CharField()
+    appointments = AppointmentSerializer(many=True)
+    message = serializers.CharField()
+
+
+class AppointmentSeriesCreateResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    series_id = serializers.IntegerField()
+    appointment_ids = serializers.ListField(child=serializers.IntegerField())
+    appointments_created = serializers.IntegerField()
+    total_value = serializers.FloatField()
+    service_name = serializers.CharField()
+    professional_name = serializers.CharField()
+    appointments = AppointmentSerializer(many=True)
+    message = serializers.CharField()
+
+
+class AppointmentSeriesUpdateResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    series_id = serializers.IntegerField()
+    action = serializers.CharField()
+    affected_count = serializers.IntegerField()
+    appointment_ids = serializers.ListField(child=serializers.IntegerField())
+    message = serializers.CharField()
+
+
+class AppointmentSeriesOccurrenceCancelResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    series_id = serializers.IntegerField()
+    appointment_id = serializers.IntegerField()
+    message = serializers.CharField()

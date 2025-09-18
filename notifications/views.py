@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from typing import Any, Dict, cast
 from rest_framework.views import APIView
 from core.mixins import TenantIsolatedMixin
+from drf_spectacular.utils import extend_schema
 from .models import Notification, NotificationDevice, NotificationLog
 from .serializers import (
     NotificationSerializer,
@@ -14,6 +15,9 @@ from .serializers import (
     NotificationMarkReadSerializer,
     NotificationTestSerializer,
     NotificationLogSerializer,
+    NotificationMarkAllReadResponseSerializer,
+    NotificationTestResponseSerializer,
+    NotificationStatsResponseSerializer,
 )
 from .services import notification_service
 
@@ -97,6 +101,7 @@ class NotificationMarkAllReadView(TenantIsolatedMixin, APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses=NotificationMarkAllReadResponseSerializer)
     def post(self, request):
         # Buscar notificações não lidas do usuário no tenant
         queryset = Notification.objects.filter(
@@ -192,6 +197,10 @@ class NotificationTestView(TenantIsolatedMixin, APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=NotificationTestSerializer,
+        responses=NotificationTestResponseSerializer,
+    )
     def post(self, request):
         serializer = NotificationTestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -237,6 +246,7 @@ class NotificationStatsView(TenantIsolatedMixin, APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses=NotificationStatsResponseSerializer)
     def get(self, request):
         # Contar notificações do usuário no tenant
         total_notifications = Notification.objects.filter(
