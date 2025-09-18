@@ -142,7 +142,9 @@ main() {
   metrics=$(curl -s "$BASE_URL/metrics" || true)
   echo "$metrics" | grep -E 'reports_requests_total|reports_latency_seconds_bucket|reports_csv_bytes_total|reports_csv_rows_total' >/dev/null \
     || { echo "$metrics" | head -n 50; fail "Expected report metrics not found in /metrics"; }
-  ok "/metrics contains report metrics."
+  echo "$metrics" | grep -E 'appointment_series_created_total|appointment_series_updated_total|appointment_series_occurrence_cancel_total|appointment_series_size_total' >/dev/null \
+    || { echo "$metrics" | head -n 50; fail "Expected series metrics not found in /metrics"; }
+  ok "/metrics contains report + series metrics."
   ok "Smoke test finished successfully."
 }
 

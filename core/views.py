@@ -84,6 +84,18 @@ APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL = Counter(
     ["tenant_id", "status"],
 )
 
+APPOINTMENT_SERIES_CREATED_TOTAL = Counter(
+    "appointment_series_created_total",
+    "Total number of series created",
+    ["tenant_id", "status"],
+)
+
+APPOINTMENT_SERIES_SIZE_TOTAL = Counter(
+    "appointment_series_size_total",
+    "Total number of appointments created per series",
+    ["tenant_id"],
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -394,6 +406,14 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                     )
                     appointments.append(appointment)
 
+                APPOINTMENT_SERIES_CREATED_TOTAL.labels(
+                    tenant_id=getattr(tenant, "id", "unknown") or "unknown",
+                    status="success",
+                ).inc()
+                APPOINTMENT_SERIES_SIZE_TOTAL.labels(
+                    tenant_id=getattr(tenant, "id", "unknown") or "unknown",
+                ).inc(len(appointments))
+
             from decimal import Decimal
 
             count = len(appointments)
@@ -429,6 +449,10 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                 status=drf_status.HTTP_201_CREATED,
             )
         except Exception as e:
+            APPOINTMENT_SERIES_CREATED_TOTAL.labels(
+                tenant_id=getattr(tenant, "id", "unknown") or "unknown",
+                status="error",
+            ).inc()
             logger.error(
                 f"Series creation failed: {e}",
                 exc_info=True,

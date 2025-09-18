@@ -156,6 +156,18 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Métrica Prometheus: `appointment_series_occurrence_cancel_total{tenant_id,status}`
 - ✅ Resposta `{ success, series_id, appointment_id, message }`
 
+#### **Métricas Avançadas de Séries (BE-193)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `core/views.py` - Instrumentação em criação, patch e cancelamento de ocorrências
+- `core/tests/test_appointment_series_metrics.py` - Testes unitários de métricas
+
+**Características**:
+- ✅ Contador `appointment_series_created_total{tenant_id,status}` (sucesso/erro)
+- ✅ Contador `appointment_series_size_total{tenant_id}` com tamanho do lote criado
+- ✅ Testes isolando registry Prometheus para validar incrementos
+- ✅ Documentação e status atualizados
+
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**
