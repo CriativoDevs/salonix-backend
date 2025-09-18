@@ -8,6 +8,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+
 from core.email_utils import (
     send_appointment_confirmation_email,
     send_appointment_cancellation_email,
@@ -16,8 +19,12 @@ from core.models import Appointment, AppointmentSeries, Professional, Service, S
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
+    AppointmentSeriesCreateResponseSerializer,
     AppointmentSeriesSerializer,
+    AppointmentSeriesUpdateResponseSerializer,
     AppointmentSeriesUpdateSerializer,
+    AppointmentSeriesOccurrenceCancelResponseSerializer,
+    BulkAppointmentResponseSerializer,
     BulkAppointmentSerializer,
     ProfessionalSerializer,
     ServiceSerializer,
@@ -31,7 +38,7 @@ from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
-from prometheus_client import Counter
+from prometheus_client import Counter, REGISTRY
 
 from users.permissions import IsSalonOwnerOfAppointment
 from core.utils.ics import ICSGenerator
@@ -40,60 +47,67 @@ import csv
 import logging
 from typing import Any, Dict, List, Optional, cast
 
+def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
+    existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
+    if existing is not None:
+        return existing
+    return Counter(name, documentation, labelnames)
+
+
 # Métricas Prometheus
-ICS_DOWNLOADS_TOTAL = Counter(
+ICS_DOWNLOADS_TOTAL = _get_or_create_counter(
     "ics_downloads_total",
     "Total number of .ics calendar downloads",
-    ["tenant_id", "status"],
+    ("tenant_id", "status"),
 )
 
-BULK_APPOINTMENTS_TOTAL = Counter(
+BULK_APPOINTMENTS_TOTAL = _get_or_create_counter(
     "bulk_appointments_created_total",
     "Total number of bulk appointments created",
-    ["tenant_id", "status"],
+    ("tenant_id", "status"),
 )
 
-BULK_APPOINTMENTS_SIZE = Counter(
+BULK_APPOINTMENTS_SIZE = _get_or_create_counter(
     "bulk_appointments_average_size",
     "Average size of bulk appointments",
-    ["tenant_id"],
+    ("tenant_id",),
 )
 
 # Errors counter (separate from total with status)
-BULK_APPOINTMENTS_ERRORS = Counter(
+BULK_APPOINTMENTS_ERRORS = _get_or_create_counter(
     "bulk_appointments_errors_total",
     "Total number of bulk appointment errors",
-    ["tenant_id", "status"],
+    ("tenant_id", "status"),
 )
 
-APPOINTMENT_SERIES_UPDATED_TOTAL = Counter(
+APPOINTMENT_SERIES_UPDATED_TOTAL = _get_or_create_counter(
     "appointment_series_updated_total",
     "Total number of series update operations",
-    ["tenant_id", "action", "status"],
+    ("tenant_id", "action", "status"),
 )
 
-APPOINTMENT_SERIES_ERRORS_TOTAL = Counter(
+APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
     "appointment_series_errors_total",
     "Total number of series update errors",
-    ["tenant_id", "action", "error_type"],
+    ("tenant_id", "action", "error_type"),
 )
 
-APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL = Counter(
+APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL = _get_or_create_counter(
     "appointment_series_occurrence_cancel_total",
     "Total number of single occurrence cancellations in series",
-    ["tenant_id", "status"],
+    ("tenant_id", "status"),
 )
 
-APPOINTMENT_SERIES_CREATED_TOTAL = Counter(
+APPOINTMENT_SERIES_CREATED_TOTAL = _get_or_create_counter(
     "appointment_series_created_total",
     "Total number of series created",
-    ["tenant_id", "status"],
+    ("tenant_id", "status"),
 )
 
-APPOINTMENT_SERIES_SIZE_TOTAL = Counter(
+APPOINTMENT_SERIES_SIZE_TOTAL = _get_or_create_counter(
     "appointment_series_size_total",
     "Total number of appointments created per series",
-    ["tenant_id"],
+    ("tenant_id",),
 )
 
 logger = logging.getLogger(__name__)
@@ -204,6 +218,10 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=BulkAppointmentSerializer,
+        responses={201: BulkAppointmentResponseSerializer},
+    )
     def post(self, request):
         # fonte única da verdade para tenant
         tenant = getattr(request.user, "tenant", None) or getattr(
@@ -353,6 +371,10 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=BulkAppointmentSerializer,
+        responses={201: AppointmentSeriesCreateResponseSerializer},
+    )
     def post(self, request):
         tenant = getattr(request.user, "tenant", None) or getattr(
             request, "tenant", None
@@ -479,6 +501,10 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
             Q(client=user) | Q(service__user=user) | Q(professional__user=user)
         )
 
+    @extend_schema(
+        request=AppointmentSeriesUpdateSerializer,
+        responses={200: AppointmentSeriesUpdateResponseSerializer},
+    )
     def patch(self, request, *args, **kwargs):
         series = self.get_object()
         tenant = getattr(request, "tenant", None) or series.tenant
@@ -719,6 +745,10 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
 class AppointmentSeriesOccurrenceCancelView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={200: AppointmentSeriesOccurrenceCancelResponseSerializer},
+    )
     def post(self, request, series_id: int, occurrence_id: int):
         series = get_object_or_404(AppointmentSeries.objects.select_related("tenant"), pk=series_id)
 
@@ -803,6 +833,7 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: AppointmentSerializer})
     def patch(self, request, pk):
         appointment = get_object_or_404(Appointment, pk=pk)
 
@@ -1307,6 +1338,14 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="ICS calendar file",
+                response=OpenApiTypes.BINARY,
+            )
+        }
+    )
     def get(self, request, pk):
         """Gerar e retornar arquivo .ics para download."""
         user = request.user

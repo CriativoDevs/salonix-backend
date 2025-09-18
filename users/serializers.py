@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from typing import Any, Dict, cast
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -183,10 +185,12 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "feature_flags",
         ]
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_feature_flags(self, obj):
         """Retorna feature flags calculadas baseadas no plano"""
         return obj.get_feature_flags_dict()
 
+    @extend_schema_field(OpenApiTypes.URI)
     def get_logo_url(self, obj):
         """Retorna a URL do logo (upload ou URL externa)"""
         return obj.get_logo_url

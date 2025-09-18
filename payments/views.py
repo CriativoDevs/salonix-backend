@@ -5,15 +5,27 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+
 import stripe
 
 from . import stripe_utils
 from .models import Subscription, PaymentCustomer
+from .serializers import (
+    CheckoutSessionRequestSerializer,
+    CheckoutSessionResponseSerializer,
+    PortalSessionResponseSerializer,
+)
 
 
 class CreateCheckoutSession(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=CheckoutSessionRequestSerializer,
+        responses={200: CheckoutSessionResponseSerializer},
+    )
     def post(self, request):
         """
         Cria uma Checkout Session para assinatura (mensal/anual).
@@ -77,6 +89,10 @@ class CreateCheckoutSession(APIView):
 class CreatePortalSession(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={200: PortalSessionResponseSerializer},
+    )
     def post(self, request):
         """
         Cria uma sessão do Billing Portal para o salão gerenciar a assinatura:
@@ -100,6 +116,10 @@ class CreatePortalSession(APIView):
 class StripeWebhookView(APIView):
     permission_classes = [AllowAny]  # Stripe não envia credenciais
 
+    @extend_schema(
+        request=OpenApiTypes.BINARY,
+        responses={200: OpenApiResponse(description="Event processed")},
+    )
     def post(self, request):
         """
         Webhook em /api/payments/stripe/webhook/

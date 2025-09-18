@@ -356,7 +356,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 
 ## 🧪 **Sistema de Testes**
 
-### **Cobertura Atual: 243 Testes**
+### **Cobertura Atual: 270 Testes**
 **Status**: ✅ Implementado  
 **Arquivos**:
 - `tests/` - Diretório principal de testes
@@ -386,7 +386,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **Estatísticas do Código**
 - 📁 **Arquivos Python**: ~50 arquivos
 - 📝 **Linhas de código**: ~8.000 linhas
-- 🧪 **Testes**: 243 testes passando
+- 🧪 **Testes**: 270 testes passando
 - 📊 **Cobertura**: ~85% das funcionalidades core
 - 🏗️ **Modelos**: 12 modelos principais
 - 🔌 **Endpoints**: ~25 endpoints de API
@@ -394,9 +394,9 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 
 ### **Funcionalidades por Status**
 ```
-✅ Implementado (95%):   16 funcionalidades
+✅ Implementado (90%):   19 funcionalidades
 🔄 Em desenvolvimento:    0 funcionalidades  
-⏳ Planejado (5%):       2 funcionalidades
+⏳ Planejado (10%):       2 funcionalidades
 ```
 
 ## 🚀 **Próximas Implementações**
@@ -413,14 +413,16 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - [`TUTORIAL_DJANGO_ADMIN.md`](./TUTORIAL_DJANGO_ADMIN.md) - Guia do Django Admin
 - [`MVP_STATUS_ATUAL.md`](./MVP_STATUS_ATUAL.md) - Status atual do MVP
 - [`ARQUITETURA_SISTEMA.md`](./ARQUITETURA_SISTEMA.md) - Arquitetura técnica
+- `api-schema.yaml` - Atualizar com `make openapi` (schema DRF Spectacular para FE/Mobile)
 
 ## 🎯 **Conclusão**
 
-O backend do Salonix está **95% completo** com:
+O backend do Salonix está **90% completo** com:
 - ✅ **Infraestrutura robusta** multi-tenant
 - ✅ **Funcionalidades core** implementadas
-- ✅ **Qualidade enterprise** (243 testes)
+- ✅ **Qualidade enterprise** (270 testes)
 - ✅ **Admin customizado** funcional
+- ✅ **Séries recorrentes** com métricas, cancelamentos e painel de suporte
 - ✅ **Sistema de cache** otimizado
 - ✅ **Observabilidade** completa
 
@@ -429,5 +431,5 @@ O backend do Salonix está **95% completo** com:
 ---
 
 *Documento criado: 4 Setembro 2025*  
-*Última atualização: 4 Setembro 2025*  
-*Status: ✅ Completo*
+*Última atualização: 18 Setembro 2025*  
+*Status: ✅ Atualizado*

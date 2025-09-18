@@ -1,0 +1,3494 @@
+openapi: 3.0.3
+info:
+  title: Salonix API
+  version: 1.0.0
+  description: Documentação dos relatórios e demais endpoints.
+paths:
+  /api/appointments/:
+    post:
+      operationId: appointments_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/appointments/{id}/:
+    get:
+      operationId: appointments_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentDetail'
+          description: ''
+  /api/appointments/{id}/cancel/:
+    patch:
+      operationId: appointments_cancel_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/appointments/{id}/ics/:
+    get:
+      operationId: appointments_ics_retrieve
+      description: Gerar e retornar arquivo .ics para download.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ICS calendar file
+  /api/appointments/bulk/:
+    post:
+      operationId: appointments_bulk_create
+      description: |-
+        POST /api/appointments/bulk/
+
+        Criar múltiplos agendamentos em uma única transação atômica.
+        Todos os agendamentos são criados ou nenhum é criado.
+      tags:
+      - appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkAppointmentResponse'
+          description: ''
+  /api/appointments/series/:
+    post:
+      operationId: appointments_series_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkAppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentSeriesCreateResponse'
+          description: ''
+  /api/appointments/series/{id}/:
+    get:
+      operationId: appointments_series_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentSeries'
+          description: ''
+    patch:
+      operationId: appointments_series_partial_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentSeriesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentSeriesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentSeriesUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentSeriesUpdateResponse'
+          description: ''
+  /api/appointments/series/{series_id}/occurrence/{occurrence_id}/cancel/:
+    post:
+      operationId: appointments_series_occurrence_cancel_create
+      parameters:
+      - in: path
+        name: occurrence_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: series_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - appointments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentSeriesOccurrenceCancelResponse'
+          description: ''
+  /api/auth/me/features/:
+    get:
+      operationId: auth_me_features_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlags'
+          description: ''
+    put:
+      operationId: auth_me_features_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlagsUpdate'
+          description: ''
+    patch:
+      operationId: auth_me_features_partial_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlagsUpdate'
+          description: ''
+  /api/auth/register/:
+    post:
+      operationId: auth_register_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRegistration'
+          description: ''
+  /api/auth/tenant/meta/:
+    get:
+      operationId: auth_tenant_meta_retrieve
+      description: Retornar metadados do tenant especificado
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMeta'
+          description: ''
+    patch:
+      operationId: auth_tenant_meta_partial_update
+      description: Atualizar branding do tenant (logo, cores)
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMeta'
+          description: ''
+  /api/auth/token/:
+    post:
+      operationId: auth_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailTokenObtainPair'
+          description: ''
+  /api/auth/token/refresh/:
+    post:
+      operationId: auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/me/appointments/:
+    get:
+      operationId: me_appointments_list
+      description: |-
+        Lista os agendamentos do usuário autenticado (como cliente).
+        GET /api/me/appointments/
+      tags:
+      - me
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/notifications/:
+    get:
+      operationId: notifications_list
+      description: |-
+        GET /api/notifications/
+
+        Lista notificações in-app do usuário autenticado.
+        Suporta filtros: ?is_read=false&limit=20
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/notifications/{id}/read/:
+    put:
+      operationId: notifications_read_update
+      description: |-
+        PATCH /api/notifications/{id}/read/
+
+        Marca uma notificação como lida/não lida.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationMarkReadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationMarkReadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationMarkReadRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationMarkRead'
+          description: ''
+    patch:
+      operationId: notifications_read_partial_update
+      description: |-
+        PATCH /api/notifications/{id}/read/
+
+        Marca uma notificação como lida/não lida.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationMarkReadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationMarkReadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNotificationMarkReadRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationMarkRead'
+          description: ''
+  /api/notifications/logs/:
+    get:
+      operationId: notifications_logs_list
+      description: |-
+        GET /api/notifications/logs/
+
+        Lista logs de notificações (apenas para debug/admin).
+        Endpoint privado para debugging.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationLog'
+          description: ''
+  /api/notifications/mark-all-read/:
+    post:
+      operationId: notifications_mark_all_read_create
+      description: |-
+        POST /api/notifications/mark-all-read/
+
+        Marca todas as notificações não lidas do usuário como lidas.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationMarkAllReadResponse'
+          description: ''
+  /api/notifications/register_device/:
+    post:
+      operationId: notifications_register_device_create
+      description: |-
+        POST /api/notifications/register_device
+
+        Registra ou atualiza um device token para push notifications.
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationDeviceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationDeviceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationDeviceRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDevice'
+          description: ''
+  /api/notifications/stats/:
+    get:
+      operationId: notifications_stats_retrieve
+      description: |-
+        GET /api/notifications/stats
+
+        Estatísticas de notificações do usuário.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationStatsResponse'
+          description: ''
+  /api/notifications/test/:
+    post:
+      operationId: notifications_test_create
+      description: |-
+        POST /api/notifications/test
+
+        Testa um canal específico de notificação.
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationTestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NotificationTestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NotificationTestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTestResponse'
+          description: ''
+  /api/payments/stripe/billing-portal/:
+    post:
+      operationId: payments_stripe_billing_portal_create
+      description: |-
+        Cria uma sessão do Billing Portal para o salão gerenciar a assinatura:
+        trocar plano, cancelar, reativar, atualizar cartão, ver faturas.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSessionResponse'
+          description: ''
+  /api/payments/stripe/create-checkout-session/:
+    post:
+      operationId: payments_stripe_create_checkout_session_create
+      description: |-
+        Cria uma Checkout Session para assinatura (mensal/anual).
+        Body opcional:
+          - plan: "monthly" | "yearly" (default: "monthly")
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+          description: ''
+  /api/payments/stripe/webhook/:
+    post:
+      operationId: payments_stripe_webhook_create
+      description: |-
+        Webhook em /api/payments/stripe/webhook/
+        Eventos considerados:
+          - checkout.session.completed
+          - customer.subscription.created
+          - customer.subscription.updated
+          - customer.subscription.deleted
+          - invoice.payment_succeeded
+          - invoice.payment_failed
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: binary
+          application/x-www-form-urlencoded:
+            schema:
+              type: string
+              format: binary
+          multipart/form-data:
+            schema:
+              type: string
+              format: binary
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Event processed
+  /api/professionals/:
+    get:
+      operationId: professionals_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - professionals
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Professional'
+          description: ''
+    post:
+      operationId: professionals_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - professionals
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+          description: ''
+  /api/professionals/{id}/:
+    get:
+      operationId: professionals_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professional.
+        required: true
+      tags:
+      - professionals
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+          description: ''
+    put:
+      operationId: professionals_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professional.
+        required: true
+      tags:
+      - professionals
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProfessionalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+          description: ''
+    patch:
+      operationId: professionals_partial_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professional.
+        required: true
+      tags:
+      - professionals
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessionalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessionalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProfessionalRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Professional'
+          description: ''
+    delete:
+      operationId: professionals_destroy
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this professional.
+        required: true
+      tags:
+      - professionals
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/public/professionals/:
+    get:
+      operationId: public_professionals_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Professional'
+          description: ''
+  /api/public/services/:
+    get:
+      operationId: public_services_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+          description: ''
+  /api/public/slots/:
+    get:
+      operationId: public_slots_list
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+  /api/reports/admin/cache/invalidate/:
+    post:
+      operationId: reports_admin_cache_invalidate_create
+      description: |-
+        Endpoint administrativo para invalidar cache por prefixo.
+        POST body:
+          { "prefixes": ["reports:overview:", "reports:top_services:"] }
+
+        Retorna a contagem total de chaves removidas.
+      summary: Invalidar cache por prefixo (admin-only)
+      tags:
+      - Reports • Admin
+      requestBody:
+        content:
+          type:
+            schema:
+              type: object
+              additionalProperties: {}
+              description: Unspecified request body
+          properties:
+            schema:
+              prefixes:
+                type: array
+                items:
+                  type: string
+                description: 'Lista de prefixos a invalidar (ex.: reports:overview:).'
+          required:
+            schema:
+              type: object
+              additionalProperties: {}
+              description: Unspecified request body
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: integer
+                    example: 12
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        prefix:
+                          type: string
+                        removed:
+                          type: integer
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/overview/:
+    get:
+      operationId: reports_overview_retrieve
+      summary: Overview (contagens e receita)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  appointments_total:
+                    type: integer
+                    example: 120
+                  appointments_completed:
+                    type: integer
+                    example: 95
+                  revenue_total:
+                    type: number
+                    example: 155.0
+                  avg_ticket:
+                    type: number
+                    example: 51.67
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/overview/export/:
+    get:
+      operationId: reports_overview_export_retrieve
+      description: |-
+        GET /api/reports/overview/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+        Gera um CSV com:
+          - bloco de resumo (total agendamentos, completados, receita, ticket médio)
+          - série diária de receita (period_start, revenue)
+      summary: Exportar overview (CSV)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/revenue/:
+    get:
+      operationId: reports_revenue_retrieve
+      summary: Série de receita por período
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: interval
+        schema:
+          type: string
+          enum:
+          - day
+          - month
+          - week
+        description: Agrupamento por período.
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Limite de itens (padrão e máx. definidos em settings.REPORTS_PAGINATION).
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Deslocamento para paginação.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interval:
+                    type: string
+                    enum:
+                    - day
+                    - week
+                    - month
+                  series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        period_start:
+                          type: string
+                          format: date-time
+                        revenue:
+                          type: number
+                description: 'Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset,
+                  Link'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/revenue/export/:
+    get:
+      operationId: reports_revenue_export_retrieve
+      description: |-
+        GET /api/reports/revenue/export/?from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month
+
+        Gera CSV com as colunas:
+          - period_start (início do bucket)
+          - revenue (soma no bucket)
+      summary: Exportar Revenue Series (CSV)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: interval
+        schema:
+          type: string
+          enum:
+          - day
+          - month
+          - week
+        description: Agrupamento por período.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/summary/:
+    get:
+      operationId: reports_summary_retrieve
+      summary: Resumo (mock inicial)
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  range:
+                    type: string
+                    example: last_30_days
+                  generated_at:
+                    type: string
+                    format: date-time
+                  appointments_total:
+                    type: integer
+                    example: 42
+                  revenue_estimated:
+                    type: number
+                    format: float
+                    example: 1234.56
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/top-services/:
+    get:
+      operationId: reports_top_services_retrieve
+      summary: Top Services
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Limite de itens (padrão e máx. definidos em settings.REPORTS_PAGINATION).
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Deslocamento para paginação.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    service_id:
+                      type: integer
+                      example: 10
+                    service_name:
+                      type: string
+                      example: Corte de Cabelo
+                    qty:
+                      type: integer
+                      example: 2
+                    revenue:
+                      type: number
+                      example: 75.0
+                description: 'Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset,
+                  Link'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/top-services/export/:
+    get:
+      operationId: reports_top_services_export_retrieve
+      description: |-
+        GET /api/reports/top-services/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+        Gera CSV com as colunas:
+          - service_id
+          - service_name
+          - qty (quantidade de atendimentos completados no período)
+          - revenue (soma de receita estimada no período)
+      summary: Exportar Top Services (CSV)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/salon/appointments/:
+    get:
+      operationId: salon_appointments_list
+      description: |-
+        Endpoints para o SALÃO visualizar e editar seus agendamentos.
+        - list/retrieve: vê apenas agendamentos do próprio salão
+          (match por professional.user == request.user OU service.user == request.user)
+        - update/partial_update: permite editar SOMENTE o campo 'notes'
+          (cancelamento continua pelo endpoint específico de cancelamento).
+        - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Appointment'
+          description: ''
+    post:
+      operationId: salon_appointments_create
+      description: |-
+        Endpoints para o SALÃO visualizar e editar seus agendamentos.
+        - list/retrieve: vê apenas agendamentos do próprio salão
+          (match por professional.user == request.user OU service.user == request.user)
+        - update/partial_update: permite editar SOMENTE o campo 'notes'
+          (cancelamento continua pelo endpoint específico de cancelamento).
+        - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/salon/appointments/{id}/:
+    get:
+      operationId: salon_appointments_retrieve
+      description: |-
+        Endpoints para o SALÃO visualizar e editar seus agendamentos.
+        - list/retrieve: vê apenas agendamentos do próprio salão
+          (match por professional.user == request.user OU service.user == request.user)
+        - update/partial_update: permite editar SOMENTE o campo 'notes'
+          (cancelamento continua pelo endpoint específico de cancelamento).
+        - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this appointment.
+        required: true
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+    put:
+      operationId: salon_appointments_update
+      description: |-
+        Endpoints para o SALÃO visualizar e editar seus agendamentos.
+        - list/retrieve: vê apenas agendamentos do próprio salão
+          (match por professional.user == request.user OU service.user == request.user)
+        - update/partial_update: permite editar SOMENTE o campo 'notes'
+          (cancelamento continua pelo endpoint específico de cancelamento).
+        - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this appointment.
+        required: true
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+    patch:
+      operationId: salon_appointments_partial_update
+      description: |-
+        Permite ao salão editar:
+        - notes                (campo livre)
+        - slot                 (reagendamento para outro horário livre)
+        - status='cancelled'   (cancela + libera slot + registra cancelled_by)
+        Regras:
+        - Não permite alterar outros campos.
+        - Não permite combinar status='cancelled' com troca de slot na mesma requisição.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this appointment.
+        required: true
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAppointmentRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+    delete:
+      operationId: salon_appointments_destroy
+      description: |-
+        Endpoints para o SALÃO visualizar e editar seus agendamentos.
+        - list/retrieve: vê apenas agendamentos do próprio salão
+          (match por professional.user == request.user OU service.user == request.user)
+        - update/partial_update: permite editar SOMENTE o campo 'notes'
+          (cancelamento continua pelo endpoint específico de cancelamento).
+        - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this appointment.
+        required: true
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/salon/appointments/export/:
+    get:
+      operationId: salon_appointments_export_retrieve
+      description: |-
+        Exporta a lista de agendamentos do salão (respeitando os mesmos filtros
+        de listagem) em CSV.
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/schema/:
+    get:
+      operationId: schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - schema
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/services/:
+    get:
+      operationId: services_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - services
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Service'
+          description: ''
+    post:
+      operationId: services_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+          description: ''
+  /api/services/{id}/:
+    get:
+      operationId: services_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this service.
+        required: true
+      tags:
+      - services
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+          description: ''
+    put:
+      operationId: services_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this service.
+        required: true
+      tags:
+      - services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ServiceRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+          description: ''
+    patch:
+      operationId: services_partial_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this service.
+        required: true
+      tags:
+      - services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedServiceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedServiceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedServiceRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+          description: ''
+    delete:
+      operationId: services_destroy
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this service.
+        required: true
+      tags:
+      - services
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/slots/:
+    get:
+      operationId: slots_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - slots
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+    post:
+      operationId: slots_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+  /api/slots/{id}/:
+    get:
+      operationId: slots_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this schedule slot.
+        required: true
+      tags:
+      - slots
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+    put:
+      operationId: slots_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this schedule slot.
+        required: true
+      tags:
+      - slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ScheduleSlotRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+    patch:
+      operationId: slots_partial_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this schedule slot.
+        required: true
+      tags:
+      - slots
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedScheduleSlotRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedScheduleSlotRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedScheduleSlotRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleSlot'
+          description: ''
+    delete:
+      operationId: slots_destroy
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this schedule slot.
+        required: true
+      tags:
+      - slots
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/users/me/features/:
+    get:
+      operationId: users_me_features_retrieve
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlags'
+          description: ''
+    put:
+      operationId: users_me_features_update
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserFeatureFlagsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlagsUpdate'
+          description: ''
+    patch:
+      operationId: users_me_features_partial_update
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUserFeatureFlagsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserFeatureFlagsUpdate'
+          description: ''
+  /api/users/register/:
+    post:
+      operationId: users_register_create
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRegistration'
+          description: ''
+  /api/users/tenant/meta/:
+    get:
+      operationId: users_tenant_meta_retrieve
+      description: Retornar metadados do tenant especificado
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMeta'
+          description: ''
+    patch:
+      operationId: users_tenant_meta_partial_update
+      description: Atualizar branding do tenant (logo, cores)
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantBrandingUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantMeta'
+          description: ''
+  /api/users/token/:
+    post:
+      operationId: users_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailTokenObtainPairRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailTokenObtainPair'
+          description: ''
+  /api/users/token/refresh/:
+    post:
+      operationId: users_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+components:
+  schemas:
+    ActionEnum:
+      enum:
+      - cancel_all
+      - edit_upcoming
+      type: string
+      description: |-
+        * `cancel_all` - cancel_all
+        * `edit_upcoming` - edit_upcoming
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        client:
+          type: integer
+          readOnly: true
+        service:
+          type: integer
+        professional:
+          type: integer
+        slot:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/Status2d6Enum'
+        cancelled_by:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - cancelled_by
+      - client
+      - created_at
+      - id
+      - professional
+      - service
+      - slot
+    AppointmentDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/Status2d6Enum'
+          readOnly: true
+        notes:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        client_username:
+          type: string
+          readOnly: true
+        client_email:
+          type: string
+          format: email
+          readOnly: true
+        service:
+          allOf:
+          - $ref: '#/components/schemas/ServiceMini'
+          readOnly: true
+        professional:
+          allOf:
+          - $ref: '#/components/schemas/ProfessionalMini'
+          readOnly: true
+        slot:
+          allOf:
+          - $ref: '#/components/schemas/ScheduleSlotMini'
+          readOnly: true
+      required:
+      - client_email
+      - client_username
+      - created_at
+      - id
+      - notes
+      - professional
+      - service
+      - slot
+      - status
+    AppointmentRequest:
+      type: object
+      properties:
+        service:
+          type: integer
+        professional:
+          type: integer
+        slot:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/Status2d6Enum'
+      required:
+      - professional
+      - service
+      - slot
+    AppointmentSeries:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        client_id:
+          type: integer
+          readOnly: true
+        service_id:
+          type: integer
+          readOnly: true
+        professional_id:
+          type: integer
+          readOnly: true
+        notes:
+          type: string
+        recurrence_rule:
+          type: string
+        count:
+          type: integer
+          nullable: true
+        until:
+          type: string
+          format: date
+          nullable: true
+        appointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+          readOnly: true
+      required:
+      - appointments
+      - client_id
+      - id
+      - professional_id
+      - service_id
+    AppointmentSeriesCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        series_id:
+          type: integer
+        appointment_ids:
+          type: array
+          items:
+            type: integer
+        appointments_created:
+          type: integer
+        total_value:
+          type: number
+          format: double
+        service_name:
+          type: string
+        professional_name:
+          type: string
+        appointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        message:
+          type: string
+      required:
+      - appointment_ids
+      - appointments
+      - appointments_created
+      - message
+      - professional_name
+      - series_id
+      - service_name
+      - success
+      - total_value
+    AppointmentSeriesOccurrenceCancelResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        series_id:
+          type: integer
+        appointment_id:
+          type: integer
+        message:
+          type: string
+      required:
+      - appointment_id
+      - message
+      - series_id
+      - success
+    AppointmentSeriesUpdateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        series_id:
+          type: integer
+        action:
+          type: string
+        affected_count:
+          type: integer
+        appointment_ids:
+          type: array
+          items:
+            type: integer
+        message:
+          type: string
+      required:
+      - action
+      - affected_count
+      - appointment_ids
+      - message
+      - series_id
+      - success
+    BulkAppointmentRequest:
+      type: object
+      description: |-
+        Serializer para criar múltiplos agendamentos de uma vez.
+
+        Estrutura esperada:
+        {
+            "service_id": 1,
+            "professional_id": 2,
+            "client_name": "João Silva",
+            "client_email": "joao@email.com",
+            "client_phone": "+351912345678",
+            "appointments": [
+                {"slot_id": 10, "date": "2025-09-10", "time": "10:00"},
+                {"slot_id": 15, "date": "2025-09-17", "time": "10:00"},
+                {"slot_id": 20, "date": "2025-09-24", "time": "10:00"}
+            ],
+            "notes": "Curso de 3 sessões"
+        }
+      properties:
+        service_id:
+          type: integer
+        professional_id:
+          type: integer
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        client_email:
+          type: string
+          format: email
+          minLength: 1
+        client_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        appointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkAppointmentSlotRequest'
+        notes:
+          type: string
+          maxLength: 500
+      required:
+      - appointments
+      - professional_id
+      - service_id
+    BulkAppointmentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        appointment_ids:
+          type: array
+          items:
+            type: integer
+        appointments_created:
+          type: integer
+        total_value:
+          type: number
+          format: double
+        service_name:
+          type: string
+        professional_name:
+          type: string
+        appointments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        message:
+          type: string
+      required:
+      - appointment_ids
+      - appointments
+      - appointments_created
+      - message
+      - professional_name
+      - service_name
+      - success
+      - total_value
+    BulkAppointmentSlotRequest:
+      type: object
+      description: Serializer para cada slot individual em um agendamento múltiplo.
+      properties:
+        slot_id:
+          type: integer
+        date:
+          type: string
+          format: date
+          description: Data do agendamento (YYYY-MM-DD)
+        time:
+          type: string
+          format: time
+          description: Horário do agendamento (HH:MM)
+        notes:
+          type: string
+          maxLength: 500
+      required:
+      - slot_id
+    ChannelEnum:
+      enum:
+      - in_app
+      - push_web
+      - push_mobile
+      - sms
+      - whatsapp
+      type: string
+      description: |-
+        * `in_app` - In-App
+        * `push_web` - Web Push
+        * `push_mobile` - Mobile Push
+        * `sms` - SMS
+        * `whatsapp` - WhatsApp
+    CheckoutSessionRequestRequest:
+      type: object
+      properties:
+        plan:
+          allOf:
+          - $ref: '#/components/schemas/PlanEnum'
+          description: |-
+            Plano desejado
+
+            * `monthly` - monthly
+            * `yearly` - yearly
+    CheckoutSessionResponse:
+      type: object
+      properties:
+        checkout_url:
+          type: string
+          format: uri
+      required:
+      - checkout_url
+    DeviceTypeEnum:
+      enum:
+      - web
+      - mobile
+      type: string
+      description: |-
+        * `web` - Web Push
+        * `mobile` - Mobile Push (Expo)
+    EmailTokenObtainPair:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+      required:
+      - email
+    EmailTokenObtainPairRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - email
+      - password
+    Notification:
+      type: object
+      description: |-
+        Serializer para notificações in-app.
+        Usado para listar e marcar notificações como lidas.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        notification_type:
+          allOf:
+          - $ref: '#/components/schemas/NotificationTypeEnum'
+          description: |-
+            Tipo da notificação
+
+            * `appointment_created` - Agendamento Criado
+            * `appointment_cancelled` - Agendamento Cancelado
+            * `appointment_reminder` - Lembrete de Agendamento
+            * `appointment_completed` - Agendamento Concluído
+            * `payment_received` - Pagamento Recebido
+            * `system` - Notificação do Sistema
+        title:
+          type: string
+          description: Título da notificação
+          maxLength: 255
+        message:
+          type: string
+          description: Conteúdo da notificação
+        is_read:
+          type: boolean
+          description: Se a notificação foi lida
+        metadata:
+          description: Dados adicionais da notificação (appointment_id, etc.)
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        read_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Quando a notificação foi lida
+      required:
+      - created_at
+      - id
+      - message
+      - notification_type
+      - read_at
+      - title
+    NotificationDevice:
+      type: object
+      description: |-
+        Serializer para registro de dispositivos para push notifications.
+        Usado no endpoint POST /api/notifications/register_device
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        device_type:
+          allOf:
+          - $ref: '#/components/schemas/DeviceTypeEnum'
+          description: |-
+            Tipo do dispositivo (web/mobile)
+
+            * `web` - Web Push
+            * `mobile` - Mobile Push (Expo)
+        token:
+          type: string
+          description: Token do dispositivo para push notifications
+        is_active:
+          type: boolean
+          description: Se o device está ativo para receber notificações
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - device_type
+      - id
+      - token
+      - updated_at
+    NotificationDeviceRequest:
+      type: object
+      description: |-
+        Serializer para registro de dispositivos para push notifications.
+        Usado no endpoint POST /api/notifications/register_device
+      properties:
+        device_type:
+          allOf:
+          - $ref: '#/components/schemas/DeviceTypeEnum'
+          description: |-
+            Tipo do dispositivo (web/mobile)
+
+            * `web` - Web Push
+            * `mobile` - Mobile Push (Expo)
+        token:
+          type: string
+          minLength: 1
+          description: Token do dispositivo para push notifications
+        is_active:
+          type: boolean
+          description: Se o device está ativo para receber notificações
+      required:
+      - device_type
+      - token
+    NotificationLog:
+      type: object
+      description: |-
+        Serializer para logs de notificações.
+        Usado para debugging e métricas (apenas leitura).
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/ChannelEnum'
+          readOnly: true
+          description: |-
+            Canal de envio da notificação
+
+            * `in_app` - In-App
+            * `push_web` - Web Push
+            * `push_mobile` - Mobile Push
+            * `sms` - SMS
+            * `whatsapp` - WhatsApp
+        channel_display:
+          type: string
+          readOnly: true
+        notification_type:
+          type: string
+          readOnly: true
+          description: Tipo da notificação (mesmo do Notification)
+        title:
+          type: string
+          readOnly: true
+          description: Título da notificação enviada
+        message:
+          type: string
+          readOnly: true
+          description: Conteúdo da notificação enviada
+        status:
+          allOf:
+          - $ref: '#/components/schemas/NotificationLogStatusEnum'
+          readOnly: true
+          description: |-
+            Status do envio
+
+            * `pending` - Pendente
+            * `sent` - Enviado
+            * `delivered` - Entregue
+            * `failed` - Falhou
+            * `skipped` - Pulado
+        status_display:
+          type: string
+          readOnly: true
+        error_message:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Mensagem de erro (se houver)
+        metadata:
+          readOnly: true
+          description: Dados adicionais (device_token, provider_response, etc.)
+        sent_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Quando foi enviado
+        delivered_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Quando foi entregue (se disponível)
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - channel
+      - channel_display
+      - created_at
+      - delivered_at
+      - error_message
+      - id
+      - message
+      - metadata
+      - notification_type
+      - sent_at
+      - status
+      - status_display
+      - title
+    NotificationLogStatusEnum:
+      enum:
+      - pending
+      - sent
+      - delivered
+      - failed
+      - skipped
+      type: string
+      description: |-
+        * `pending` - Pendente
+        * `sent` - Enviado
+        * `delivered` - Entregue
+        * `failed` - Falhou
+        * `skipped` - Pulado
+    NotificationMarkAllReadResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        updated_count:
+          type: integer
+      required:
+      - message
+      - updated_count
+    NotificationMarkRead:
+      type: object
+      description: |-
+        Serializer para marcar notificações como lidas.
+        Usado no endpoint PATCH /api/notifications/{id}/read/
+      properties:
+        is_read:
+          type: boolean
+          default: true
+    NotificationMarkReadRequest:
+      type: object
+      description: |-
+        Serializer para marcar notificações como lidas.
+        Usado no endpoint PATCH /api/notifications/{id}/read/
+      properties:
+        is_read:
+          type: boolean
+          default: true
+    NotificationStatsResponse:
+      type: object
+      properties:
+        total_notifications:
+          type: integer
+        unread_notifications:
+          type: integer
+        read_notifications:
+          type: integer
+        registered_devices:
+          type: integer
+      required:
+      - read_notifications
+      - registered_devices
+      - total_notifications
+      - unread_notifications
+    NotificationTestRequest:
+      type: object
+      description: |-
+        Serializer para testar canais de notificação.
+        Usado no endpoint POST /api/notifications/test
+      properties:
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/ChannelEnum'
+          description: |-
+            Canal a ser testado
+
+            * `in_app` - In-App
+            * `push_web` - Web Push
+            * `push_mobile` - Mobile Push
+            * `sms` - SMS
+            * `whatsapp` - WhatsApp
+        message:
+          type: string
+          minLength: 1
+          default: Teste de notificação
+          description: Mensagem de teste
+          maxLength: 500
+      required:
+      - channel
+    NotificationTestResponse:
+      type: object
+      properties:
+        channel:
+          type: string
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+      - channel
+      - message
+      - success
+    NotificationTypeEnum:
+      enum:
+      - appointment_created
+      - appointment_cancelled
+      - appointment_reminder
+      - appointment_completed
+      - payment_received
+      - system
+      type: string
+      description: |-
+        * `appointment_created` - Agendamento Criado
+        * `appointment_cancelled` - Agendamento Cancelado
+        * `appointment_reminder` - Lembrete de Agendamento
+        * `appointment_completed` - Agendamento Concluído
+        * `payment_received` - Pagamento Recebido
+        * `system` - Notificação do Sistema
+    PatchedAppointmentRequest:
+      type: object
+      properties:
+        service:
+          type: integer
+        professional:
+          type: integer
+        slot:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/Status2d6Enum'
+    PatchedAppointmentSeriesUpdateRequest:
+      type: object
+      description: Serializer para operações de atualização em séries de agendamentos.
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionEnum'
+        start_from:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+        slot_ids:
+          type: array
+          items:
+            type: integer
+    PatchedNotificationMarkReadRequest:
+      type: object
+      description: |-
+        Serializer para marcar notificações como lidas.
+        Usado no endpoint PATCH /api/notifications/{id}/read/
+      properties:
+        is_read:
+          type: boolean
+          default: true
+    PatchedProfessionalRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        bio:
+          type: string
+        is_active:
+          type: boolean
+    PatchedScheduleSlotRequest:
+      type: object
+      properties:
+        professional:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        is_available:
+          type: boolean
+    PatchedServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        price_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+        duration_minutes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Duração do serviço em minutos
+    PatchedTenantBrandingUpdateRequest:
+      type: object
+      description: |-
+        Serializer para atualização de branding do tenant.
+        Permite upload de logo e atualização de cores.
+      properties:
+        logo:
+          type: string
+          format: binary
+          nullable: true
+          description: Logo do salão (PNG, JPG, SVG - max 2MB)
+        logo_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL do logo do salão (para compatibilidade)
+          maxLength: 200
+        primary_color:
+          type: string
+          minLength: 1
+          description: Cor primária (hex) para branding
+          maxLength: 7
+        secondary_color:
+          type: string
+          minLength: 1
+          description: Cor secundária (hex) para branding
+          maxLength: 7
+    PatchedUserFeatureFlagsUpdateRequest:
+      type: object
+      description: 'Para PATCH: permite editar apenas os módulos opcionais.'
+      properties:
+        sms_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        reports_enabled:
+          type: boolean
+        audit_log_enabled:
+          type: boolean
+        i18n_enabled:
+          type: boolean
+    PlanEnum:
+      enum:
+      - monthly
+      - yearly
+      type: string
+      description: |-
+        * `monthly` - monthly
+        * `yearly` - yearly
+    PlanTierEnum:
+      enum:
+      - basic
+      - standard
+      - pro
+      type: string
+      description: |-
+        * `basic` - Basic
+        * `standard` - Standard
+        * `pro` - Pro
+    PortalSessionResponse:
+      type: object
+      properties:
+        portal_url:
+          type: string
+          format: uri
+      required:
+      - portal_url
+    Professional:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        bio:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - id
+      - name
+      - user
+    ProfessionalMini:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        bio:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - id
+      - name
+    ProfessionalRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        bio:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - name
+    ScheduleSlot:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        professional:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        is_available:
+          type: boolean
+      required:
+      - end_time
+      - id
+      - professional
+      - start_time
+    ScheduleSlotMini:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        is_available:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/ScheduleSlotMiniStatusEnum'
+      required:
+      - end_time
+      - id
+      - start_time
+    ScheduleSlotMiniStatusEnum:
+      enum:
+      - available
+      - booked
+      - blocked
+      type: string
+      description: |-
+        * `available` - Available
+        * `booked` - Booked
+        * `blocked` - Blocked
+    ScheduleSlotRequest:
+      type: object
+      properties:
+        professional:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        is_available:
+          type: boolean
+      required:
+      - end_time
+      - professional
+      - start_time
+    Service:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        price_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+        duration_minutes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Duração do serviço em minutos
+      required:
+      - duration_minutes
+      - id
+      - name
+      - price_eur
+      - user
+    ServiceMini:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+        price_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+        duration_minutes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Duração do serviço em minutos
+      required:
+      - duration_minutes
+      - id
+      - name
+      - price_eur
+    ServiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        price_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,4}(?:\.\d{0,2})?$
+        duration_minutes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Duração do serviço em minutos
+      required:
+      - duration_minutes
+      - name
+      - price_eur
+    Status2d6Enum:
+      enum:
+      - scheduled
+      - cancelled
+      - completed
+      - paid
+      type: string
+      description: |-
+        * `scheduled` - Scheduled
+        * `cancelled` - Cancelled
+        * `completed` - Completed
+        * `paid` - Paid
+    TenantMeta:
+      type: object
+      description: |-
+        Serializer para informações públicas do tenant (branding + feature flags).
+        Usado pelo endpoint /api/users/tenant/meta/
+      properties:
+        name:
+          type: string
+          readOnly: true
+          description: Nome do salão/organização
+        slug:
+          type: string
+          readOnly: true
+          description: Identificador único (URL-friendly)
+          pattern: ^[-a-zA-Z0-9_]+$
+        logo_url:
+          type: string
+          format: uri
+          description: Retorna a URL do logo (upload ou URL externa)
+          readOnly: true
+        primary_color:
+          type: string
+          readOnly: true
+          description: Cor primária (hex) para branding
+        secondary_color:
+          type: string
+          readOnly: true
+          description: Cor secundária (hex) para branding
+        timezone:
+          type: string
+          readOnly: true
+          description: Timezone do salão
+        currency:
+          type: string
+          readOnly: true
+          description: Moeda padrão (ISO 4217)
+        plan_tier:
+          allOf:
+          - $ref: '#/components/schemas/PlanTierEnum'
+          readOnly: true
+          description: |-
+            Nível do plano contratado
+
+            * `basic` - Basic
+            * `standard` - Standard
+            * `pro` - Pro
+        feature_flags:
+          type: object
+          additionalProperties: {}
+          description: Retorna feature flags calculadas baseadas no plano
+          readOnly: true
+      required:
+      - currency
+      - feature_flags
+      - logo_url
+      - name
+      - plan_tier
+      - primary_color
+      - secondary_color
+      - slug
+      - timezone
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+      required:
+      - access
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - refresh
+    UserFeatureFlags:
+      type: object
+      properties:
+        is_pro:
+          type: boolean
+          readOnly: true
+        pro_status:
+          type: string
+          readOnly: true
+        pro_plan:
+          type: string
+          readOnly: true
+        pro_since:
+          type: string
+          format: date-time
+          readOnly: true
+        pro_until:
+          type: string
+          format: date-time
+          readOnly: true
+        trial_until:
+          type: string
+          format: date-time
+          readOnly: true
+        sms_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        reports_enabled:
+          type: boolean
+        audit_log_enabled:
+          type: boolean
+        i18n_enabled:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - is_pro
+      - pro_plan
+      - pro_since
+      - pro_status
+      - pro_until
+      - trial_until
+      - updated_at
+    UserFeatureFlagsUpdate:
+      type: object
+      description: 'Para PATCH: permite editar apenas os módulos opcionais.'
+      properties:
+        is_pro:
+          type: boolean
+          readOnly: true
+        pro_status:
+          type: string
+          readOnly: true
+        pro_plan:
+          type: string
+          readOnly: true
+        pro_since:
+          type: string
+          format: date-time
+          readOnly: true
+        pro_until:
+          type: string
+          format: date-time
+          readOnly: true
+        trial_until:
+          type: string
+          format: date-time
+          readOnly: true
+        sms_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        reports_enabled:
+          type: boolean
+        audit_log_enabled:
+          type: boolean
+        i18n_enabled:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - is_pro
+      - pro_plan
+      - pro_since
+      - pro_status
+      - pro_until
+      - trial_until
+      - updated_at
+    UserFeatureFlagsUpdateRequest:
+      type: object
+      description: 'Para PATCH: permite editar apenas os módulos opcionais.'
+      properties:
+        sms_enabled:
+          type: boolean
+        email_enabled:
+          type: boolean
+        reports_enabled:
+          type: boolean
+        audit_log_enabled:
+          type: boolean
+        i18n_enabled:
+          type: boolean
+    UserRegistration:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        salon_name:
+          type: string
+          nullable: true
+          maxLength: 255
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 20
+      required:
+      - id
+      - username
+    UserRegistrationRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        salon_name:
+          type: string
+          nullable: true
+          maxLength: 255
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 20
+      required:
+      - password
+      - username
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

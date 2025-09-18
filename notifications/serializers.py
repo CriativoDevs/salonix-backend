@@ -128,3 +128,21 @@ class NotificationLogSerializer(serializers.ModelSerializer):
             "delivered_at",
             "created_at",
         ]
+
+
+class NotificationMarkAllReadResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    updated_count = serializers.IntegerField()
+
+
+class NotificationTestResponseSerializer(serializers.Serializer):
+    channel = serializers.CharField()
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+
+
+class NotificationStatsResponseSerializer(serializers.Serializer):
+    total_notifications = serializers.IntegerField()
+    unread_notifications = serializers.IntegerField()
+    read_notifications = serializers.IntegerField()
+    registered_devices = serializers.IntegerField()

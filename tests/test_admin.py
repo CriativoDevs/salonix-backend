@@ -228,11 +228,15 @@ class TestDjangoAdmin:
             series=series,
         )
 
-        list_response = self.client.get("/admin/core/appointmentseries/")
+        list_url = reverse("salonix_admin:core_appointmentseries_changelist")
+        list_response = self.client.get(list_url)
         assert list_response.status_code == 200
         assert f">{series.id}<" in list_response.content.decode()
 
-        detail = self.client.get(f"/admin/core/appointmentseries/{series.pk}/change/")
+        detail_url = reverse(
+            "salonix_admin:core_appointmentseries_change", args=[series.pk]
+        )
+        detail = self.client.get(detail_url)
         assert detail.status_code == 200
         html = detail.content.decode()
         assert "Série teste" in html
@@ -275,11 +279,15 @@ class TestDjangoAdmin:
             series=series,
         )
 
+        appointments_url = reverse("salonix_admin:core_appointment_changelist")
         response = self.client.get(
-            f"/admin/core/appointment/?series__id__exact={series.pk}"
+            f"{appointments_url}?series__id__exact={series.pk}"
         )
         assert response.status_code == 200
-        assert f"/admin/core/appointmentseries/{series.pk}/change/" in response.content.decode()
+        expected_link = reverse(
+            "salonix_admin:core_appointmentseries_change", args=[series.pk]
+        )
+        assert expected_link in response.content.decode()
 
 
 class TestAdminPermissions(TestCase):
