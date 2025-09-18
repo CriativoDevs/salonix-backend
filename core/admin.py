@@ -1,7 +1,15 @@
 from django.contrib import admin
+from django.db.models import Count
+from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import (
+    Appointment,
+    AppointmentSeries,
+    Professional,
+    ScheduleSlot,
+    Service,
+)
 
 
 @admin.register(Service)
@@ -100,22 +108,24 @@ class AppointmentAdmin(admin.ModelAdmin):
         "tenant_name",
         "appointment_datetime",
         "status",
+        "series_link",
         "total_price_eur",
     )
-    list_filter = ("tenant", "status", "created_at")
+    list_filter = ("tenant", "status", "created_at", "series")
     search_fields = (
         "client__username",
         "service__name",
         "professional__name",
         "tenant__name",
+        "series__id",
     )
-    readonly_fields = ("created_at", "appointment_datetime", "total_price_eur")
+    readonly_fields = ("created_at", "appointment_datetime", "total_price_eur", "series")
     date_hierarchy = "created_at"
 
     fieldsets = (
         (
             "Informações do Agendamento",
-            {"fields": ("tenant", "client", "service", "professional", "slot")},
+            {"fields": ("tenant", "client", "service", "professional", "slot", "series")},
         ),
         ("Status e Notas", {"fields": ("status", "notes", "cancelled_by")}),
         (
@@ -153,3 +163,117 @@ class AppointmentAdmin(admin.ModelAdmin):
         return "-"
 
     total_price_eur.short_description = "Preço"
+
+    def series_link(self, obj):
+        """Link para a série relacionada."""
+        if obj.series:
+            namespace = getattr(self.admin_site, "name", "admin")
+            url = reverse(f"{namespace}:core_appointmentseries_change", args=[obj.series.pk])
+            return format_html('<a href="{}">Série #{}</a>', url, obj.series.pk)
+        return "-"
+
+    series_link.short_description = "Série"
+    series_link.admin_order_field = "series__id"
+
+
+class AppointmentInline(admin.TabularInline):
+    model = Appointment
+    fields = (
+        "client",
+        "slot",
+        "status",
+        "appointment_datetime",
+    )
+    readonly_fields = (
+        "client",
+        "slot",
+        "status",
+        "appointment_datetime",
+    )
+    extra = 0
+    ordering = ("slot__start_time",)
+
+    def appointment_datetime(self, obj):
+        if obj.slot:
+            return obj.slot.start_time
+        return "-"
+
+    appointment_datetime.short_description = "Data/Hora"
+
+
+@admin.register(AppointmentSeries)
+class AppointmentSeriesAdmin(admin.ModelAdmin):
+    """Admin para séries de agendamentos com visão multi-tenant."""
+
+    list_display = (
+        "id",
+        "tenant_name",
+        "client",
+        "service",
+        "professional",
+        "total_occurrences",
+        "upcoming_occurrences",
+        "created_at",
+    )
+    list_filter = ("tenant", "service", "professional", "created_at")
+    search_fields = (
+        "id",
+        "tenant__name",
+        "client__username",
+        "service__name",
+        "professional__name",
+    )
+    ordering = ("-created_at",)
+    list_select_related = ("tenant", "client", "service", "professional")
+    date_hierarchy = "created_at"
+    readonly_fields = ("created_at", "updated_at_display")
+    inlines = (AppointmentInline,)
+
+    fieldsets = (
+        (
+            "Identificação",
+            {
+                "fields": (
+                    "tenant",
+                    "client",
+                    "service",
+                    "professional",
+                    "notes",
+                    "created_at",
+                    "updated_at_display",
+                )
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(total_appointments=Count("appointments"))
+
+    def tenant_name(self, obj):
+        if obj.tenant:
+            url = reverse("admin:users_tenant_change", args=[obj.tenant.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.tenant.name)
+        return "-"
+
+    tenant_name.short_description = "Tenant"
+    tenant_name.admin_order_field = "tenant__name"
+
+    def total_occurrences(self, obj):
+        return getattr(obj, "total_appointments", obj.appointments.count())
+
+    total_occurrences.short_description = "Ocorrências"
+    total_occurrences.admin_order_field = "total_appointments"
+
+    def upcoming_occurrences(self, obj):
+        return obj.appointments.filter(slot__start_time__gte=timezone.now()).count()
+
+    upcoming_occurrences.short_description = "Próximas"
+
+    def updated_at_display(self, obj):
+        latest = obj.appointments.order_by("-slot__start_time").first()
+        if latest and latest.slot:
+            return latest.slot.start_time
+        return "-"
+
+    updated_at_display.short_description = "Última ocorrência"

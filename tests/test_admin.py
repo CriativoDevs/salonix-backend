@@ -4,7 +4,15 @@ from django.urls import reverse
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from users.models import CustomUser, Tenant
-from core.models import Service, Professional, Appointment
+from core.models import (
+    Appointment,
+    AppointmentSeries,
+    Professional,
+    ScheduleSlot,
+    Service,
+)
+from django.utils import timezone
+from datetime import timedelta
 from salonix_backend.admin_permissions import (
     setup_admin_permissions,
     create_admin_groups,
@@ -181,6 +189,97 @@ class TestDjangoAdmin:
 
         content = response.content.decode()
         assert "Salão Teste" in content  # Nome do tenant deve aparecer
+
+    def test_appointment_series_admin_list_and_detail(self):
+        """Testa listagem e detalhe de séries no admin."""
+        self.client.login(username="admin", password="admin123")
+
+        service = Service.objects.create(
+            user=self.superuser,
+            tenant=self.tenant,
+            name="Corte",
+            price_eur=25,
+            duration_minutes=30,
+        )
+        professional = Professional.objects.create(
+            user=self.superuser, tenant=self.tenant, name="Prof Test"
+        )
+        slot = ScheduleSlot.objects.create(
+            tenant=self.tenant,
+            professional=professional,
+            start_time=timezone.now() + timedelta(days=1),
+            end_time=timezone.now() + timedelta(days=1, minutes=30),
+        )
+        slot.mark_booked()
+
+        series = AppointmentSeries.objects.create(
+            tenant=self.tenant,
+            client=self.superuser,
+            service=service,
+            professional=professional,
+            notes="Série teste",
+        )
+        Appointment.objects.create(
+            tenant=self.tenant,
+            client=self.superuser,
+            service=service,
+            professional=professional,
+            slot=slot,
+            series=series,
+        )
+
+        list_response = self.client.get("/admin/core/appointmentseries/")
+        assert list_response.status_code == 200
+        assert f">{series.id}<" in list_response.content.decode()
+
+        detail = self.client.get(f"/admin/core/appointmentseries/{series.pk}/change/")
+        assert detail.status_code == 200
+        html = detail.content.decode()
+        assert "Série teste" in html
+        assert self.superuser.username in html
+        assert professional.name in html
+
+    def test_appointment_admin_series_filters(self):
+        """Testa filtro por série em AppointmentAdmin."""
+        self.client.login(username="admin", password="admin123")
+
+        service = Service.objects.create(
+            user=self.superuser,
+            tenant=self.tenant,
+            name="Spa",
+            price_eur=50,
+            duration_minutes=60,
+        )
+        professional = Professional.objects.create(
+            user=self.superuser, tenant=self.tenant, name="Pro Spa"
+        )
+        slot = ScheduleSlot.objects.create(
+            tenant=self.tenant,
+            professional=professional,
+            start_time=timezone.now() + timedelta(days=2),
+            end_time=timezone.now() + timedelta(days=2, minutes=60),
+        )
+        slot.mark_booked()
+        series = AppointmentSeries.objects.create(
+            tenant=self.tenant,
+            client=self.superuser,
+            service=service,
+            professional=professional,
+        )
+        Appointment.objects.create(
+            tenant=self.tenant,
+            client=self.superuser,
+            service=service,
+            professional=professional,
+            slot=slot,
+            series=series,
+        )
+
+        response = self.client.get(
+            f"/admin/core/appointment/?series__id__exact={series.pk}"
+        )
+        assert response.status_code == 200
+        assert f"/admin/core/appointmentseries/{series.pk}/change/" in response.content.decode()
 
 
 class TestAdminPermissions(TestCase):

@@ -239,6 +239,7 @@ from core.admin import (
     ProfessionalAdmin,
     ScheduleSlotAdmin,
     AppointmentAdmin,
+    AppointmentSeriesAdmin,
 )
 from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
 from notifications.admin import (
@@ -254,12 +255,13 @@ admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)
 admin_site.register(UserFeatureFlags, UserFeatureFlagsAdmin)
 
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import Service, Professional, ScheduleSlot, Appointment, AppointmentSeries
 
 admin_site.register(Service, ServiceAdmin)
 admin_site.register(Professional, ProfessionalAdmin)
 admin_site.register(ScheduleSlot, ScheduleSlotAdmin)
 admin_site.register(Appointment, AppointmentAdmin)
+admin_site.register(AppointmentSeries, AppointmentSeriesAdmin)
 
 from payments.models import PaymentCustomer, Subscription
 
