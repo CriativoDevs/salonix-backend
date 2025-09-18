@@ -168,6 +168,18 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Testes isolando registry Prometheus para validar incrementos
 - ✅ Documentação e status atualizados
 
+#### **Admin de Séries (BE-194)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `core/admin.py` - `AppointmentSeriesAdmin`, `AppointmentInline`, ajustes em `AppointmentAdmin`
+- `tests/test_admin.py` - Testes de listagem/detalhe e filtros por série
+
+**Características**:
+- ✅ Listagem com tenant, cliente, profissional e contadores de ocorrências
+- ✅ Inline somente leitura de agendamentos com ordenação cronológica
+- ✅ Filtros e busca por tenant, serviço, profissional e ID da série
+- ✅ Link cruzado entre agendamentos e série correspondente
+
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**
