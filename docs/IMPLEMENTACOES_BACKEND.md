@@ -142,6 +142,20 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Resposta padronizada `{ success, series_id, affected_count, appointment_ids, message }`
 - ✅ Métricas Prometheus: `appointment_series_updated_total{tenant_id,action,status}` e `appointment_series_errors_total{tenant_id,action,error_type}`
 
+#### **Cancelamento Pontual de Série (BE-192)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `core/views.py` - `AppointmentSeriesOccurrenceCancelView`
+- `core/tests/test_appointment_series_patch.py` - Testes de cancelamento pontual
+
+**Características**:
+- ✅ POST `/api/appointments/series/{series_id}/occurrence/{occurrence_id}/cancel/`
+- ✅ Permissões: cliente da série, dono do serviço ou profissional (multi-tenant)
+- ✅ Bloqueio para ocorrências passadas ou já canceladas
+- ✅ Liberação automática do slot e registro de `cancelled_by`
+- ✅ Métrica Prometheus: `appointment_series_occurrence_cancel_total{tenant_id,status}`
+- ✅ Resposta `{ success, series_id, appointment_id, message }`
+
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**

@@ -78,6 +78,12 @@ APPOINTMENT_SERIES_ERRORS_TOTAL = Counter(
     ["tenant_id", "action", "error_type"],
 )
 
+APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL = Counter(
+    "appointment_series_occurrence_cancel_total",
+    "Total number of single occurrence cancellations in series",
+    ["tenant_id", "status"],
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -685,6 +691,90 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
             "message": message,
         }
 
+
+class AppointmentSeriesOccurrenceCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, series_id: int, occurrence_id: int):
+        series = get_object_or_404(AppointmentSeries.objects.select_related("tenant"), pk=series_id)
+
+        if not self._user_has_access(series, request.user):
+            return Response(
+                {"detail": "Você não tem permissão para cancelar ocorrências desta série."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+
+        tenant = getattr(request, "tenant", None) or series.tenant
+        tenant_id_label = getattr(tenant, "id", "unknown") or "unknown"
+
+        appointment = get_object_or_404(
+            Appointment.objects.select_related("slot", "tenant"),
+            pk=occurrence_id,
+            series=series,
+        )
+
+        if tenant and appointment.tenant_id != tenant.id:
+            APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL.labels(
+                tenant_id=tenant_id_label, status="forbidden"
+            ).inc()
+            raise PermissionDenied("Agendamento não pertence ao seu tenant.")
+
+        now = timezone.now()
+        slot_start = getattr(appointment.slot, "start_time", None)
+        if slot_start and slot_start <= now:
+            APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL.labels(
+                tenant_id=tenant_id_label, status="invalid_past"
+            ).inc()
+            return Response(
+                {"detail": "Não é possível cancelar ocorrências passadas."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appointment.status == "cancelled":
+            APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL.labels(
+                tenant_id=tenant_id_label, status="already_cancelled"
+            ).inc()
+            return Response(
+                {"detail": "Esta ocorrência já foi cancelada."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            if appointment.slot:
+                appointment.slot.mark_available()
+            appointment.status = "cancelled"
+            appointment.cancelled_by = request.user
+            appointment.save(update_fields=["status", "cancelled_by"])
+
+        APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL.labels(
+            tenant_id=tenant_id_label, status="success"
+        ).inc()
+
+        logger.info(
+            "appointment_series_occurrence_cancel_success",
+            extra={
+                "tenant_id": tenant_id_label,
+                "series_id": series.id,
+                "appointment_id": appointment.id,
+                "user_id": getattr(request.user, "id", None),
+            },
+        )
+
+        return Response(
+            {
+                "success": True,
+                "series_id": series.id,
+                "appointment_id": appointment.id,
+                "message": "Ocorrência cancelada com sucesso.",
+            },
+            status=drf_status.HTTP_200_OK,
+        )
+
+    @staticmethod
+    def _user_has_access(series: AppointmentSeries, user) -> bool:
+        if user.is_superuser:
+            return True
+        return user == series.client or user == series.service.user or user == series.professional.user
 
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
