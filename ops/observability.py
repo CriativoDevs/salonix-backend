@@ -15,3 +15,15 @@ OPS_AUTH_EVENTS_TOTAL = _get_or_create_counter(
     "Total de eventos de autenticação do console Ops",
     ("event", "result", "role"),
 )
+
+OPS_NOTIFICATIONS_RESEND_TOTAL = _get_or_create_counter(
+    "ops_notifications_resend_total",
+    "Total de reenvios de notificações iniciados pelo console Ops",
+    ("channel", "result"),
+)
+
+OPS_LOCKOUTS_CLEARED_TOTAL = _get_or_create_counter(
+    "ops_lockouts_cleared_total",
+    "Total de lockouts limpos pelo console Ops",
+    ("result",),
+)
