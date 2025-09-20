@@ -10,6 +10,7 @@ PY ?= python
 PIP ?= pip
 MANAGE = $(PY) manage.py
 DJANGO_ENV ?= dev
+ROLE ?= ops_admin
 
 # ---- Ajuda ----
 .PHONY: help
@@ -27,6 +28,7 @@ help:
 > echo "  make openapi        - gera schema com drf-spectacular em api-schema.yaml"
 > echo "  make smoke          - roda o scripts/smoke_reports.sh"
 > echo "  make seed           - roda o management command seed_demo"
+> echo "  make ops-bootstrap  - cria/atualiza staff Ops (use EMAIL=...)"
 > echo "  make cache-clear    - limpa o cache do Django (cuidado!)"
 > echo "  make lint           - (opcional) ruff check ."
 > echo "  make format         - (opcional) ruff format . && black ."
@@ -87,6 +89,12 @@ seed:
 reset-seed:
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) migrate
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) seed_demo
+
+# ---- Ops Console ----
+.PHONY: ops-bootstrap
+ops-bootstrap:
+> if [ -z "$(EMAIL)" ]; then echo "Defina EMAIL=utilizador@exemplo.com"; exit 1; fi
+> DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) bootstrap_ops_staff --email $(EMAIL) --role $(ROLE)
 
 .PHONY: seed-sh
 seed-sh:

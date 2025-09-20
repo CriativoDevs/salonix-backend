@@ -52,6 +52,23 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Throttling dedicado (`ops_auth_login`, `ops_auth_refresh`)
 - ✅ Comando `python manage.py bootstrap_ops_staff --email ... --role ...`
 
+#### **Gestão de Tenants (OPS-BE-02)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `ops/views.py` - `OpsTenantViewSet` com listagem, detalhe e ações administrativas
+- `ops/serializers.py` - serializers para resumo de tenant e payloads de ações
+- `ops/permissions.py` - permissions `IsOpsSupportOrAdmin` / `IsOpsAdmin`
+- `ops/tests/test_ops_tenants.py` - cobertura de filtros, export, mutações e permissões
+- `ops/urls.py` - registro das rotas `/api/ops/tenants/`
+
+**Características**:
+- ✅ Listagem paginada com filtros (`plan_tier`, `is_active`, datas, módulos) e ordenação customizada
+- ✅ Detalhe com `feature_flags`, contagem de usuários, consumo de SMS/WhatsApp e histórico (último login, trial)
+- ✅ Export CSV com cabeçalho `Content-Disposition`
+- ✅ Ações administrativas: alterar plano (`PATCH /api/ops/tenants/{id}/plan/`), bloquear/desbloquear e reset de owner
+- ✅ Validações de downgrade com suporte a `force=true` e sanitização de addons/flags
+- ✅ Resposta padronizada de erros (middleware + `BusinessError`)
+
 #### **Cache Redis (BE-92)**
 **Status**: ✅ Implementado  
 **Arquivos**:
