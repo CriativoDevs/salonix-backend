@@ -1,8 +1,9 @@
 import pytest
-from django.urls import reverse
-from rest_framework.test import APIClient
-from rest_framework import status
 from django.contrib.auth import get_user_model
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
@@ -44,6 +45,28 @@ class TestAuthEndpoints:
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.data
         assert "refresh" in response.data
+
+        refresh = RefreshToken(response.data["refresh"])
+        access = refresh.access_token
+        assert refresh.get("scope") == "tenant"
+        assert access.get("scope") == "tenant"
+        assert refresh.get("tenant_slug") == "test-default"
+        assert access.get("tenant_slug") == "test-default"
+
+    def test_ops_user_blocked_from_tenant_login(self):
+        user = User(
+            username="opsuser",
+            email="ops@example.com",
+            ops_role=User.OpsRoles.OPS_ADMIN,
+            is_active=True,
+        )
+        user._tenant_explicitly_none = True
+        user.set_password("StrongPass!123")
+        user.save()
+
+        payload = {"email": "ops@example.com", "password": "StrongPass!123"}
+        response = self.client.post(self.token_url, data=payload)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_login_with_wrong_password(self):
         User.objects.create_user(

@@ -1,16 +1,27 @@
-"""
-Middleware personalizado para o Salonix Backend.
-"""
+"""Middleware personalizado para o Salonix Backend."""
 
 import logging
 import time
-from typing import Callable
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin
+from rest_framework.exceptions import (
+    AuthenticationFailed,
+    NotAuthenticated,
+    PermissionDenied,
+)
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 from .logging_utils import get_request_id, setup_logging_context
+from users.models import CustomUser
+from salonix_backend.error_handling import ErrorCodes, log_error
 
 logger = logging.getLogger(__name__)
+
+OPS_SCOPES = {
+    CustomUser.OpsRoles.OPS_ADMIN,
+    CustomUser.OpsRoles.OPS_SUPPORT,
+}
 
 
 class RequestLoggingMiddleware(MiddlewareMixin):
@@ -160,3 +171,110 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             )
 
         return response
+
+
+class ScopeAccessMiddleware(MiddlewareMixin):
+    """
+    Middleware que garante isolamento entre escopos Tenant e Ops.
+
+    - Tokens do console Ops (`ops_admin`, `ops_support`) só podem acessar rotas `/api/ops/`
+    - Tokens de tenant não podem acessar rotas `/api/ops/`
+    """
+
+    OPS_PREFIX = "/api/ops/"
+
+    def __init__(self, get_response):
+        super().__init__(get_response)
+        self.authenticator = JWTAuthentication()
+
+    def process_request(self, request: HttpRequest):
+        request.auth_scope = None
+        return None
+
+    def process_view(self, request: HttpRequest, view_func, view_args, view_kwargs):
+        path = request.path or ""
+
+        if not path.startswith("/api/"):
+            return None
+
+        auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+        if not auth_header.startswith("Bearer"):
+            return None
+
+        try:
+            auth_result = self.authenticator.authenticate(request)
+        except InvalidToken as exc:
+            return self._build_error_response(
+                request,
+                message="Token inválido.",
+                status_code=401,
+                error_code=ErrorCodes.AUTH_INVALID_TOKEN,
+                exception=AuthenticationFailed("Token inválido."),
+            )
+
+        if auth_result is None:
+            return None
+
+        user, token = auth_result
+        request.user = user
+        request.auth = token
+        scope = token.get("scope") or "tenant"
+        request.auth_scope = scope
+
+        if path.startswith(self.OPS_PREFIX):
+            if not user.is_authenticated:
+                return self._build_error_response(
+                    request,
+                    message="Autenticação necessária.",
+                    status_code=401,
+                    error_code=ErrorCodes.AUTH_REQUIRED,
+                    exception=NotAuthenticated("Autenticação necessária."),
+                )
+            if user.is_superuser:
+                return None
+            if scope not in OPS_SCOPES:
+                return self._build_error_response(
+                    request,
+                    message="Acesso restrito ao console Ops.",
+                    status_code=403,
+                    error_code=ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
+                    exception=PermissionDenied("Acesso restrito ao console Ops."),
+                )
+        else:
+            if scope in OPS_SCOPES and not user.is_superuser:
+                return self._build_error_response(
+                    request,
+                    message="Contas staff não podem acessar rotas do painel do tenant.",
+                    status_code=403,
+                    error_code=ErrorCodes.AUTH_INSUFFICIENT_PERMISSIONS,
+                    exception=PermissionDenied(
+                        "Contas staff não podem acessar rotas do painel do tenant."
+                    ),
+                )
+
+        return None
+
+    def _build_error_response(
+        self,
+        request: HttpRequest,
+        *,
+        message: str,
+        status_code: int,
+        error_code: str,
+        exception: Exception,
+    ) -> JsonResponse:
+        error_id = log_error(
+            exception,
+            request=request,
+            user=getattr(request, "user", None),
+            tenant=getattr(request, "tenant", None),
+        )
+        payload = {
+            "error": {
+                "code": error_code,
+                "message": message,
+                "details": {},
+                "error_id": error_id,
+            }
+        }
+        return JsonResponse(payload, status=status_code)

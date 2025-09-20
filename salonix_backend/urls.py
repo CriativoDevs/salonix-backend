@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/", include("core.urls")),
     path("api/payments/stripe/", include("payments.urls", namespace="payments")),
     path("api/users/", include(("users.urls", "users"))),
+    path("api/ops/", include("ops.urls")),
     path("api/reports/", include("reports.urls")),
     path("api/notifications/", include("notifications.urls")),
     # OpenAPI JSON/YAML
