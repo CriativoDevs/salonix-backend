@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any, Dict
 
 import csv
@@ -9,6 +10,7 @@ from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Count, Max, OuterRef, Q, Subquery
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -23,9 +25,20 @@ from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
-from ops.observability import OPS_AUTH_EVENTS_TOTAL
+from notifications.models import NotificationLog
+from notifications.services import NotificationService
+
+from ops.models import AccountLockout, OpsAlert, OpsSupportAuditLog
+from ops.observability import (
+    OPS_AUTH_EVENTS_TOTAL,
+    OPS_LOCKOUTS_CLEARED_TOTAL,
+    OPS_NOTIFICATIONS_RESEND_TOTAL,
+)
 from ops.permissions import IsOpsAdmin, IsOpsSupportOrAdmin
 from ops.serializers import (
+    OpsAlertSerializer,
+    OpsClearLockoutSerializer,
+    OpsResendNotificationSerializer,
     OpsTenantPlanUpdateSerializer,
     OpsTenantResetOwnerSerializer,
     OpsTenantSerializer,
@@ -36,6 +49,12 @@ from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import BusinessError, ErrorCodes, TenantError
 
 logger = logging.getLogger(__name__)
+
+PLAN_PRICING_EUR: Dict[str, Decimal] = {
+    Tenant.PLAN_BASIC: Decimal("29.00"),
+    Tenant.PLAN_STANDARD: Decimal("59.00"),
+    Tenant.PLAN_PRO: Decimal("99.00"),
+}
 
 
 class OpsAuthLoginThrottle(ScopedRateThrottle):
@@ -563,4 +582,280 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
             "email": owner.email,
             "username": owner.username,
             "temporary_password": temporary_password,
+        }
+
+
+class OpsMetricsOverviewView(APIView):
+    permission_classes = [IsOpsSupportOrAdmin]
+
+    def get(self, request, *args: Any, **kwargs: Any) -> Response:
+        now = timezone.now()
+
+        active_tenants = Tenant.objects.filter(is_active=True)
+        plan_counts = active_tenants.values("plan_tier").annotate(total=Count("id"))
+
+        breakdown: Dict[str, Dict[str, Any]] = {}
+        mrr_total = Decimal("0.00")
+        for item in plan_counts:
+            plan = item["plan_tier"]
+            count = item["total"]
+            unit_price = PLAN_PRICING_EUR.get(plan, Decimal("0.00"))
+            value = unit_price * count
+            breakdown[plan] = {
+                "count": count,
+                "unit_price": f"{unit_price:.2f}",
+                "value": f"{value:.2f}",
+            }
+            mrr_total += value
+
+        trial_cutoff = now + timedelta(days=7)
+        trials_expiring = (
+            UserFeatureFlags.objects.filter(
+                trial_until__isnull=False,
+                trial_until__lte=trial_cutoff,
+                user__tenant__is_active=True,
+            )
+            .distinct()
+            .count()
+        )
+
+        alerts_open = OpsAlert.objects.filter(resolved_at__isnull=True).count()
+
+        since = now - timedelta(days=6)
+        logs = (
+            NotificationLog.objects.filter(
+                created_at__date__gte=since.date(),
+                status__in=["sent", "delivered"],
+            )
+            .annotate(day=TruncDate("created_at"))
+            .values("day", "channel")
+            .annotate(total=Count("id"))
+        )
+
+        daily_map: Dict[Any, Dict[str, int]] = {}
+        for entry in logs:
+            day = entry["day"].date() if hasattr(entry["day"], "date") else entry["day"]
+            channel = entry["channel"]
+            total = entry["total"]
+            daily_map.setdefault(day, {})[channel] = total
+
+        notification_daily = []
+        for offset in range(7):
+            day = (since + timedelta(days=offset)).date()
+            channels = daily_map.get(day, {})
+            total = sum(channels.values())
+            notification_daily.append(
+                {
+                    "date": day.isoformat(),
+                    "total": total,
+                    "channels": channels,
+                }
+            )
+
+        data = {
+            "generated_at": now.isoformat(),
+            "totals": {
+                "active_tenants": active_tenants.count(),
+                "trials_expiring_7d": trials_expiring,
+                "alerts_open": alerts_open,
+            },
+            "mrr_estimated": {
+                "currency": "EUR",
+                "total": f"{mrr_total:.2f}",
+                "breakdown": breakdown,
+            },
+            "notification_daily": notification_daily,
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class OpsAlertViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    serializer_class = OpsAlertSerializer
+    permission_classes = [IsOpsSupportOrAdmin]
+
+    def get_queryset(self):
+        return OpsAlert.objects.select_related("tenant", "resolved_by", "notification_log")
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        resolved = self.request.query_params.get("resolved")
+        if resolved is None:
+            queryset = queryset.filter(resolved_at__isnull=True)
+        else:
+            value = resolved.lower()
+            if value in {"true", "1", "yes"}:
+                queryset = queryset.filter(resolved_at__isnull=False)
+            elif value in {"false", "0", "no"}:
+                queryset = queryset.filter(resolved_at__isnull=True)
+        category = self.request.query_params.get("category")
+        if category:
+            queryset = queryset.filter(category=category)
+        severity = self.request.query_params.get("severity")
+        if severity:
+            queryset = queryset.filter(severity=severity)
+        return queryset
+
+    @action(detail=True, methods=["post"], url_path="resolve")
+    def resolve(self, request, *args: Any, **kwargs: Any) -> Response:
+        alert = self.get_object()
+        if not alert.is_resolved:
+            alert.mark_resolved(request.user if request.user.is_authenticated else None)
+            OpsSupportAuditLog.objects.create(
+                actor=request.user if request.user.is_authenticated else None,
+                action=OpsSupportAuditLog.Actions.RESOLVE_ALERT,
+                target_tenant=alert.tenant,
+                payload={"alert_id": alert.id},
+                result={"resolved_at": alert.resolved_at.isoformat()},
+            )
+        serializer = self.get_serializer(alert)
+        return Response({"alert": serializer.data, "meta": self._meta(request)})
+
+    def _meta(self, request) -> Dict[str, Any]:
+        return {
+            "request_id": getattr(request, "request_id", None),
+            "error_id": None,
+        }
+
+
+class OpsSupportResendNotificationView(APIView):
+    permission_classes = [IsOpsSupportOrAdmin]
+
+    def post(self, request, *args: Any, **kwargs: Any) -> Response:
+        serializer = OpsResendNotificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        log_id = serializer.validated_data["notification_log_id"]
+
+        try:
+            log = NotificationLog.objects.select_related("tenant", "user").get(id=log_id)
+        except NotificationLog.DoesNotExist:
+            raise BusinessError(
+                "Notificação não encontrada.",
+                code=ErrorCodes.RESOURCE_NOT_FOUND,
+            )
+
+        if log.status not in {"failed", "pending"}:
+            raise BusinessError(
+                "Somente notificações falhadas podem ser reenviadas.",
+                code=ErrorCodes.RESOURCE_MODIFICATION_DENIED,
+            )
+
+        metadata = log.metadata or {}
+        metadata["ops_resends"] = metadata.get("ops_resends", 0) + 1
+
+        service = NotificationService()
+        results = service.send_notification(
+            tenant=log.tenant,
+            user=log.user,
+            channels=[log.channel],
+            notification_type=log.notification_type,
+            title=log.title,
+            message=log.message,
+            metadata={**metadata, "ops_resend_origin": log.id},
+        )
+
+        success = results.get(log.channel, False)
+        result_label = "success" if success else "failure"
+        OPS_NOTIFICATIONS_RESEND_TOTAL.labels(channel=log.channel, result=result_label).inc()
+
+        if success:
+            metadata["ops_last_resend_at"] = timezone.now().isoformat()
+            metadata["ops_last_resend_by"] = getattr(request.user, "email", None)
+            log.status = "sent"
+            log.error_message = None
+            log.metadata = metadata
+            log.save(update_fields=["status", "error_message", "metadata"])
+        else:
+            metadata["ops_last_resend_error"] = "Driver retornou falso"
+            log.metadata = metadata
+            log.save(update_fields=["metadata"])
+
+        OpsSupportAuditLog.objects.create(
+            actor=request.user if request.user.is_authenticated else None,
+            action=OpsSupportAuditLog.Actions.RESEND_NOTIFICATION,
+            target_user=log.user,
+            target_tenant=log.tenant,
+            payload={"notification_log_id": log.id},
+            result={"status": "sent" if success else "failed"},
+        )
+
+        response_status = status.HTTP_200_OK if success else status.HTTP_202_ACCEPTED
+        return Response(
+            {
+                "status": "sent" if success else "failed",
+                "channel": log.channel,
+                "notification_log_id": log.id,
+                "meta": self._meta(request),
+            },
+            status=response_status,
+        )
+
+    def _meta(self, request) -> Dict[str, Any]:
+        return {
+            "request_id": getattr(request, "request_id", None),
+            "error_id": None,
+        }
+
+
+class OpsSupportClearLockoutView(APIView):
+    permission_classes = [IsOpsAdmin]
+
+    def post(self, request, *args: Any, **kwargs: Any) -> Response:
+        serializer = OpsClearLockoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lockout_id = serializer.validated_data["lockout_id"]
+        note = serializer.validated_data.get("note")
+
+        try:
+            lockout = AccountLockout.objects.select_related("user", "tenant").get(id=lockout_id)
+        except AccountLockout.DoesNotExist:
+            raise BusinessError(
+                "Lockout não encontrado.",
+                code=ErrorCodes.RESOURCE_NOT_FOUND,
+            )
+
+        metadata = lockout.metadata or {}
+        if note:
+            notes = metadata.get("notes", [])
+            notes.append(
+                {
+                    "note": note,
+                    "author": getattr(request.user, "email", None),
+                    "timestamp": timezone.now().isoformat(),
+                }
+            )
+            metadata["notes"] = notes
+            lockout.metadata = metadata
+            lockout.save(update_fields=["metadata"])
+
+        if lockout.is_active:
+            lockout.resolve(request.user if request.user.is_authenticated else None)
+            if not lockout.user.is_active:
+                lockout.user.is_active = True
+                lockout.user.save(update_fields=["is_active"])
+            OPS_LOCKOUTS_CLEARED_TOTAL.labels(result="success").inc()
+        else:
+            OPS_LOCKOUTS_CLEARED_TOTAL.labels(result="noop").inc()
+
+        OpsSupportAuditLog.objects.create(
+            actor=request.user if request.user.is_authenticated else None,
+            action=OpsSupportAuditLog.Actions.CLEAR_LOCKOUT,
+            target_user=lockout.user,
+            target_tenant=lockout.tenant,
+            payload={"lockout_id": lockout.id, "note": note},
+            result={"resolved_at": lockout.resolved_at.isoformat() if lockout.resolved_at else None},
+        )
+
+        return Response(
+            {
+                "lockout_id": lockout.id,
+                "resolved_at": lockout.resolved_at.isoformat() if lockout.resolved_at else None,
+                "meta": self._meta(request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def _meta(self, request) -> Dict[str, Any]:
+        return {
+            "request_id": getattr(request, "request_id", None),
+            "error_id": None,
         }

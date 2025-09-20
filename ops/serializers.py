@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.settings import api_settings
 
+from ops.models import AccountLockout, OpsAlert
 from users.models import Tenant
 
 User = get_user_model()
@@ -205,3 +206,39 @@ class OpsTenantResetOwnerSerializer(serializers.Serializer):
     email = serializers.EmailField()
     username = serializers.CharField(required=False, allow_blank=False, max_length=150)
     name = serializers.CharField(required=False, allow_blank=False, max_length=255)
+
+
+class OpsAlertSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+    resolved = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OpsAlert
+        fields = [
+            "id",
+            "category",
+            "severity",
+            "message",
+            "metadata",
+            "tenant",
+            "tenant_name",
+            "notification_log",
+            "resolved",
+            "resolved_at",
+            "resolved_by",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_resolved(self, obj: OpsAlert) -> bool:
+        return obj.is_resolved
+
+
+class OpsResendNotificationSerializer(serializers.Serializer):
+    notification_log_id = serializers.IntegerField()
+
+
+class OpsClearLockoutSerializer(serializers.Serializer):
+    lockout_id = serializers.IntegerField()
+    note = serializers.CharField(required=False, allow_blank=True, max_length=255)

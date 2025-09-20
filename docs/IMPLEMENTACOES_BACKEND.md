@@ -69,6 +69,23 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Validações de downgrade com suporte a `force=true` e sanitização de addons/flags
 - ✅ Resposta padronizada de erros (middleware + `BusinessError`)
 
+#### **Métricas & Suporte Ops (OPS-BE-03)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `ops/models.py` - modelos `OpsAlert`, `AccountLockout`, `OpsSupportAuditLog`
+- `ops/views.py` - endpoints `metrics/overview`, `alerts`, `support/*`
+- `ops/serializers.py` - serializers de alertas e ações de suporte
+- `ops/observability.py` - métricas `ops_notifications_resend_total`, `ops_lockouts_cleared_total`
+- `ops/tests/test_ops_metrics.py`, `ops/tests/test_ops_support.py` - cobertura de métricas, alertas e serviços de suporte
+- `ops/urls.py` - rotas `/api/ops/metrics/overview/`, `/api/ops/alerts/`, `/api/ops/support/**`
+
+**Características**:
+- ✅ Dashboard Ops com MRR estimado, tenants ativos, trials próximos e consumo diário de notificações (7 dias)
+- ✅ Gestão de alertas críticos (falhas de notificação, incidentes), com resolução auditada
+- ✅ Serviços de suporte: reenvio de notificações falhadas e limpeza de lockouts com tracking Prometheus
+- ✅ Audit log centralizado (`OpsSupportAuditLog`) para todas as ações críticas
+- ✅ Respostas de suporte com metadata (`request_id`) e integração com middleware de erros customizado
+
 #### **Cache Redis (BE-92)**
 **Status**: ✅ Implementado  
 **Arquivos**:
