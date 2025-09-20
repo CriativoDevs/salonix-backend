@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     "salonix_backend",
     "core.apps.CoreConfig",
     "users",
+    "ops.apps.OpsConfig",
     "notifications",
     "payments",
     "reports",
@@ -115,6 +116,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "salonix_backend.middleware.ScopeAccessMiddleware",  # Isolamento de escopos Ops/Tenant
     "core.middleware.TenantMiddleware",  # Adicionar tenant ao request
     "core.middleware.TenantIsolationMiddleware",  # Validar tenant
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -220,6 +222,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # --- Throttle configurável para relatórios ---
 REPORTS_THROTTLE_REPORTS = env_get("REPORTS_THROTTLE_REPORTS", "60/min")
 REPORTS_THROTTLE_EXPORT_CSV = env_get("REPORTS_THROTTLE_EXPORT_CSV", "5/min")
+OPS_AUTH_THROTTLE_LOGIN = env_get("OPS_AUTH_THROTTLE_LOGIN", "10/min")
+OPS_AUTH_THROTTLE_REFRESH = env_get("OPS_AUTH_THROTTLE_REFRESH", "60/min")
 
 # REST_FRAMEWORK config
 REST_FRAMEWORK = {
@@ -243,6 +247,9 @@ REST_FRAMEWORK = {
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
         "reports": REPORTS_THROTTLE_REPORTS,
+        # console Ops
+        "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
+        "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
     },
 }
 

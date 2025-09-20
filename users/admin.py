@@ -165,11 +165,12 @@ class CustomUserAdmin(UserAdmin):
         "email",
         "tenant_name",
         "salon_name",
+        "ops_role",
         "is_staff",
         "is_active",
         "date_joined",
     ]
-    list_filter = ["tenant", "is_staff", "is_active", "date_joined"]
+    list_filter = ["tenant", "ops_role", "is_staff", "is_active", "date_joined"]
     search_fields = ["username", "email", "salon_name", "tenant__name"]
 
     # Adicionar campos do tenant aos fieldsets
@@ -177,7 +178,7 @@ class CustomUserAdmin(UserAdmin):
     base_fieldsets.append(
         (
             "Informações do Salão",
-            {"fields": ("tenant", "salon_name", "phone_number")},
+            {"fields": ("tenant", "salon_name", "phone_number", "ops_role")},
         )
     )
     fieldsets = base_fieldsets

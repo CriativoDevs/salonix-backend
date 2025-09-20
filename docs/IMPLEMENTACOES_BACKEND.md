@@ -34,6 +34,24 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Logout com invalidação de token
 - ✅ Middleware de autenticação JWT
 
+#### **Autenticação Console Ops (OPS-BE-01)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `users/models.py` - campo `ops_role` e helpers de staff
+- `ops/serializers.py` - serializers dedicados de login/refresh
+- `ops/views.py` - endpoints `/api/ops/auth/login|refresh/`
+- `salonix_backend/middleware.py` - `ScopeAccessMiddleware`
+- `salonix_backend/management/commands/bootstrap_ops_staff.py` - seed inicial
+- `ops/observability.py` - métrica `ops_auth_events_total`
+
+**Características**:
+- ✅ Tokens JWT com claims de escopo (`scope=tenant|ops_admin|ops_support`)
+- ✅ Bloqueio cruzado via middleware: staff não acessa painel tenant e vice-versa
+- ✅ Métrica Prometheus `ops_auth_events_total{event,result,role}`
+- ✅ Logging estruturado de sucesso/falha nos endpoints Ops
+- ✅ Throttling dedicado (`ops_auth_login`, `ops_auth_refresh`)
+- ✅ Comando `python manage.py bootstrap_ops_staff --email ... --role ...`
+
 #### **Cache Redis (BE-92)**
 **Status**: ✅ Implementado  
 **Arquivos**:

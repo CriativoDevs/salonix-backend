@@ -144,10 +144,28 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "Conta inativa. Entre em contato com o suporte."
             )
 
+        if getattr(user, "is_ops_user", False):
+            raise AuthenticationFailed(
+                "Acesso restrito ao console Ops. Utilize o endpoint ops/auth/login."
+            )
+
         refresh = RefreshToken.for_user(user)
+        refresh["scope"] = "tenant"
+        refresh["ops_role"] = None
+        if user.tenant:
+            refresh["tenant_slug"] = user.tenant.slug
+            refresh["tenant_id"] = str(user.tenant_id)
+
+        access_token = refresh.access_token
+        access_token["scope"] = refresh["scope"]
+        access_token["ops_role"] = refresh["ops_role"]
+        if user.tenant:
+            access_token["tenant_slug"] = user.tenant.slug
+            access_token["tenant_id"] = str(user.tenant_id)
+
         return {
             "refresh": str(refresh),
-            "access": str(refresh.access_token),
+            "access": str(access_token),
         }
 
 

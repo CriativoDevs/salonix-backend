@@ -203,6 +203,10 @@ class Tenant(models.Model):
 
 
 class CustomUser(AbstractUser):
+    class OpsRoles(models.TextChoices):
+        OPS_ADMIN = "ops_admin", "Ops Admin"
+        OPS_SUPPORT = "ops_support", "Ops Support"
+
     tenant = models.ForeignKey(
         Tenant,
         on_delete=models.CASCADE,
@@ -212,18 +216,35 @@ class CustomUser(AbstractUser):
     )
     salon_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
+    ops_role = models.CharField(
+        max_length=20,
+        choices=OpsRoles.choices,
+        blank=True,
+        null=True,
+        help_text="Role de staff do console Ops (ops_admin ou ops_support)",
+    )
     objects: Any = CustomUserManager()
 
     class Meta:
         indexes = [
             models.Index(fields=["tenant", "username"]),
             models.Index(fields=["tenant", "email"]),
+            models.Index(fields=["ops_role"]),
         ]
 
     def __str__(self):
         if self.tenant:
             return f"{self.username} ({self.tenant.name})"
         return self.username
+
+    @property
+    def is_ops_user(self) -> bool:
+        return bool(self.ops_role)
+
+    def save(self, *args, **kwargs):
+        if self.ops_role:
+            self.is_staff = True
+        super().save(*args, **kwargs)
 
 
 class UserFeatureFlags(models.Model):

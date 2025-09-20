@@ -34,6 +34,7 @@ class TenantIsolationMiddleware(MiddlewareMixin):
             hasattr(request, "user")
             and request.user.is_authenticated
             and not request.user.is_superuser
+            and not getattr(request.user, "is_ops_user", False)
             and not hasattr(request, "tenant")
         ):
             raise Http404("Tenant não encontrado")
