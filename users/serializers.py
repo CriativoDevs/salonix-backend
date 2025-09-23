@@ -1,7 +1,11 @@
+import logging
+from typing import Any, Dict, cast
+
+from django.db import transaction
+from django.utils.text import slugify
 from rest_framework import serializers
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
-from typing import Any, Dict, cast
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -13,12 +17,88 @@ from salonix_backend.validators import (
 )
 
 
+audit_logger = logging.getLogger("users.audit")
+
+
+def _generate_unique_tenant_slug(base_name: str) -> str:
+    """Generate a unique slug keeping the value sanitized and within limits."""
+
+    max_length = Tenant._meta.get_field("slug").max_length
+    sanitized_base = sanitize_text_input(base_name, max_length=max_length) or "tenant"
+    slug_base = slugify(sanitized_base) or "tenant"
+    slug_base = slug_base.strip("-") or "tenant"
+    slug_base = slug_base[:max_length]
+
+    # Ensure we don't end up with an empty slug after trimming
+    if not slug_base:
+        slug_base = "tenant"
+
+    candidate = slug_base
+    suffix = 2
+    while Tenant.objects.filter(slug=candidate).exists():
+        suffix_str = f"-{suffix}"
+        candidate = f"{slug_base[: max_length - len(suffix_str)]}{suffix_str}"
+        suffix += 1
+        if suffix > 99:
+            raise serializers.ValidationError(
+                "Não foi possível gerar um slug único para o tenant. Tente outro nome."
+            )
+
+    return candidate
+
+
+class TenantSelfServiceSerializer(serializers.ModelSerializer):
+    feature_flags = serializers.SerializerMethodField()
+    branding = serializers.SerializerMethodField()
+    plan = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tenant
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "plan",
+            "timezone",
+            "currency",
+            "feature_flags",
+            "branding",
+        ]
+        read_only_fields = fields
+
+    def get_feature_flags(self, obj):
+        return obj.get_feature_flags_dict()
+
+    def get_branding(self, obj):
+        return {
+            "logo_url": obj.get_logo_url,
+            "primary_color": obj.primary_color,
+            "secondary_color": obj.secondary_color,
+        }
+
+    def get_plan(self, obj):
+        return {
+            "tier": obj.plan_tier,
+            "addons_enabled": obj.addons_enabled,
+        }
+
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    tenant = TenantSelfServiceSerializer(read_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "password", "salon_name", "phone_number"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "password",
+            "salon_name",
+            "phone_number",
+            "tenant",
+        ]
+        read_only_fields = ["id", "tenant"]
 
     def validate_username(self, value):
         """Validar e sanitizar nome de usuário."""
@@ -64,15 +144,41 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
         data = cast(Dict[str, Any], validated_data)
+
+        salon_display_name = data.get("salon_name") or data.get("username", "")
+        sanitized_display_name = sanitize_text_input(salon_display_name, max_length=255)
+        if not sanitized_display_name:
+            sanitized_display_name = sanitize_text_input(data["username"], max_length=255)
+
+        tenant_slug = _generate_unique_tenant_slug(sanitized_display_name)
+        tenant = Tenant.objects.create(
+            name=sanitized_display_name or data["username"],
+            slug=tenant_slug,
+        )
+
         user = CustomUser.objects.create_user(
             username=data["username"],
             email=data.get("email"),
             password=data["password"],
-            salon_name=data.get("salon_name", ""),
+            salon_name=data.get("salon_name") or sanitized_display_name,
             phone_number=data.get("phone_number", ""),
+            tenant=tenant,
         )
+
+        audit_logger.info(
+            "Tenant self-service criado com sucesso",
+            extra={
+                "event": "tenant_self_service_created",
+                "tenant_id": tenant.id,
+                "tenant_slug": tenant.slug,
+                "user_id": user.id,
+                "owner_email": user.email,
+            },
+        )
+
         return user
 
 
@@ -163,9 +269,14 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
             access_token["tenant_slug"] = user.tenant.slug
             access_token["tenant_id"] = str(user.tenant_id)
 
+        tenant_payload = None
+        if user.tenant:
+            tenant_payload = TenantSelfServiceSerializer(user.tenant).data
+
         return {
             "refresh": str(refresh),
             "access": str(access_token),
+            "tenant": tenant_payload,
         }
 
 

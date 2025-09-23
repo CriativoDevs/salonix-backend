@@ -25,6 +25,11 @@ class TestAuthEndpoints:
         response = self.client.post(self.register_url, data=payload)
         assert response.status_code == status.HTTP_201_CREATED
         assert "id" in response.data
+        assert "tenant" in response.data
+        tenant = response.data["tenant"]
+        assert tenant["slug"] == "lucas"
+        assert tenant["plan"]["tier"] == "basic"
+        assert tenant["branding"]["primary_color"] == "#3B82F6"
 
     def test_registration_missing_fields(self):
         response = self.client.post(self.register_url, data={"email": "x@x.com"})
@@ -45,6 +50,7 @@ class TestAuthEndpoints:
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.data
         assert "refresh" in response.data
+        assert response.data["tenant"]["slug"] == "test-default"
 
         refresh = RefreshToken(response.data["refresh"])
         access = refresh.access_token
@@ -52,6 +58,29 @@ class TestAuthEndpoints:
         assert access.get("scope") == "tenant"
         assert refresh.get("tenant_slug") == "test-default"
         assert access.get("tenant_slug") == "test-default"
+
+    def test_registration_generates_unique_slug(self):
+        first_payload = {
+            "username": "ana",
+            "email": "ana@example.com",
+            "password": "strongpass123",
+            "salon_name": "Studio Glam",
+        }
+        second_payload = {
+            "username": "carla",
+            "email": "carla@example.com",
+            "password": "anotherpass123",
+            "salon_name": "Studio Glam",
+        }
+
+        first_response = self.client.post(self.register_url, data=first_payload)
+        assert first_response.status_code == status.HTTP_201_CREATED
+        assert first_response.data["tenant"]["slug"] == "studio-glam"
+
+        second_response = self.client.post(self.register_url, data=second_payload)
+        assert second_response.status_code == status.HTTP_201_CREATED
+        assert second_response.data["tenant"]["slug"].startswith("studio-glam")
+        assert second_response.data["tenant"]["slug"] != "studio-glam"
 
     def test_ops_user_blocked_from_tenant_login(self):
         user = User(
