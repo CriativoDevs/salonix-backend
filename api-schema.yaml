@@ -2554,11 +2554,17 @@ components:
     EmailTokenObtainPair:
       type: object
       properties:
-        email:
+        refresh:
           type: string
-          format: email
+        access:
+          type: string
+        tenant:
+          allOf:
+          - $ref: '#/components/schemas/TenantSelfService'
+          nullable: true
       required:
-      - email
+      - refresh
+      - access
     EmailTokenObtainPairRequest:
       type: object
       properties:
@@ -2573,6 +2579,53 @@ components:
       required:
       - email
       - password
+    TenantSelfService:
+      type: object
+      description: Bloco com dados mínimos do tenant para bootstrap.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        slug:
+          type: string
+          readOnly: true
+        plan:
+          type: object
+          readOnly: true
+          properties:
+            tier:
+              type: string
+            addons_enabled:
+              type: array
+              items:
+                type: string
+        timezone:
+          type: string
+        currency:
+          type: string
+        feature_flags:
+          type: object
+        branding:
+          type: object
+          properties:
+            logo_url:
+              type: string
+              format: uri
+              nullable: true
+            primary_color:
+              type: string
+            secondary_color:
+              type: string
+      required:
+      - id
+      - name
+      - slug
+      - plan
+      - feature_flags
+      - branding
     Notification:
       type: object
       description: |-
@@ -3454,9 +3507,13 @@ components:
           type: string
           nullable: true
           maxLength: 20
+        tenant:
+          allOf:
+          - $ref: '#/components/schemas/TenantSelfService'
       required:
       - id
       - username
+      - tenant
     UserRegistrationRequest:
       type: object
       properties:

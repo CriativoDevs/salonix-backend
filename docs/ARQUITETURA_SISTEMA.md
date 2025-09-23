@@ -207,8 +207,11 @@ Service (1) ←→ (N) Appointment
 ```
 POST /api/users/token/          # Login (JWT)
 POST /api/users/token/refresh/  # Refresh token
+POST /api/users/register/       # Cadastro self-service (retorna owner + tenant)
 POST /api/users/logout/         # Logout
 ```
+
+> Tanto o registro quanto o login retornam um bloco `tenant` com `id`, `slug`, plano, feature flags e branding. Esse payload é usado pelo frontend/mobile para aplicar o tema assim que o owner entra no sistema.
 
 ### **🏢 Tenant Management**
 ```
