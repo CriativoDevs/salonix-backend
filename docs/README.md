@@ -15,6 +15,7 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 
 ### **📖 Tutoriais e Guias**
 - [`TUTORIAL_DJANGO_ADMIN.md`](./TUTORIAL_DJANGO_ADMIN.md) - Guia completo do Django Admin
+- [`OPS_RUNBOOK.md`](./OPS_RUNBOOK.md) - Runbook para operações e suporte (console Ops)
 
 ## 🎯 **Para Desenvolvedores Novos**
 
