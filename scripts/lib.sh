@@ -6,7 +6,7 @@ need curl; need jq
 
 get_token() {
   local base="$1" user="$2" pass="$3"
-  local email="${4:-${user}@e.com}"  # Default email pattern
+  local email="${4:-${user}@demo.local}"  # Default email pattern
   local t
   t=$(curl -sS -X POST "$base/api/users/token/" \
       -H "Content-Type: application/json" \

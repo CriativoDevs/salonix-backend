@@ -6,6 +6,11 @@ BASE_URL="${BASE_URL:-http://localhost:8000}"
 FROM="2020-01-01"
 TO="2030-01-01"
 QS="from=$FROM&to=$TO&limit=${QS_LIMIT:-10}&offset=0"
+SMOKE_PASSWORD="${SMOKE_USER_PASSWORD:-Smoke@123}"
+PRO_SMOKE_PASSWORD="${PRO_SMOKE_PASSWORD:-$SMOKE_PASSWORD}"
+CLIENT_SMOKE_PASSWORD="${CLIENT_SMOKE_PASSWORD:-$SMOKE_PASSWORD}"
+PRO_SMOKE_EMAIL="${PRO_SMOKE_EMAIL:-pro_smoke@demo.local}"
+CLIENT_SMOKE_EMAIL="${CLIENT_SMOKE_EMAIL:-client_smoke@demo.local}"
 
 red()  { printf "\033[31m%s\033[0m\n" "$*"; }
 grn()  { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -14,8 +19,8 @@ hdr()  { printf "\n==== %s ====\n" "$*"; }
 
 # ---------- 1) tokens ----------
 hdr "1) Tokens (pro_smoke e client_smoke)"
-PRO_TOKEN=$(get_token "$BASE_URL" "pro_smoke" "pro_smoke")
-CLIENT_TOKEN=$(get_token "$BASE_URL" "client_smoke" "client_smoke")
+PRO_TOKEN=$(get_token "$BASE_URL" "pro_smoke" "$PRO_SMOKE_PASSWORD" "$PRO_SMOKE_EMAIL")
+CLIENT_TOKEN=$(get_token "$BASE_URL" "client_smoke" "$CLIENT_SMOKE_PASSWORD" "$CLIENT_SMOKE_EMAIL")
 grn "OK: tokens obtidos."
 
 # ---------- 2) BEFORE ----------

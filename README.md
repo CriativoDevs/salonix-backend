@@ -95,6 +95,11 @@ salonix-backend/
     ./scripts/smoke_reports.sh
     ```
 
+- Credenciais seedadas:
+    - `pro_smoke@demo.local / Smoke@123`
+    - `client_smoke@demo.local / Smoke@123`
+    - Defina `SMOKE_USER_PASSWORD=...` antes de `make seed` para alterar a senha padrão usada pelos smokes.
+
 ---
 
 ### Esse script:

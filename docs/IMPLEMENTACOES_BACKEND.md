@@ -36,6 +36,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Registro self-service via `/api/users/register/` criando tenant + owner com slug único
 - ✅ Respostas de `/api/users/token/` e `/api/users/register/` incluem bloco `tenant` com slug, plano, feature flags e branding para bootstrap imediato
 - ✅ Endpoint `/api/users/me/tenant/` retorna payload compacto do tenant para bootstrap via refresh token (cache de 30s + log `tenant_bootstrap`)
+- ✅ Seeds `seed_demo` aplicam senha padrão configurável (`SMOKE_USER_PASSWORD`, default `Smoke@123`) para os usuários `pro_smoke` e `client_smoke`, alinhando com os scripts de smoke
 
 #### **Autenticação Console Ops (OPS-BE-01)**
 **Status**: ✅ Implementado  

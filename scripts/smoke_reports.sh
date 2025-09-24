@@ -4,7 +4,8 @@ set -euo pipefail
 # === Smoke test for Salonix Reports endpoints ===
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 LOGIN_USER="${LOGIN_USER:-pro_smoke}"
-LOGIN_PASS="${LOGIN_PASS:-pro_smoke}"
+DEFAULT_SMOKE_PASS="${SMOKE_USER_PASSWORD:-Smoke@123}"
+LOGIN_PASS="${LOGIN_PASS:-$DEFAULT_SMOKE_PASS}"
 THROTTLE_COOLDOWN="${THROTTLE_COOLDOWN:-65}"
 THROTTLE_MAX_BURST="${THROTTLE_MAX_BURST:-6}"
 
@@ -21,7 +22,7 @@ trap cleanup EXIT
 source "$(dirname "$0")/lib.sh"
 
 # Auth sempre via lib.sh (mais robusto)
-LOGIN_EMAIL="${LOGIN_EMAIL:-pro@e.com}"  # Email padrão para pro_smoke
+LOGIN_EMAIL="${LOGIN_EMAIL:-pro_smoke@demo.local}"  # Email padrão para pro_smoke
 TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL")
 AUTH_HEADER="Authorization: Bearer $TOK"
 
