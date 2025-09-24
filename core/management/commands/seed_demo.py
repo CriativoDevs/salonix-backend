@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -20,6 +21,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         created_counts = {}
+        smoke_password = settings.SMOKE_USER_PASSWORD
 
         from typing import Any, cast
         with cast(Any, transaction.atomic()):
@@ -73,9 +75,12 @@ class Command(BaseCommand):
                     "tenant": default_tenant,
                 },
             )
-            if pro_created:
-                pro.set_password("pro_smoke")
-                pro.save()
+            if pro_created or not pro.check_password(smoke_password):
+                pro.set_password(smoke_password)
+                if pro_created:
+                    pro.save()
+                else:
+                    pro.save(update_fields=["password"])
             created_counts["user_pro_created"] = int(pro_created)
 
             client, client_created = User.objects.get_or_create(
@@ -85,9 +90,12 @@ class Command(BaseCommand):
                     "tenant": default_tenant,
                 },
             )
-            if client_created:
-                client.set_password("client_smoke")
-                client.save()
+            if client_created or not client.check_password(smoke_password):
+                client.set_password(smoke_password)
+                if client_created:
+                    client.save()
+                else:
+                    client.save(update_fields=["password"])
             created_counts["user_client_created"] = int(client_created)
 
             # --- Feature flags (PRO e relatórios habilitados para o pro_smoke) ---
@@ -237,7 +245,8 @@ class Command(BaseCommand):
             self.stdout.write(f"- {k}: {v}")
         self.stdout.write(
             "\nCredenciais úteis:\n"
-            "  • admin / admin (superuser)\n"
-            "  • pro_smoke / pro_smoke (PRO, relatórios habilitados)\n"
-            "  • client_smoke / client_smoke\n"
+            "  • admin@demo.local / admin (superuser)\n"
+            f"  • pro_smoke@demo.local / {smoke_password} (PRO, relatórios habilitados)\n"
+            f"  • client_smoke@demo.local / {smoke_password}\n"
+            "\nDica: defina SMOKE_USER_PASSWORD=... antes de rodar o seed para mudar a senha padrão.\n"
         )

@@ -67,6 +67,9 @@ def env_str(name: str, default: str) -> str:
 # Define qual ambiente está sendo usado
 ENV = os.getenv("DJANGO_ENV", "dev")  # dev, uat, prod
 
+# Credencial padrão usada por seeds/smokes (configurável via env)
+SMOKE_USER_PASSWORD = env_str("SMOKE_USER_PASSWORD", "Smoke@123")
+
 # Segurança / básico
 SECRET_KEY = env_get("SECRET_KEY", "dev-secret-key-change-me")
 DEBUG = str(env_get("DEBUG", "false")).lower() in {"1", "true", "yes", "on"}
