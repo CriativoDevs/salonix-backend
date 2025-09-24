@@ -215,6 +215,7 @@ POST /api/users/logout/         # Logout
 
 ### **🏢 Tenant Management**
 ```
+GET  /api/users/me/tenant/      # Bootstrap do tenant autenticado (slug, plano, branding)
 GET  /api/tenant/meta/          # Dados do tenant (branding)
 PATCH /api/tenant/meta/         # Atualizar branding
 ```

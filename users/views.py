@@ -1,3 +1,6 @@
+import logging
+
+from django.core.cache import cache
 from rest_framework import generics, status
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -7,11 +10,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from drf_spectacular.utils import extend_schema
 
-from salonix_backend.error_handling import (
-    TenantError,
-    ErrorCodes,
-    validate_required_fields,
-)
+from rest_framework.exceptions import NotFound
+
+from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant
 
 from .serializers import (
@@ -21,7 +22,21 @@ from .serializers import (
     UserRegistrationSerializer,
     UserFeatureFlagsSerializer,
     UserFeatureFlagsUpdateSerializer,
+    TenantSelfServiceSerializer,
 )
+
+
+bootstrap_logger = logging.getLogger("users.bootstrap")
+
+
+def _me_tenant_cache_key(user_id: int, tenant_id: int, tenant_updated_at):
+    updated_ts = "0"
+    if tenant_updated_at:
+        try:
+            updated_ts = str(int(tenant_updated_at.timestamp()))
+        except Exception:  # pragma: no cover - fallback caso timestamp falhe
+            updated_ts = tenant_updated_at.isoformat()
+    return f"users:me-tenant:{user_id}:{tenant_id}:{updated_ts}"
 
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -146,3 +161,36 @@ class TenantMetaView(APIView):
             return Response(response_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MeTenantView(APIView):
+    permission_classes = [IsAuthenticated]
+    CACHE_TTL = 30
+
+    def get(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if getattr(user, "is_ops_user", False) or not tenant:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        cache_key = _me_tenant_cache_key(user.id, tenant.id, tenant.updated_at)
+        payload = cache.get(cache_key)
+        cached_hit = payload is not None
+
+        if not cached_hit:
+            payload = TenantSelfServiceSerializer(tenant).data
+            cache.set(cache_key, payload, timeout=self.CACHE_TTL)
+
+        bootstrap_logger.info(
+            "Tenant bootstrap entregue",
+            extra={
+                "event": "tenant_bootstrap",
+                "user_id": user.id,
+                "user_email": getattr(user, "email", ""),
+                "tenant_id": tenant.id,
+                "tenant_slug": tenant.slug,
+                "cached": cached_hit,
+            },
+        )
+
+        return Response(payload, status=status.HTTP_200_OK)

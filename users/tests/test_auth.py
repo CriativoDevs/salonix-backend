@@ -15,6 +15,7 @@ class TestAuthEndpoints:
         self.client = APIClient()
         self.register_url = reverse("register")
         self.token_url = reverse("token_obtain_pair")
+        self.me_tenant_url = reverse("me_tenant")
 
     def test_successful_registration(self):
         payload = {
@@ -110,4 +111,42 @@ class TestAuthEndpoints:
     def test_login_with_nonexistent_user(self):
         payload = {"email": "doesnotexist@example.com", "password": "irrelevant"}
         response = self.client.post(self.token_url, data=payload)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_me_tenant_returns_payload(self, tenant_fixture):
+        user = User.objects.create_user(
+            username="owner",
+            email="owner@example.com",
+            password="StrongPass123",
+            tenant=tenant_fixture,
+        )
+
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.me_tenant_url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["id"] == tenant_fixture.id
+        assert response.data["slug"] == tenant_fixture.slug
+        assert response.data["plan"]["tier"] == tenant_fixture.plan_tier
+
+    def test_me_tenant_without_tenant_returns_404(self):
+        user = User(
+            username="opsuser",
+            email="ops@example.com",
+            ops_role=User.OpsRoles.OPS_ADMIN,
+            is_active=True,
+        )
+        user._tenant_explicitly_none = True
+        user.set_password("StrongPass!123")
+        user.save()
+
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.me_tenant_url)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "error" in response.data
+        assert "error_id" in response.data["error"]
+
+    def test_me_tenant_requires_authentication(self):
+        response = self.client.get(self.me_tenant_url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -2065,6 +2065,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserFeatureFlagsUpdate'
           description: ''
+  /api/users/me/tenant/:
+    get:
+      operationId: users_me_tenant_retrieve
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSelfService'
+          description: ''
   /api/users/register/:
     post:
       operationId: users_register_create
