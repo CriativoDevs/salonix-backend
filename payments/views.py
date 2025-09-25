@@ -1,3 +1,6 @@
+import logging
+from datetime import datetime, timezone as dt_timezone
+
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -27,31 +30,34 @@ class CreateCheckoutSession(APIView):
         responses={200: CheckoutSessionResponseSerializer},
     )
     def post(self, request):
-        """
-        Cria uma Checkout Session para assinatura (mensal/anual).
-        Body opcional:
-          - plan: "monthly" | "yearly" (default: "monthly")
-        """
+        """Cria uma Checkout Session apontando para o plano escolhido."""
         s = stripe_utils.get_stripe()
 
-        # 1) Plano + validação
-        plan = (request.data.get("plan") or "monthly").lower()
-        if plan not in ("monthly", "yearly"):
+        requested_plan = (request.data.get("plan") or "basic").lower()
+        allowed_plans = {
+            "basic",
+            "standard",
+            "pro",
+            "enterprise",
+            "monthly",
+            "yearly",
+        }
+
+        if requested_plan not in allowed_plans:
             return Response({"detail": "Plano inválido."}, status=400)
 
-        # 2) Fallback para nomes de settings com/sem sufixo _ID
-        monthly = getattr(settings, "STRIPE_PRICE_MONTHLY_ID", None) or getattr(
-            settings, "STRIPE_PRICE_MONTHLY", None
-        )
-        yearly = getattr(settings, "STRIPE_PRICE_YEARLY_ID", None) or getattr(
-            settings, "STRIPE_PRICE_YEARLY", None
-        )
-        price_id = yearly if plan == "yearly" else monthly
+        price_id = stripe_utils.get_price_id_for_plan(requested_plan)
         if not price_id:
             return Response(
-                {"detail": "Price ID não configurado no backend."},
+                {
+                    "detail": "Price ID não configurado para o plano informado."
+                },
                 status=500,
             )
+
+        canonical_plan = requested_plan
+        if requested_plan in {"monthly", "yearly"}:
+            canonical_plan = "pro"
 
         # 3) Customer
         customer_id = stripe_utils.get_or_create_customer(request.user)
@@ -72,6 +78,8 @@ class CreateCheckoutSession(APIView):
         )
 
         # 5) Params da Checkout Session
+        metadata = {"user_id": str(request.user.id), "plan_code": canonical_plan}
+
         params = {
             "mode": "subscription",
             "customer": customer_id,
@@ -79,8 +87,19 @@ class CreateCheckoutSession(APIView):
             "success_url": success_url,
             "cancel_url": cancel_url,
             "allow_promotion_codes": True,
-            "metadata": {"user_id": str(request.user.id)},
+            "metadata": metadata,
         }
+
+        subscription_data = {}
+
+        trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
+        if trial_days:
+            subscription_data["trial_period_days"] = trial_days
+
+        subscription_data["metadata"] = metadata
+        params["subscription_data"] = subscription_data
+
+        params["client_reference_id"] = str(request.user.tenant_id or request.user.id)
 
         session = s.checkout.Session.create(**params)
         return Response({"checkout_url": session.url}, status=200)
@@ -155,7 +174,7 @@ class StripeWebhookView(APIView):
             cancel_at_period_end = bool(stripe_sub.get("cancel_at_period_end"))
             current_period_end = stripe_sub.get("current_period_end")
             cpe_dt = (
-                timezone.datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+                datetime.fromtimestamp(current_period_end, tz=dt_timezone.utc)
                 if current_period_end
                 else None
             )
@@ -184,20 +203,28 @@ class StripeWebhookView(APIView):
 
             status = stripe_sub.get("status")
 
-            # Detecta plano via interval
-            interval = None
+            metadata = stripe_sub.get("metadata") or {}
+            detected_plan = metadata.get("plan_code")
+
             items = stripe_sub.get("items", {}).get("data", [])
+            price_id = None
             if items:
                 price = items[0].get("price")
-                if isinstance(price, dict):
-                    recurring = price.get("recurring") or {}
-                    interval = recurring.get("interval")
-            detected_plan = "yearly" if interval == "year" else "monthly"
+                price_id = price.get("id") if isinstance(price, dict) else price
+
+            if not detected_plan:
+                detected_plan = stripe_utils.get_plan_code_from_price(price_id)
+
+            if detected_plan in {"monthly", "yearly"}:
+                detected_plan = "pro"
+
+            if detected_plan not in {"basic", "standard", "pro", "enterprise"}:
+                detected_plan = "basic"
 
             # trial_end
             trial_end_ts = stripe_sub.get("trial_end")
             trial_end_dt = (
-                timezone.datetime.fromtimestamp(trial_end_ts, tz=timezone.utc)
+                datetime.fromtimestamp(trial_end_ts, tz=dt_timezone.utc)
                 if trial_end_ts
                 else None
             )
@@ -205,7 +232,7 @@ class StripeWebhookView(APIView):
             # start_date (quando o Stripe enviar)
             start_ts = stripe_sub.get("start_date")
             start_dt = (
-                timezone.datetime.fromtimestamp(start_ts, tz=timezone.utc)
+                datetime.fromtimestamp(start_ts, tz=dt_timezone.utc)
                 if start_ts
                 else None
             )
@@ -231,6 +258,13 @@ class StripeWebhookView(APIView):
                     "updated_at",
                 ]
             )
+
+            tenant = getattr(user, "tenant", None)
+            if tenant:
+                desired_plan = detected_plan if ff.is_pro else tenant.PLAN_BASIC
+                if desired_plan and tenant.plan_tier != desired_plan:
+                    tenant.plan_tier = desired_plan
+                    tenant.save(update_fields=["plan_tier", "updated_at"])
 
         # Roteamento de eventos
         try:
@@ -283,8 +317,9 @@ class StripeWebhookView(APIView):
                 # opcional: logs/telemetria; assinatura atualiza via customer.subscription.updated
                 pass
 
-        except Exception:
-            # Não derruba o webhook por falhas pontuais
+        except Exception as exc:  # pragma: no cover - log e segue fluxo
+            logger.exception("Stripe webhook processing failed", exc_info=exc)
             return HttpResponse(status=200)
 
         return HttpResponse(status=200)
+logger = logging.getLogger(__name__)

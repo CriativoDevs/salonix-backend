@@ -3,7 +3,9 @@ from rest_framework import serializers
 
 class CheckoutSessionRequestSerializer(serializers.Serializer):
     plan = serializers.ChoiceField(
-        choices=["monthly", "yearly"], required=False, help_text="Plano desejado"
+        choices=["basic", "standard", "pro", "enterprise"],
+        required=False,
+        help_text="Plano desejado",
     )
 
 
