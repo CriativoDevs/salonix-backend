@@ -38,6 +38,24 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Endpoint `/api/users/me/tenant/` retorna payload compacto do tenant para bootstrap via refresh token (cache de 30s + log `tenant_bootstrap`)
 - ✅ Seeds `seed_demo` aplicam senha padrão configurável (`SMOKE_USER_PASSWORD`, default `Smoke@123`) para os usuários `pro_smoke` e `client_smoke`, alinhando com os scripts de smoke
 
+#### **Plano, Billing e Trials Self-Service (BE-210)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `payments/views.py` – `CreateCheckoutSession`, webhook Stripe e atualização das feature flags
+- `payments/stripe_utils.py` – mapeamento `plan_code → price_id` (Basic/Standard/Pro/Enterprise) e helpers de detecção
+- `payments/serializers.py` – validação dos planos suportados
+- `users/models.py` / `users/feature_flags.py` – inclusão do plano Enterprise, hierarquia de planos e choices atualizados
+- `salonix_backend/settings.py` / `.env.example` – novas variáveis `STRIPE_PRICE_*_MONTHLY_ID` e `STRIPE_TRIAL_DAYS`
+- `payments/tests/test_payments_stripe.py` – cobertura do fluxo end-to-end com mocks Stripe
+
+**Características**:
+- ✅ Checkout gera sessão Stripe com metadata (`plan_code`, `user_id`, `client_reference_id`) e trial configurável (`STRIPE_TRIAL_DAYS`, default 14)
+- ✅ Webhook processa `checkout.session.completed`/`customer.subscription.*`, sincronizando `Subscription`, `UserFeatureFlags` e `Tenant.plan_tier`
+- ✅ Mapeamento bidirecional dos preços via env (`STRIPE_PRICE_BASIC/STANDARD/PRO/ENTERPRISE_MONTHLY_ID`) com fallback legado (`monthly`/`yearly`)
+- ✅ Planos Enterprise herdam capacidades do Pro (white-label, notificações avançadas, apps nativos)
+- ✅ Logs com `logger.exception` para diagnóstico sem interromper o webhook
+- ✅ Testes garantem que o plano selecionado ativa corretamente flags/tenant
+
 #### **Autenticação Console Ops (OPS-BE-01)**
 **Status**: ✅ Implementado  
 **Arquivos**:

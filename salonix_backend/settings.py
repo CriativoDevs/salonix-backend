@@ -44,6 +44,7 @@ INI_ALL = _read_ini()
 # Helper para ler configs: pega de ENV, senão .env (já carregado), senão INI[ENV]
 from typing import Any, cast
 
+
 def env_get(name: str, default=None):
     val = os.getenv(name)
     if val is not None:
@@ -294,8 +295,20 @@ STRIPE_API_KEY = env_get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = env_get("STRIPE_WEBHOOK_SECRET", "")
 
 # Prices (você já criou no Stripe; cole aqui)
-STRIPE_PRICE_MONTHLY_ID = env_get("STRIPE_PRICE_MONTHLY_ID", "")
-STRIPE_PRICE_YEARLY_ID = env_get("STRIPE_PRICE_YEARLY_ID", "")
+STRIPE_PRICE_BASIC_MONTHLY_ID = env_get("STRIPE_PRICE_BASIC_MONTHLY_ID", "")
+STRIPE_PRICE_STANDARD_MONTHLY_ID = env_get("STRIPE_PRICE_STANDARD_MONTHLY_ID", "")
+STRIPE_PRICE_PRO_MONTHLY_ID = env_get("STRIPE_PRICE_PRO_MONTHLY_ID", "")
+STRIPE_PRICE_ENTERPRISE_MONTHLY_ID = env_get("STRIPE_PRICE_ENTERPRISE_MONTHLY_ID", "")
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+STRIPE_TRIAL_PERIOD_DAYS = _safe_int(env_get("STRIPE_TRIAL_DAYS", "14"), default=0)
 
 # URLs do front para redirecionar após checkout/portal
 STRIPE_SUCCESS_URL = env_get(

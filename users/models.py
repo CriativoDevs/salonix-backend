@@ -55,10 +55,12 @@ class Tenant(models.Model):
     PLAN_BASIC = "basic"
     PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
+    PLAN_ENTERPRISE = "enterprise"
     PLAN_CHOICES = [
         (PLAN_BASIC, "Basic"),
         (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
+        (PLAN_ENTERPRISE, "Enterprise"),
     ]
 
     plan_tier = models.CharField(
@@ -131,6 +133,7 @@ class Tenant(models.Model):
         return self.reports_enabled or self.plan_tier in [
             self.PLAN_STANDARD,
             self.PLAN_PRO,
+            self.PLAN_ENTERPRISE,
         ]
 
     def can_use_pwa_client(self):
@@ -138,23 +141,24 @@ class Tenant(models.Model):
         return self.pwa_client_enabled or self.plan_tier in [
             self.PLAN_STANDARD,
             self.PLAN_PRO,
+            self.PLAN_ENTERPRISE,
         ]
 
     def can_use_white_label(self):
         """Verifica se pode usar white-label (Pro apenas)"""
-        return self.plan_tier == self.PLAN_PRO
+        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
 
     def can_use_native_apps(self):
         """Verifica se pode usar apps nativos (Pro + addons)"""
         from typing import Any, cast
         addons = cast(list[str], (self.addons_enabled or []))
-        return self.plan_tier == self.PLAN_PRO and (
+        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE) and (
             "rn_admin" in addons or "rn_client" in addons
         )
 
     def can_use_advanced_notifications(self):
         """Verifica se pode usar SMS/WhatsApp (Pro + configuração)"""
-        return self.plan_tier == self.PLAN_PRO and (
+        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE) and (
             self.sms_enabled or self.whatsapp_enabled
         )
 
@@ -248,11 +252,15 @@ class CustomUser(AbstractUser):
 
 
 class UserFeatureFlags(models.Model):
-    PLAN_MONTHLY = "monthly"
-    PLAN_YEARLY = "yearly"
+    PLAN_BASIC = "basic"
+    PLAN_STANDARD = "standard"
+    PLAN_PRO = "pro"
+    PLAN_ENTERPRISE = "enterprise"
     PLAN_CHOICES = (
-        (PLAN_MONTHLY, "Monthly"),
-        (PLAN_YEARLY, "Yearly"),
+        (PLAN_BASIC, "Basic"),
+        (PLAN_STANDARD, "Standard"),
+        (PLAN_PRO, "Pro"),
+        (PLAN_ENTERPRISE, "Enterprise"),
     )
 
     STATUS_ACTIVE = "active"
@@ -280,7 +288,7 @@ class UserFeatureFlags(models.Model):
         max_length=20, choices=STATUS_CHOICES, default=STATUS_INCOMPLETE
     )
     pro_plan = models.CharField(
-        max_length=10, choices=PLAN_CHOICES, blank=True, null=True
+        max_length=20, choices=PLAN_CHOICES, blank=True, null=True
     )
     pro_since = models.DateTimeField(blank=True, null=True)
     pro_until = models.DateTimeField(blank=True, null=True)

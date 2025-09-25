@@ -69,6 +69,23 @@ class TestTenantFeatureFlags:
         assert tenant.can_use_native_apps()  # tem addon rn_admin
         assert tenant.can_use_advanced_notifications()  # tem SMS
 
+    def test_enterprise_plan_features(self):
+        """Teste features do plano Enterprise."""
+        tenant = Tenant.objects.create(
+            name="Enterprise Salon",
+            slug="enterprise-salon",
+            plan_tier=Tenant.PLAN_ENTERPRISE,
+            addons_enabled=["rn_admin", "rn_client"],
+            sms_enabled=True,
+            whatsapp_enabled=True,
+        )
+
+        assert tenant.can_use_reports()
+        assert tenant.can_use_pwa_client()
+        assert tenant.can_use_white_label()
+        assert tenant.can_use_native_apps()
+        assert tenant.can_use_advanced_notifications()
+
     def test_feature_flags_override(self):
         """Teste que feature flags específicas sobrescrevem lógica de plano."""
         tenant = Tenant.objects.create(
