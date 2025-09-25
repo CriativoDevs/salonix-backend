@@ -90,9 +90,10 @@ salonix-backend/
 
 ## 🔍 Smoke tests
 
-- Para validar endpoints críticos de relatórios, use:
+1. Em um terminal, suba o backend (`make run` ou `python manage.py runserver`).
+2. Em outro terminal execute:
     ```bash
-    ./scripts/smoke_reports.sh
+    make smoke        # wrapper que chama ./scripts/smoke_reports.sh
     ```
 
 - Credenciais seedadas:
@@ -100,16 +101,26 @@ salonix-backend/
     - `client_smoke@demo.local / Smoke@123`
     - Defina `SMOKE_USER_PASSWORD=...` antes de `make seed` para alterar a senha padrão usada pelos smokes.
 
+### O script faz o quê?
+
+- autentica como usuário de smoke (`pro_smoke`);
+- chama `/api/reports/overview/`, `/top-services/`, `/revenue/` e exports CSV com backoff;
+- valida throttling e métricas Prometheus.
+
+> ⚠️ Certifique-se de ter rodado `make seed` para popular dados de teste antes de executar o smoke.
+
 ---
 
-### Esse script:
+## 💳 Stripe / Billing
 
-- autentica como usuário de smoke (pro_smoke);
-- chama /api/reports/overview/, /top-services/, /revenue/;
-- valida que retornam 200 OK.
-
-
-## ⚠️ Certifique-se de ter rodado o comando de seed para popular dados de teste.
+- Configure os preços mensais dos planos via `.env`:
+    - `STRIPE_PRICE_BASIC_MONTHLY_ID`
+    - `STRIPE_PRICE_STANDARD_MONTHLY_ID`
+    - `STRIPE_PRICE_PRO_MONTHLY_ID`
+    - `STRIPE_PRICE_ENTERPRISE_MONTHLY_ID`
+- (Opcional) `STRIPE_TRIAL_DAYS` controla o período trial aplicado no checkout (default: 14 dias).
+- URLs de retorno (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`) podem apontar para o FE.
+- Para testar billing manualmente, chame `/api/payments/stripe/create-checkout-session/` com `plan="basic|standard|pro|enterprise"` e confirme os redirecionamentos do Stripe.
 
 ⸻
 
