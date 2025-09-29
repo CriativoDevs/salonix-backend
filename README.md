@@ -63,6 +63,15 @@ salonix-backend/
     DATABASE_URL=sqlite:///db.sqlite3
     STRIPE_SECRET_KEY=...
     STRIPE_WEBHOOK_SECRET=...
+    # Throttling (produção; em dev/test já vem alto por padrão)
+    USERS_AUTH_THROTTLE_LOGIN=10/min
+    USERS_AUTH_THROTTLE_REGISTER=5/min
+    USERS_TENANT_META_PUBLIC=60/min
+    # Captcha (self-service)
+    CAPTCHA_ENABLED=false
+    CAPTCHA_PROVIDER=turnstile  # ou hcaptcha
+    CAPTCHA_SECRET=
+    CAPTCHA_BYPASS_TOKEN=       # ex.: dev-bypass (enviar em X-Captcha-Token)
     ```
 
 5. Rode migrações:
@@ -86,6 +95,19 @@ salonix-backend/
     ```bash
     pytest reports/tests/
     ```
+---
+## 🔒 Hardening Self-service (BE-212)
+
+- Endpoints protegidos:
+  - POST `/api/users/register/` e `/api/users/token/` com throttling por IP/usuário e captcha opcional.
+  - GET `/api/users/tenant/meta/` com throttling público.
+- Envs relevantes:
+  - `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`.
+  - `CAPTCHA_ENABLED`, `CAPTCHA_PROVIDER=turnstile|hcaptcha`, `CAPTCHA_SECRET`, `CAPTCHA_BYPASS_TOKEN`.
+- Dev/Test:
+  - Defaults de throttling são altos para não interferir; use `override_settings` para testar 429.
+  - Para testar captcha sem rede, defina `CAPTCHA_BYPASS_TOKEN` e envie `X-Captcha-Token`.
+
 ---
 
 ## 🔍 Smoke tests
