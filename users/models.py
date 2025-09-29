@@ -2,7 +2,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from typing import Any
+from django.db.models.functions import Lower
 from typing import Any, cast
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -234,6 +234,12 @@ class CustomUser(AbstractUser):
             models.Index(fields=["tenant", "username"]),
             models.Index(fields=["tenant", "email"]),
             models.Index(fields=["ops_role"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("email"),
+                name="users_customuser_email_ci_unique",
+            )
         ]
 
     def __str__(self):

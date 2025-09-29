@@ -83,6 +83,46 @@ class TestAuthEndpoints:
         assert second_response.data["tenant"]["slug"].startswith("studio-glam")
         assert second_response.data["tenant"]["slug"] != "studio-glam"
 
+    def test_registration_duplicate_email_returns_400(self):
+        User.objects.create_user(
+            username="existing",
+            email="duplicate@example.com",
+            password="StrongPass123",
+        )
+
+        payload = {
+            "username": "newuser",
+            "email": "duplicate@example.com",
+            "password": "AnotherPass123",
+        }
+
+        response = self.client.post(self.register_url, data=payload)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        error = response.data.get("error", {})
+        assert "details" in error
+        assert "email" in error["details"]
+
+    def test_registration_duplicate_email_case_insensitive(self):
+        User.objects.create_user(
+            username="existing",
+            email="duplicate@example.com",
+            password="StrongPass123",
+        )
+
+        payload = {
+            "username": "anotheruser",
+            "email": "Duplicate@Example.com",
+            "password": "AnotherPass123",
+        }
+
+        response = self.client.post(self.register_url, data=payload)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        error = response.data.get("error", {})
+        assert "details" in error
+        assert "email" in error["details"]
+
     def test_ops_user_blocked_from_tenant_login(self):
         user = User(
             username="opsuser",
