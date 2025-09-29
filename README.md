@@ -96,6 +96,19 @@ salonix-backend/
     pytest reports/tests/
     ```
 ---
+## 🔑 Recuperação de Senha (BE-240)
+
+- Endpoints:
+  - POST `/api/users/password/reset/` – solicita reset; resposta neutra `{"status":"ok"}`.
+  - POST `/api/users/password/reset/confirm/` – confirma com `uid` + `token` + `new_password`.
+- Segurança:
+  - Throttle `users_password_reset` (configurável por env; alto em dev/test).
+  - Captcha aplicado na solicitação (usa `CAPTCHA_*`).
+- E-mail:
+  - Envia link de reset usando `reset_url` informado pelo cliente: `{reset_url}?uid={uid}&token={token}`.
+- Métricas:
+  - `users_password_reset_events_total{event=request|confirm, result=success|failure}`.
+
 ## 🔒 Hardening Self-service (BE-212)
 
 - Endpoints protegidos:
