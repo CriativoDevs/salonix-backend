@@ -46,3 +46,23 @@ def enforce_captcha_or_raise(request) -> None:
     )
     raise ValidationError({"captcha": ["Captcha inválido."]})
 
+
+def verify_captcha_with_provider(token: str, remote_ip: Optional[str] = None) -> bool:
+    """
+    STUB: Valida o token do captcha junto ao provider configurado.
+
+    Providers:
+    - Turnstile: https://challenges.cloudflare.com/turnstile/v0/siteverify
+    - hCaptcha:  https://hcaptcha.com/siteverify
+
+    Implementação real será feita na issue BE-212A, com chamadas HTTP, timeouts,
+    tratamento de erros e métricas. Aqui mantemos apenas a assinatura e logging.
+    """
+    provider = getattr(settings, "CAPTCHA_PROVIDER", "")
+    secret = getattr(settings, "CAPTCHA_SECRET", "")
+    logger.info(
+        "verify_captcha_with_provider (stub)",
+        extra={"provider": provider, "has_secret": bool(secret), "remote_ip": remote_ip is not None},
+    )
+    # Placeholder até BE-212A: retornar False para explicitar que não há verificação real
+    return False
