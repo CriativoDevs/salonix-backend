@@ -120,6 +120,18 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             return sanitize_text_input(value, max_length=255)
         return value
 
+    def validate_email(self, value):
+        """Normalizar e garantir unicidade do email."""
+        if not value:
+            return value
+
+        normalized = CustomUser.objects.normalize_email(value.strip())
+        if CustomUser.objects.filter(email__iexact=normalized).exists():
+            raise serializers.ValidationError(
+                "Já existe uma conta registada com este e-mail."
+            )
+        return normalized
+
     def validate_phone_number(self, value):
         """Validar e sanitizar número de telefone."""
         if value:

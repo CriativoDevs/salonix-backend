@@ -56,6 +56,20 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Logs com `logger.exception` para diagnóstico sem interromper o webhook
 - ✅ Testes garantem que o plano selecionado ativa corretamente flags/tenant
 
+#### **E-mail único no self-service (BE-236)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `users/models.py` – constraint `users_customuser_email_ci_unique` (case-insensitive)
+- `users/serializers.py` – validação no `UserRegistrationSerializer`
+- `users/migrations/0011_*` – checagem prévia de duplicados antes de aplicar a constraint
+- `users/tests/test_auth.py` / `test_user_models.py` – cobertura dos cenários de duplicidade
+
+**Características**:
+- ✅ Registro self-service retorna 400 + detalhe de validação quando o e-mail já existe
+- ✅ Constraint no banco garante unicidade mesmo com variações de maiúsculas/minúsculas
+- ✅ Seeds e scripts continuam a usar o padrão `pro_smoke@demo.local`
+- ✅ Migração aborta com mensagem clara se houver duplicados remanescentes, evitando inconsistências
+
 #### **Autenticação Console Ops (OPS-BE-01)**
 **Status**: ✅ Implementado  
 **Arquivos**:

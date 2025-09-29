@@ -46,3 +46,17 @@ class TestCustomUserModel:
             User.objects.create_user(
                 username=cast(Any, None), email="x@x.com", password="testpass"
             )
+
+    def test_duplicate_email_raises_integrity_error(self):
+        User.objects.create_user(
+            username="first",
+            email="duplicate@example.com",
+            password="StrongPass123",
+        )
+
+        with pytest.raises(IntegrityError):
+            User.objects.create_user(
+                username="second",
+                email="Duplicate@Example.com",
+                password="AnotherPass123",
+            )
