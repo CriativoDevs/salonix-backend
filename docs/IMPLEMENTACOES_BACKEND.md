@@ -430,6 +430,21 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Configurações de desenvolvimento e produção
 - ✅ Comentários explicativos
 
+#### **Hardening Self-service (BE-212)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `users/throttling.py`, `users/security.py`, `users/observability.py`
+- `users/views.py` (throttle_scope + captcha)
+- `salonix_backend/settings.py` (novas ENV e rates por ambiente)
+
+**Variáveis de ambiente**:
+- `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`
+- `CAPTCHA_ENABLED`, `CAPTCHA_PROVIDER=turnstile|hcaptcha`, `CAPTCHA_SECRET`, `CAPTCHA_BYPASS_TOKEN`
+
+**Notas**:
+- Em dev/test, rates padrão são altos; para testar 429 use `override_settings`.
+- Envie `X-Captcha-Token` igual ao `CAPTCHA_BYPASS_TOKEN` para bypass em dev/smoke.
+
 #### **Observabilidade**
 **Status**: ✅ Implementado  
 **Arquivos**:

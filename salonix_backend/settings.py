@@ -251,6 +251,19 @@ REST_FRAMEWORK = {
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
         "reports": REPORTS_THROTTLE_REPORTS,
+        # auth self-service (users) - em dev/test, deixamos alto por padrão
+        "auth_login": env_get(
+            "USERS_AUTH_THROTTLE_LOGIN",
+            "100/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "10/min",
+        ),
+        "auth_register": env_get(
+            "USERS_AUTH_THROTTLE_REGISTER",
+            "100/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "5/min",
+        ),
+        "tenant_meta_public": env_get(
+            "USERS_TENANT_META_PUBLIC",
+            "300/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "60/min",
+        ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
@@ -525,3 +538,10 @@ REPORTS_CACHE_TTL = {
     "top_services_csv": env_int("TTL_TOP_SERVICES_CSV", 60),
     "revenue_csv": env_int("TTL_REVENUE_CSV", 60),
 }
+
+# --- CAPTCHA (self-service) ---
+CAPTCHA_ENABLED = str(env_get("CAPTCHA_ENABLED", "false")).lower() in {"1", "true", "yes", "on"}
+CAPTCHA_PROVIDER = env_get("CAPTCHA_PROVIDER", "turnstile")  # turnstile | hcaptcha
+CAPTCHA_SECRET = env_get("CAPTCHA_SECRET", "")
+# Bypass para dev/smoke: se definido e token igual, considera válido
+CAPTCHA_BYPASS_TOKEN = env_get("CAPTCHA_BYPASS_TOKEN", "")
