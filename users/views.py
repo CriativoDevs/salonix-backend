@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.exceptions import ValidationError
 
 from drf_spectacular.utils import extend_schema
 
@@ -24,6 +25,13 @@ from .serializers import (
     UserFeatureFlagsUpdateSerializer,
     TenantSelfServiceSerializer,
 )
+from .throttling import (
+    UsersAuthLoginThrottle,
+    UsersAuthRegisterThrottle,
+    UsersTenantMetaPublicThrottle,
+)
+from .security import enforce_captcha_or_raise
+from .observability import USERS_AUTH_EVENTS_TOTAL, USERS_THROTTLED_TOTAL
 
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
@@ -42,6 +50,27 @@ def _me_tenant_cache_key(user_id: int, tenant_id: int, tenant_updated_at):
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [UsersAuthRegisterThrottle]
+    throttle_scope = "auth_register"
+
+    def post(self, request, *args, **kwargs):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="failure").inc()
+            raise
+        resp = super().post(request, *args, **kwargs)
+        if resp.status_code in (status.HTTP_201_CREATED, status.HTTP_200_OK):
+            USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="success").inc()
+        else:
+            USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="failure").inc()
+        return resp
+
+    def throttled(self, request, wait):  # pragma: no cover - DRF handles 429 response
+        try:
+            USERS_THROTTLED_TOTAL.labels(scope="auth_register").inc()
+        finally:
+            return super().throttled(request, wait)
 
 
 class MeFeatureFlagsView(RetrieveUpdateAPIView):
@@ -60,6 +89,28 @@ class MeFeatureFlagsView(RetrieveUpdateAPIView):
 
 class EmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = EmailTokenObtainPairSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersAuthLoginThrottle]
+    throttle_scope = "auth_login"
+
+    def post(self, request, *args, **kwargs):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="failure").inc()
+            raise
+        resp = super().post(request, *args, **kwargs)
+        if resp.status_code in (status.HTTP_201_CREATED, status.HTTP_200_OK):
+            USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="success").inc()
+        else:
+            USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="failure").inc()
+        return resp
+
+    def throttled(self, request, wait):  # pragma: no cover
+        try:
+            USERS_THROTTLED_TOTAL.labels(scope="auth_login").inc()
+        finally:
+            return super().throttled(request, wait)
 
 
 class TenantMetaView(APIView):
@@ -78,6 +129,13 @@ class TenantMetaView(APIView):
         if self.request.method == "GET":
             return [AllowAny()]
         return [IsAuthenticated()]
+
+    def get_throttles(self):
+        # throttle apenas no GET público
+        if self.request.method == "GET":
+            self.throttle_scope = "tenant_meta_public"
+            return [UsersTenantMetaPublicThrottle()]
+        return []
 
     def get_tenant(self, request):
         """Obter tenant baseado no request"""
@@ -117,6 +175,12 @@ class TenantMetaView(APIView):
         # Serializar dados do tenant
         serializer = TenantMetaSerializer(tenant)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def throttled(self, request, wait):  # pragma: no cover
+        try:
+            USERS_THROTTLED_TOTAL.labels(scope="tenant_meta_public").inc()
+        finally:
+            return super().throttled(request, wait)
 
     @extend_schema(
         request=TenantBrandingUpdateSerializer,

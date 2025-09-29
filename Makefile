@@ -47,6 +47,22 @@ env-example:
 > 'CACHE_URL=locmem://' \
 > 'STRIPE_SECRET_KEY=' \
 > 'STRIPE_WEBHOOK_SECRET=' \
+> '' \
+> '# --- Self-service Auth Throttling (users) ---' \
+> '# Valores sugeridos para produção; em dev/test usamos defaults mais altos automaticamente.' \
+> 'USERS_AUTH_THROTTLE_LOGIN=10/min' \
+> 'USERS_AUTH_THROTTLE_REGISTER=5/min' \
+> 'USERS_TENANT_META_PUBLIC=60/min' \
+> '' \
+> '# --- CAPTCHA (self-service) ---' \
+> '# CAPTCHA_ENABLED=true|false' \
+> 'CAPTCHA_ENABLED=false' \
+> '# CAPTCHA_PROVIDER=turnstile|hcaptcha' \
+> 'CAPTCHA_PROVIDER=turnstile' \
+> '# CAPTCHA_SECRET=chave secreta do provider (produção)' \
+> 'CAPTCHA_SECRET=' \
+> '# CAPTCHA_BYPASS_TOKEN=token para dev/smoke (enviado em X-Captcha-Token)' \
+> 'CAPTCHA_BYPASS_TOKEN=' \
 > > .env.example
 > echo "OK: .env.example criado."
 
