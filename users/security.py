@@ -46,7 +46,6 @@ def enforce_captcha_or_raise(request) -> None:
     )
     raise ValidationError({"captcha": ["Captcha inválido."]})
 
-
 def verify_captcha_with_provider(token: str, remote_ip: Optional[str] = None) -> bool:
     """
     STUB: Valida o token do captcha junto ao provider configurado.
