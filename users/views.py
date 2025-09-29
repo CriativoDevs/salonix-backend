@@ -45,6 +45,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
+security_logger = logging.getLogger("users.security")
 
 
 def _me_tenant_cache_key(user_id: int, tenant_id: int, tenant_updated_at):
@@ -322,17 +323,71 @@ class PasswordResetRequestView(APIView):
         link = f"{reset_url}?uid={uid}&token={token}"
 
         try:
-            send_mail(
-                subject="Recuperação de senha",
-                message=f"Use este link para redefinir sua senha: {link}",
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"),
-                recipient_list=[email],
-                fail_silently=True,
+            from django.core.mail import EmailMultiAlternatives
+            fail_silently = not (getattr(settings, "DEBUG", False) or getattr(settings, "ENV", "dev") == "dev")
+
+            subject = "Recuperação de senha • TimelyOne"
+            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
+            text_body = (
+                "Recebemos um pedido para redefinir a sua senha.\n\n"
+                f"Se foi você, clique no link a seguir: {link}\n\n"
+                "Se não foi você, ignore este e-mail."
             )
-        except Exception:
+            html_body = f"""
+            <div style=\"font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu, sans-serif; max-width:560px; margin:0 auto;\">
+              <h2 style=\"margin:0 0 12px;\">Redefinição de senha</h2>
+              <p style=\"margin:0 0 16px; color:#334155;\">Recebemos um pedido para redefinir a sua senha.</p>
+              <p style=\"margin:0 0 20px;\">
+                <a href=\"{link}\" style=\"
+                   display:inline-block; background:#0ea5e9; color:#fff; text-decoration:none;
+                   padding:10px 16px; border-radius:8px; font-weight:600;\">Redefinir senha</a>
+              </p>
+              <p style=\"margin:0 0 8px; color:#475569;\">Ou copie e cole este link no navegador:</p>
+              <p style=\"margin:0 0 16px;\"><a href=\"{link}\">{link}</a></p>
+              <p style=\"margin:24px 0 0; font-size:12px; color:#64748b;\">Se você não solicitou esta ação, pode ignorar este e-mail.</p>
+            </div>
+            """
+
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email=from_email,
+                to=[email],
+            )
+            msg.attach_alternative(html_body, "text/html")
+            msg.send(fail_silently=fail_silently)
+        except Exception as exc:
             # Mesmo com falha no envio, mantemos resposta neutra
+            # Em dev, logar exceção para facilitar depuração SMTP
+            if getattr(settings, "DEBUG", False) or getattr(settings, "ENV", "dev") == "dev":
+                security_logger.exception(
+                    "Falha ao enviar email de reset (dev)",
+                    extra={
+                        "event": "password_reset_email_error",
+                        "email": email,
+                        "error": str(exc),
+                        "request_id": getattr(request, "request_id", None),
+                    },
+                )
             USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
             return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+        # Logar o link de reset em ambiente de desenvolvimento para facilitar testes
+        try:
+            env_name = getattr(settings, "ENV", "dev")
+        except Exception:
+            env_name = "dev"
+        if settings.DEBUG or env_name == "dev":
+            # Alguns formatadores não mostram campos em 'extra'; incluir no próprio message
+            security_logger.info(
+                f"Password reset link (dev): {link} | email={email}",
+                extra={
+                    "event": "password_reset_link",
+                    "email": email,
+                    "link": link,
+                    "request_id": getattr(request, "request_id", None),
+                },
+            )
 
         USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
         return Response({"status": "ok"}, status=status.HTTP_200_OK)

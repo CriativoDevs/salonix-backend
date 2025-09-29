@@ -94,6 +94,14 @@ migrate:
 
 .PHONY: run
 run:
+> # Garante que variáveis do shell não sobrescrevam o .env
+> unset EMAIL_HOST_USER EMAIL_HOST_PASSWORD DEFAULT_FROM_EMAIL; \
+> DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) runserver 0.0.0.0:8000
+
+.PHONY: run-clean-env
+run-clean-env:
+> # Altera para um ambiente "limpo" explicitamente e roda o servidor
+> unset EMAIL_HOST_USER EMAIL_HOST_PASSWORD DEFAULT_FROM_EMAIL; \
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) runserver 0.0.0.0:8000
 
 # ---- Seed (dados de demonstração) ----

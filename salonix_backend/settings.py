@@ -254,20 +254,36 @@ REST_FRAMEWORK = {
         # password reset self-service
         "users_password_reset": env_get(
             "USERS_PASSWORD_RESET_RATE",
-            "20/hour" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "5/hour",
+            (
+                "20/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "5/hour"
+            ),
         ),
         # auth self-service (users) - em dev/test, deixamos alto por padrão
         "auth_login": env_get(
             "USERS_AUTH_THROTTLE_LOGIN",
-            "100/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "10/min",
+            (
+                "100/min"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "10/min"
+            ),
         ),
         "auth_register": env_get(
             "USERS_AUTH_THROTTLE_REGISTER",
-            "100/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "5/min",
+            (
+                "100/min"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "5/min"
+            ),
         ),
         "tenant_meta_public": env_get(
             "USERS_TENANT_META_PUBLIC",
-            "300/min" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "60/min",
+            (
+                "300/min"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "60/min"
+            ),
         ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
@@ -297,8 +313,14 @@ EMAIL_BACKEND = env_get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
 EMAIL_HOST = env_get("EMAIL_HOST", "")
-EMAIL_PORT = env_int("EMAIL_PORT", 25)
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_USE_TLS = str(env_get("EMAIL_USE_TLS", "false")).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+EMAIL_USE_SSL = str(env_get("EMAIL_USE_SSL", "false")).lower() in {
     "1",
     "true",
     "yes",
@@ -545,7 +567,12 @@ REPORTS_CACHE_TTL = {
 }
 
 # --- CAPTCHA (self-service) ---
-CAPTCHA_ENABLED = str(env_get("CAPTCHA_ENABLED", "false")).lower() in {"1", "true", "yes", "on"}
+CAPTCHA_ENABLED = str(env_get("CAPTCHA_ENABLED", "false")).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 CAPTCHA_PROVIDER = env_get("CAPTCHA_PROVIDER", "turnstile")  # turnstile | hcaptcha
 CAPTCHA_SECRET = env_get("CAPTCHA_SECRET", "")
 # Bypass para dev/smoke: se definido e token igual, considera válido
