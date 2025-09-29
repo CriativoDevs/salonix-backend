@@ -31,7 +31,11 @@ from .throttling import (
     UsersTenantMetaPublicThrottle,
 )
 from .security import enforce_captcha_or_raise
-from .observability import USERS_AUTH_EVENTS_TOTAL, USERS_THROTTLED_TOTAL
+from .observability import (
+    USERS_AUTH_EVENTS_TOTAL,
+    USERS_THROTTLED_TOTAL,
+    USERS_PASSWORD_RESET_EVENTS_TOTAL,
+)
 from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth import get_user_model
@@ -270,25 +274,42 @@ class UsersPasswordResetThrottle(ScopedRateThrottle):
     scope = "users_password_reset"
 
 
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse
+
+
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [UsersPasswordResetThrottle]
     throttle_scope = "users_password_reset"
 
+    @extend_schema(
+        description="Solicita um reset de senha. Resposta é neutra para não vazar existência.",
+        examples=[
+            OpenApiExample(
+                "Exemplo",
+                value={"email": "user@example.com", "reset_url": "https://app/reset"},
+                request_only=True,
+            )
+        ],
+        responses={200: OpenApiResponse(description="Always ok", response=None)},
+    )
     def post(self, request):
         try:
             enforce_captcha_or_raise(request)
         except ValidationError:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="failure").inc()
             return Response({"detail": "captcha_invalid"}, status=status.HTTP_400_BAD_REQUEST)
 
         email = str(request.data.get("email", "")).strip().lower()
         if not email:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="failure").inc()
             return Response({"detail": "email_required"}, status=status.HTTP_400_BAD_REQUEST)
 
         User = get_user_model()
         try:
             user = User.objects.get(email=email, is_active=True)
         except User.DoesNotExist:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
             # resposta neutra para não vazar existência
             return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
@@ -309,34 +330,53 @@ class PasswordResetRequestView(APIView):
                 fail_silently=True,
             )
         except Exception:
-            pass
+            # Mesmo com falha no envio, mantemos resposta neutra
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
+            return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
+        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        description="Confirma o reset de senha com uid+token e define nova senha.",
+        examples=[
+            OpenApiExample(
+                "Exemplo",
+                value={"uid": "1", "token": "<token>", "new_password": "StrongPass123"},
+                request_only=True,
+            )
+        ],
+        responses={200: OpenApiResponse(description="password_updated", response=None)},
+    )
     def post(self, request):
         uid = request.data.get("uid")
         token = request.data.get("token")
         new_password = request.data.get("new_password")
         if not uid or not token or not new_password:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
             return Response({"detail": "missing_fields"}, status=status.HTTP_400_BAD_REQUEST)
 
         User = get_user_model()
         try:
             user = User.objects.get(pk=uid, is_active=True)
         except User.DoesNotExist:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
             raise AuthenticationFailed("invalid_token")
 
         token_gen = PasswordResetTokenGenerator()
         if not token_gen.check_token(user, token):
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
             raise AuthenticationFailed("invalid_token")
 
         if len(str(new_password)) < 8:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
             return Response({"detail": "weak_password"}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
+        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="success").inc()
         return Response({"status": "password_updated"}, status=status.HTTP_200_OK)

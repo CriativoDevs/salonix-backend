@@ -20,3 +20,8 @@ USERS_THROTTLED_TOTAL = _get_or_create_counter(
     ("scope",),
 )
 
+USERS_PASSWORD_RESET_EVENTS_TOTAL = _get_or_create_counter(
+    "users_password_reset_events_total",
+    "Total de eventos do fluxo de recuperação de senha",
+    ("event", "result"),
+)

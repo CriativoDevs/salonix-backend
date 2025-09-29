@@ -445,6 +445,20 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - Em dev/test, rates padrão são altos; para testar 429 use `override_settings`.
 - Envie `X-Captcha-Token` igual ao `CAPTCHA_BYPASS_TOKEN` para bypass em dev/smoke.
 
+#### **Recuperação de Senha (BE-240)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `users/views.py` (PasswordResetRequestView/ConfirmView)
+- `users/urls.py` (rotas)
+- `users/tests/test_password_reset.py` (testes)
+- `users/observability.py` (métrica `users_password_reset_events_total`)
+
+**Detalhes**:
+- Endpoints: `POST /api/users/password/reset/` e `POST /api/users/password/reset/confirm/`.
+- Segurança: throttle `users_password_reset`; captcha no request.
+- E-mail: link `{reset_url}?uid={uid}&token={token}`.
+- Métricas: `users_password_reset_events_total{event,result}`.
+
 #### **Observabilidade**
 **Status**: ✅ Implementado  
 **Arquivos**:
