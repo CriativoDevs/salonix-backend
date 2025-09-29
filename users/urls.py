@@ -8,6 +8,8 @@ from .views import (
     EmailTokenObtainPairView,
     TenantMetaView,
     MeTenantView,
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
 )
 
 urlpatterns = [
@@ -17,4 +19,10 @@ urlpatterns = [
     path("tenant/meta/", TenantMetaView.as_view(), name="tenant_meta"),
     path("token/", EmailTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("password/reset/", PasswordResetRequestView.as_view(), name="password_reset"),
+    path(
+        "password/reset/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
 ]

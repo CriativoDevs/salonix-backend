@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, AuthenticationFailed
 
 from drf_spectacular.utils import extend_schema
 
@@ -32,6 +32,12 @@ from .throttling import (
 )
 from .security import enforce_captcha_or_raise
 from .observability import USERS_AUTH_EVENTS_TOTAL, USERS_THROTTLED_TOTAL
+from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.conf import settings
+from rest_framework.throttling import ScopedRateThrottle
 
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
@@ -258,3 +264,79 @@ class MeTenantView(APIView):
         )
 
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class UsersPasswordResetThrottle(ScopedRateThrottle):
+    scope = "users_password_reset"
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersPasswordResetThrottle]
+    throttle_scope = "users_password_reset"
+
+    def post(self, request):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            return Response({"detail": "captcha_invalid"}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = str(request.data.get("email", "")).strip().lower()
+        if not email:
+            return Response({"detail": "email_required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(email=email, is_active=True)
+        except User.DoesNotExist:
+            # resposta neutra para não vazar existência
+            return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+        token_gen = PasswordResetTokenGenerator()
+        token = token_gen.make_token(user)
+        uid = str(user.pk)
+
+        reset_url = request.data.get("reset_url") or settings.STRIPE_CANCEL_URL  # placeholder front URL
+        # Montar link: {reset_url}?uid={uid}&token={token}
+        link = f"{reset_url}?uid={uid}&token={token}"
+
+        try:
+            send_mail(
+                subject="Recuperação de senha",
+                message=f"Use este link para redefinir sua senha: {link}",
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"),
+                recipient_list=[email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+
+        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uid = request.data.get("uid")
+        token = request.data.get("token")
+        new_password = request.data.get("new_password")
+        if not uid or not token or not new_password:
+            return Response({"detail": "missing_fields"}, status=status.HTTP_400_BAD_REQUEST)
+
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=uid, is_active=True)
+        except User.DoesNotExist:
+            raise AuthenticationFailed("invalid_token")
+
+        token_gen = PasswordResetTokenGenerator()
+        if not token_gen.check_token(user, token):
+            raise AuthenticationFailed("invalid_token")
+
+        if len(str(new_password)) < 8:
+            return Response({"detail": "weak_password"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        return Response({"status": "password_updated"}, status=status.HTTP_200_OK)

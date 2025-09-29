@@ -251,6 +251,11 @@ REST_FRAMEWORK = {
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
         "reports": REPORTS_THROTTLE_REPORTS,
+        # password reset self-service
+        "users_password_reset": env_get(
+            "USERS_PASSWORD_RESET_RATE",
+            "20/hour" if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev") else "5/hour",
+        ),
         # auth self-service (users) - em dev/test, deixamos alto por padrão
         "auth_login": env_get(
             "USERS_AUTH_THROTTLE_LOGIN",
