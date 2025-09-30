@@ -6,7 +6,7 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 
 ### **🎯 Documentos Estratégicos**
 - [`ESTRATEGIA_DESENVOLVIMENTO.md`](./ESTRATEGIA_DESENVOLVIMENTO.md) - Estratégia de desenvolvimento em fases
-- [`MVP_STATUS_ATUAL.md`](./MVP_STATUS_ATUAL.md) - Status atual do MVP (95% completo)
+- [`MVP_STATUS_ATUAL.md`](./MVP_STATUS_ATUAL.md) - Status atual do MVP
 - [`BE_BUSINESS_BRIEF.md`](./BE_BUSINESS_BRIEF.md) - Alinhamento de negócio e implicações BE
 
 ### **🏗️ Documentos Técnicos**
@@ -50,19 +50,19 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 - Cobertura: [`IMPLEMENTACOES_BACKEND.md#testes`](./IMPLEMENTACOES_BACKEND.md#sistema-de-testes)
 - Estratégia: [`ARQUITETURA_SISTEMA.md#testes`](./ARQUITETURA_SISTEMA.md#estratégia-de-testes)
 
-## 📊 **Status do Projeto**
+## 📊 **Status do Projeto (MVP)**
 
-### **✅ MVP Backend: 95% Completo**
-- 17 funcionalidades principais implementadas
-- 261 testes passando (100%)
-- Django Admin customizado funcional
-- Sistema de cache otimizado
+### **✅ Entregues (MVP)**
+- Autenticação/registro self‑service com slug do tenant, bootstrap `/users/me/tenant/`.
+- Relatórios com cache e throttling de exportação.
+- Hardening: throttling por escopo, captcha switch (bypass dev), logs estruturados.
+- Recuperação de senha (reset/confirm) com métricas e rate limit.
 
-### **🚀 Próximas Implementações**
-- BE-CLIENT-METRICS: Métricas de clientes
-
-### **📱 Comunicação Real**
-- SMS/WhatsApp: Para produção (estratégia definida)
+### **🚀 Próximos passos (go‑live)**
+- BE‑212A: validação real de Captcha (Turnstile/hCaptcha) ou 212B self‑hosted.
+- BE‑240B: e‑mails transacionais (template HTML, FROM amigável, URL do FE).
+- Stripe live (chaves + webhook) e infra prod‑like (Postgres/Redis/HTTPS/CORS/Secrets/Observability).
+- OpenAPI atualizado e smokes e2e.
 
 ## 🔗 **Links Úteis**
 
