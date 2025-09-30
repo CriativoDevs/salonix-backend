@@ -166,9 +166,26 @@ class PublicSlotListView(ListAPIView):
         if not professional_id:
             raise ValidationError({"professional_id": "Este parâmetro é obrigatório."})
 
-        return ScheduleSlot.objects.filter(
+        # Respeitar o tenant informado (header X-Tenant-Slug ou query param tenant)
+        tenant_slug = self.request.headers.get("X-Tenant-Slug") or self.request.GET.get(
+            "tenant"
+        )
+
+        qs = ScheduleSlot.objects.filter(
             professional_id=professional_id, is_available=True
-        ).order_by("start_time")
+        )
+
+        if tenant_slug:
+            try:
+                from users.models import Tenant
+
+                tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+                qs = qs.filter(tenant=tenant)
+            except Tenant.DoesNotExist:
+                # Se o tenant não existir, não retornar slots
+                return ScheduleSlot.objects.none()
+
+        return qs.order_by("start_time")
 
 
 class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
@@ -967,11 +984,51 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        tenant = getattr(self.request, "tenant", None)
-        if tenant:
-            super().perform_create(serializer)  # TenantIsolatedMixin já define tenant
+        # Resolve tenant a partir do usuário autenticado (fonte única)
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+        if not tenant and not self.request.user.is_superuser:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
+
+        # Validar que o profissional informado pertence ao mesmo tenant
+        validated = serializer.validated_data
+        professional = validated.get("professional")
+        if professional is None:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"professional": ["Profissional é obrigatório."]})
+
+        if tenant is not None and hasattr(professional, "tenant_id"):
+            if professional.tenant_id != tenant.id:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError(
+                    {"professional": ["Profissional não pertence ao tenant atual."]}
+                )
+
+        # Salva garantindo o tenant correto
+        if tenant and hasattr(serializer.Meta.model, "tenant"):
+            serializer.save(tenant=tenant)
         else:
             super().perform_create(serializer)
+
+    def get_object(self):
+        obj = get_object_or_404(
+            ScheduleSlot, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk'))
+        )
+        if self.request.user.is_superuser:
+            return obj
+        tenant = getattr(self.request, 'tenant', None) or getattr(
+            self.request.user, 'tenant', None
+        )
+        if tenant and hasattr(obj, 'tenant'):
+            if obj.tenant_id != tenant.id:
+                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+        return obj
 
 
 class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
