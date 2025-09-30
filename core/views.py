@@ -16,6 +16,7 @@ from core.email_utils import (
     send_appointment_cancellation_email,
 )
 from core.models import Appointment, AppointmentSeries, Professional, Service, ScheduleSlot
+from users.models import Tenant
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
@@ -186,7 +187,9 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
         slot.mark_booked()
 
         # Definir tenant e client
-        tenant = getattr(self.request, "tenant", None)
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
         if tenant:
             appointment = serializer.save(client=self.request.user, tenant=tenant)
         else:
@@ -885,12 +888,28 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        # O TenantIsolatedMixin já define o tenant, só precisamos do user
-        tenant = getattr(self.request, "tenant", None)
-        if tenant:
-            serializer.save(user=self.request.user, tenant=tenant)
-        else:
-            serializer.save(user=self.request.user)
+        # Preferir tenant do request (usuário autenticado); se ausente (ex.: superuser),
+        # tentar resolver via header 'X-Tenant-Slug' ou query param 'tenant'.
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant is None:
+            slug = (
+                self.request.headers.get("X-Tenant-Slug")
+                or self.request.query_params.get("tenant")
+            )
+            if slug:
+                try:
+                    tenant = Tenant.objects.get(slug=slug, is_active=True)
+                except Tenant.DoesNotExist:
+                    tenant = None
+        if tenant is None and not self.request.user.is_superuser:
+            # Usuário comum sem tenant não deve criar registros órfãos
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
+
+        serializer.save(user=self.request.user, tenant=tenant)
 
 
 class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
@@ -907,11 +926,25 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        tenant = getattr(self.request, "tenant", None)
-        if tenant:
-            serializer.save(user=self.request.user, tenant=tenant)
-        else:
-            serializer.save(user=self.request.user)
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant is None:
+            slug = (
+                self.request.headers.get("X-Tenant-Slug")
+                or self.request.query_params.get("tenant")
+            )
+            if slug:
+                try:
+                    tenant = Tenant.objects.get(slug=slug, is_active=True)
+                except Tenant.DoesNotExist:
+                    tenant = None
+        if tenant is None and not self.request.user.is_superuser:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
+
+        serializer.save(user=self.request.user, tenant=tenant)
 
 
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):

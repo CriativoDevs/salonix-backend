@@ -128,6 +128,25 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+try:
+    from corsheaders.defaults import default_headers
+    CORS_ALLOW_HEADERS = list(default_headers) + [
+        "x-tenant-slug",
+    ]
+except Exception:
+    # Fallback seguro caso pacote mude API; permitir header custom
+    CORS_ALLOW_HEADERS = [
+        "x-tenant-slug",
+        "accept",
+        "accept-encoding",
+        "authorization",
+        "content-type",
+        "dnt",
+        "origin",
+        "user-agent",
+        "x-csrftoken",
+        "x-requested-with",
+    ]
 
 # opcional: flag ligada por padrão
 OBSERVABILITY_ENABLED = str(env_get("OBSERVABILITY_ENABLED", "true")).lower() == "true"
