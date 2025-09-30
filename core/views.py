@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
+from django.core.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -880,12 +881,8 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Usar o mixin para filtrar por tenant
-        queryset = super().get_queryset()
-        # Adicionar filtro por user dentro do tenant
-        if hasattr(self.request, "user") and self.request.user.is_authenticated:
-            queryset = queryset.filter(user=self.request.user)
-        return queryset
+        # Filtrar apenas por tenant (TenantIsolatedMixin cuida do escopo)
+        return super().get_queryset()
 
     def perform_create(self, serializer):
         # Preferir tenant do request (usuário autenticado); se ausente (ex.: superuser),
@@ -911,6 +908,17 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
 
         serializer.save(user=self.request.user, tenant=tenant)
 
+    def get_object(self):
+        # Busca direta por PK e valida tenant explicitamente (evita filtros indevidos no queryset)
+        obj = get_object_or_404(Service, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
+        if self.request.user.is_superuser:
+            return obj
+        tenant = getattr(self.request, 'tenant', None) or getattr(self.request.user, 'tenant', None)
+        if tenant and hasattr(obj, 'tenant'):
+            if obj.tenant_id != tenant.id:
+                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+        return obj
+
 
 class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = Professional.objects.all()
@@ -918,12 +926,8 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Usar o mixin para filtrar por tenant
-        queryset = super().get_queryset()
-        # Adicionar filtro por user dentro do tenant
-        if hasattr(self.request, "user") and self.request.user.is_authenticated:
-            queryset = queryset.filter(user=self.request.user)
-        return queryset
+        # Filtrar apenas por tenant (TenantIsolatedMixin cuida do escopo)
+        return super().get_queryset()
 
     def perform_create(self, serializer):
         tenant = getattr(self.request, "tenant", None) or getattr(
@@ -945,6 +949,16 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
             raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
 
         serializer.save(user=self.request.user, tenant=tenant)
+
+    def get_object(self):
+        obj = get_object_or_404(Professional, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
+        if self.request.user.is_superuser:
+            return obj
+        tenant = getattr(self.request, 'tenant', None) or getattr(self.request.user, 'tenant', None)
+        if tenant and hasattr(obj, 'tenant'):
+            if obj.tenant_id != tenant.id:
+                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+        return obj
 
 
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
