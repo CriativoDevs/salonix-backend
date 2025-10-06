@@ -983,38 +983,49 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
     serializer_class = ScheduleSlotSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        # Garantir que request.tenant esteja definido para o mixin, usando o tenant do usuário autenticado
+        if not getattr(self.request, "tenant", None) and getattr(self.request.user, "tenant", None):
+            self.request.tenant = self.request.user.tenant
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+        professional_id = params.get("professional_id")
+        if professional_id:
+            qs = qs.filter(professional_id=professional_id)
+        is_available = params.get("is_available")
+        if is_available is not None:
+            val = str(is_available).lower() in {"1", "true", "t", "yes", "y"}
+            qs = qs.filter(is_available=val)
+        ordering = params.get("ordering") or "-start_time"
+        if ordering in {"start_time", "-start_time"}:
+            qs = qs.order_by(ordering)
+        else:
+            qs = qs.order_by("-start_time")
+        return qs
+
     def perform_create(self, serializer):
-        # Resolve tenant a partir do usuário autenticado (fonte única)
-        tenant = getattr(self.request, "tenant", None) or getattr(
-            self.request.user, "tenant", None
-        )
-
-        if not tenant and not self.request.user.is_superuser:
+        # Sempre usar o tenant do usuário do salão
+        tenant = getattr(self.request.user, "tenant", None)
+        if tenant is None:
             from rest_framework.exceptions import ValidationError
+            raise ValidationError({"tenant": ["Usuário sem tenant. Não é possível criar slot."]})
 
-            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
-
-        # Validar que o profissional informado pertence ao mesmo tenant
-        validated = serializer.validated_data
+        validated = getattr(serializer, "validated_data", {}) or {}
         professional = validated.get("professional")
         if professional is None:
             from rest_framework.exceptions import ValidationError
-
             raise ValidationError({"professional": ["Profissional é obrigatório."]})
+        if hasattr(professional, "tenant_id") and professional.tenant_id != tenant.id:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"professional": ["Profissional não pertence ao tenant atual."]})
 
-        if tenant is not None and hasattr(professional, "tenant_id"):
-            if professional.tenant_id != tenant.id:
-                from rest_framework.exceptions import ValidationError
+        serializer.save(tenant=tenant)
 
-                raise ValidationError(
-                    {"professional": ["Profissional não pertence ao tenant atual."]}
-                )
-
-        # Salva garantindo o tenant correto
-        if tenant and hasattr(serializer.Meta.model, "tenant"):
-            serializer.save(tenant=tenant)
-        else:
-            super().perform_create(serializer)
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()  # get_object valida o tenant via mixin/checagem
+        obj.delete()
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
 
     def get_object(self):
         obj = get_object_or_404(
