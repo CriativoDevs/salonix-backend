@@ -1,8 +1,8 @@
-# 📊 Status Atual do MVP Salonix (Setembro 2025)
+# 📊 Status Atual do MVP Salonix (Outubro 2025)
 
-## 🎯 **Progresso do MVP - Análise Completa**
+## 🎯 **Visão Geral**
 
-Baseado na análise dos arquivos JSON das tarefas e estado atual do projeto, o Salonix está em **excelente progresso** com funcionalidades core do MVP **90% implementadas**.
+Revisão das regras de negócio e do código aponta que o backend já cobre **o núcleo de multi-tenant, agendamentos, relatórios e branding**. As peças que transformam o MVP em produto “prod ready” — principalmente **comunicações reais (SMS/WhatsApp), validações específicas de telefonia e enforcement granular de planos/flags** — ainda não saíram do papel. Consideramos o MVP **~80% completo**: o fluxo operacional existe, mas faltam os canais externos reais e algumas proteções de negócio.
 
 ## ✅ **Funcionalidades MVP IMPLEMENTADAS (19 tarefas concluídas)**
 
@@ -37,11 +37,10 @@ Baseado na análise dos arquivos JSON das tarefas e estado atual do projeto, o S
 3. ✅ **Paleta de cores** - Validação hex, cores primária/secundária
 4. ✅ **Feature flags específicas** - BE-108 ✅ (can_use_white_label)
 
-### **🔔 Sistema de Notificações (100%)**
-1. ✅ **Sistema básico** - BE-106 ✅ (5 canais implementados)
-2. ✅ **Canais múltiplos** - In-app, Push, SMS, WhatsApp
-3. ✅ **Logging de entrega** - Rastreamento completo
-4. ✅ **Integração com signals** - Automação de envios
+### **🔔 Sistema de Notificações (50%)**
+1. ✅ **Eventos e logging** – hooks, métricas Prometheus e logs estruturados prontos.
+2. ⚠️ **SMS/WhatsApp reais ainda não integrados** – BE-128/129 seguem pendentes (nenhuma chamada Twilio/Meta hoje).
+3. ⚠️ **Drivers push mobile/web** – arquitetura preparada, mas sem entrega real em produção.
 
 ### **📅 Integração de Calendário (100%)**
 1. ✅ **Download .ics** - BE-107 ✅ (Formato iCalendar padrão)
@@ -54,44 +53,38 @@ Baseado na análise dos arquivos JSON das tarefas e estado atual do projeto, o S
 3. ✅ **Logging estruturado** - BE-97 ✅ (JSON format, X-Request-ID)
 4. ✅ **270 testes passando** (`make test`)
 
-### **📱 Comunicação Real (Estratégia Definida)**
-1. ✅ **Estratégia SMS/WhatsApp** - Documentada para Portugal
-2. ✅ **Conta única centralizada** - Modelo de negócio definido
-3. ✅ **Configurações por tenant** - Personalização via Django Admin
+### **📱 Comunicação Real (Em definição)**
+1. ▶️ **Estratégia SMS/WhatsApp** documentada, mas sem implementação.
+2. ▶️ **Conta única centralizada** planejada; credenciais prod não integradas.
+3. ▶️ **Configurações por tenant** expostas no Admin, porém sem efeito real enquanto os drivers não existirem.
 
 ## 🔄 **Funcionalidades Restantes para MVP 100% (5%)**
 
-### **🟡 Implementações Pendentes**
-- **BE-128**: SMS real via Twilio (estratégia definida)
-- **BE-129**: WhatsApp real via Meta (estratégia definida)
-- **BE-130**: Validação de números portugueses (parcialmente em BE-95)
+### **🟡 Implementações Pendentes (negócio)**
+- **BE-128**: SMS real via Twilio (necessário para planos Standard/Pro).
+- **BE-129**: WhatsApp real via Meta.
+- **BE-130**: Validação de números portugueses (hoje apenas sanitização genérica).
+- **BE-270+**: Persistência de preferência de tema/plano (light/dark) e paywall efetivo.
 
 ## 📊 **Estatísticas do Projeto**
 
 ### **📈 Progresso Visual**
 ```
-🎯 MVP BACKEND: ████████████████████░ 95%
+🎯 MVP BACKEND: ████████████████░░░░ 80%
 
 ✅ Infraestrutura: ████████████████████ 100%
 ✅ Agendamentos:   ████████████████████ 100%
 ✅ Relatórios:     ████████████████████ 100%
 ✅ White-label:    ████████████████████ 100%
-✅ Notificações:   ████████████████████ 100%
+🟡 Notificações:   ████████░░░░░░░░░░ 50%
 ✅ Qualidade:      ████████████████████ 100%
-🟡 Comunicação:    ████████████████░░░░  80%
+🔴 Comunicação:    █████░░░░░░░░░░░░░ 25%
 ```
 
 ### **📋 Análise das Tarefas JSON**
 
-#### **🔒 Tarefas Fechadas (19): MVP Core Completo**
-Todas as funcionalidades essenciais do MVP foram implementadas:
-- ✅ Multi-tenancy empresarial
-- ✅ Sistema de agendamentos robusto
-- ✅ Relatórios profissionais
-- ✅ White-label completo
-- ✅ Notificações estruturadas
-- ✅ Qualidade enterprise
-- ✅ Séries recorrentes com admin dedicado
+#### **🔒 Tarefas Fechadas (19): Núcleo operacional**
+Cobrem multi-tenant, agendamentos, relatórios, branding e observabilidade. Não incluem ainda drivers de comunicação real nem enforcement avançado de planos.
 
 #### **🔓 Tarefas Abertas (23): Pós-MVP**
 A maioria são melhorias avançadas:
@@ -130,10 +123,11 @@ A maioria são melhorias avançadas:
 
 ## 🔍 **Análise das Tarefas Restantes**
 
-### **🟡 Para Completar MVP 100% (3 tarefas)**
+### **🟡 Para Completar MVP (negócio)**
 - **BE-128**: SMS real via Twilio Portugal
 - **BE-129**: WhatsApp real via Meta  
 - **BE-130**: Validação números portugueses
+- **BE-270/244**: Persistir preferência de tema + paywall real (ligar flags ao billing)
 
 ### **🟢 Tarefas Pós-MVP (25 tarefas)**
 
@@ -159,20 +153,13 @@ A maioria são melhorias avançadas:
 
 ## 🎯 **Status do MVP: PRATICAMENTE PRONTO**
 
-### **✅ MVP Backend: 90% Completo**
+### **✅ MVP Backend: ~80% Completo**
 
-**Funcionalidades Core (100% implementadas):**
-- ✅ Autenticação e autorização JWT
-- ✅ Sistema de agendamentos multi-tenant
-- ✅ Relatórios e analytics profissionais
-- ✅ White-label completo (logo + cores)
-- ✅ Notificações estruturadas (5 canais)
-- ✅ Integração calendário (.ics)
-- ✅ Django Admin customizado
-- ✅ Qualidade enterprise (270 testes)
+**Pronto:**
+- Autenticação + multi-tenant + agendamentos + relatórios + branding + admin + métricas.
 
-**Apenas 10% restante:**
-- 🟡 Comunicação real SMS/WhatsApp (estratégia definida)
+**Em aberto para cumprir promessa comercial:**
+- SMS/WhatsApp reais, validação telefones PT, paywall/flags efetivamente refletindo planos, preferências persistidas.
 
 ### **🚀 Próximo Foco Recomendado**
 
