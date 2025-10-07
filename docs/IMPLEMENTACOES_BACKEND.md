@@ -163,6 +163,8 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Limite de 2MB para logos
 - ✅ Formatos suportados: PNG, JPG, JPEG
 
+> ⚠️ **Bug conhecido**: o PATCH `/api/users/tenant/meta/` ainda não remove o arquivo de logo quando `logo_url` é enviado vazio. Issue aberta: BE-BUG “Tenant meta não limpa logo ao enviar logo_url vazio”.
+
 ### **📅 3. Sistema de Agendamentos**
 
 #### **Modelos Core**
