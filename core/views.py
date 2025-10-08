@@ -1059,6 +1059,12 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
+        # Garantir que request.tenant esteja definido (algumas integrações não passam pelo middleware)
+        if getattr(self.request, "tenant", None) is None:
+            tenant_from_user = getattr(user, "tenant", None)
+            if tenant_from_user is not None:
+                self.request.tenant = tenant_from_user
+
         # Usar o mixin para filtrar por tenant primeiro
         qs = super().get_queryset()
 
