@@ -72,9 +72,14 @@ for pid in $(curl -sS "$BASE_URL/api/public/professionals/" | jq -r '.[].id'); d
       -d "{\"service\": $SERVICE_ID, \"professional\": $pid, \"slot\": $sid}")
 
     if echo "$CREATE_RES" | jq -e '.id' >/dev/null 2>&1; then
+      if ! echo "$CREATE_RES" | jq -e '.customer.id' >/dev/null 2>&1; then
+        red "Resposta sem cliente associado. Conteúdo:"; echo "$CREATE_RES" | jq . || echo "$CREATE_RES"; exit 1
+      fi
+
       FOUND_PROF="$pid"; FOUND_SLOT="$sid"
       grn "Criado: service=$SERVICE_ID prof=$pid slot=$sid"
       echo "$CREATE_RES" | jq .
+      grn "Cliente vinculado: $(echo "$CREATE_RES" | jq -r '.customer.name // "(sem nome)"')"
       break 2
     fi
 

@@ -9,7 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
-from core.models import Professional, Service, ScheduleSlot, Appointment
+from core.models import Professional, Service, ScheduleSlot, Appointment, SalonCustomer
 from users.models import UserFeatureFlags, Tenant
 
 
@@ -97,6 +97,23 @@ class Command(BaseCommand):
                 else:
                     client.save(update_fields=["password"])
             created_counts["user_client_created"] = int(client_created)
+
+            customer_defaults = {
+                "name": "Cliente Demo",
+                "phone_number": "+351912345678",
+                "marketing_opt_in": True,
+                "is_active": True,
+                "notes": "Criado automaticamente pelo seed_demo.",
+            }
+            demo_customer, customer_created = SalonCustomer.objects.get_or_create(
+                tenant=default_tenant,
+                email=client.email,
+                defaults=customer_defaults,
+            )
+            if not customer_created and demo_customer.name != customer_defaults["name"]:
+                demo_customer.name = customer_defaults["name"]
+                demo_customer.save(update_fields=["name"])
+            created_counts["customers_created"] = int(customer_created)
 
             # --- Feature flags (PRO e relatórios habilitados para o pro_smoke) ---
             ff, _ = UserFeatureFlags.objects.get_or_create(
@@ -202,6 +219,7 @@ class Command(BaseCommand):
                         "status": status,
                         "notes": "",
                         "tenant": default_tenant,
+                        "customer": demo_customer,
                     },
                 )
                 if created:
@@ -212,17 +230,23 @@ class Command(BaseCommand):
                     elif status == "cancelled":
                         slot.mark_available()
                 else:
+                    updated_fields = []
+                    if appt.customer_id is None:
+                        appt.customer = demo_customer
+                        updated_fields.append("customer")
                     # se já existe, garantimos consistência básica do status/slot
                     if status in ("scheduled", "completed", "paid"):
                         slot.mark_booked()
                         if appt.status != status:
                             appt.status = status
-                            appt.save(update_fields=["status"])
+                            updated_fields.append("status")
                     elif status == "cancelled":
                         slot.mark_available()
                         if appt.status != "cancelled":
                             appt.status = "cancelled"
-                            appt.save(update_fields=["status"])
+                            updated_fields.append("status")
+                    if updated_fields:
+                        appt.save(update_fields=updated_fields)
                 return int(created)
 
             if free_slots:

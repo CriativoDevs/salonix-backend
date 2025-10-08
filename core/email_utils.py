@@ -4,7 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from django.conf import settings
 
 
-def send_appointment_confirmation_email(to_email, client_name, service_name, date_time):
+def send_appointment_confirmation_email(to_email, client_name, service_name, date_time, salon_name="Salonix"):
     """
     Envia e-mail de confirmação de agendamento via SMTP (Gmail).
 
@@ -29,7 +29,7 @@ def send_appointment_confirmation_email(to_email, client_name, service_name, dat
 
     Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.
 
-    Obrigado por escolher o Salonix! 💈
+    Obrigado por escolher {salon_name}! 💈
     """
 
     # Cria a mensagem
@@ -54,7 +54,12 @@ def send_appointment_confirmation_email(to_email, client_name, service_name, dat
 
 
 def send_appointment_cancellation_email(
-    client_email, salon_email, client_name, service_name, date_time
+    client_email,
+    salon_email,
+    client_name,
+    service_name,
+    date_time,
+    salon_name="Salonix",
 ):
     """
     Envia e-mail de cancelamento de agendamento para o cliente e o salão.
@@ -79,7 +84,7 @@ def send_appointment_cancellation_email(
     Se você não solicitou esse cancelamento ou deseja remarcar, entre em contato conosco.
 
     Atenciosamente,
-    Equipe Salonix 💈
+    Equipe {salon_name} 💈
     """
 
     # Cria a mensagem

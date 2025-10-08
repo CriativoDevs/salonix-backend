@@ -7,8 +7,13 @@ from core.models import (
     Appointment,
     AppointmentSeries,
     Professional,
+    SalonCustomer,
     ScheduleSlot,
     Service,
+)
+from core.email_utils import (
+    send_appointment_confirmation_email,
+    send_appointment_cancellation_email,
 )
 
 
@@ -102,7 +107,7 @@ class AppointmentAdmin(admin.ModelAdmin):
     """Admin para agendamentos com filtro por tenant."""
 
     list_display = (
-        "client",
+        "customer_name",
         "service",
         "professional",
         "tenant_name",
@@ -111,8 +116,10 @@ class AppointmentAdmin(admin.ModelAdmin):
         "series_link",
         "total_price_eur",
     )
-    list_filter = ("tenant", "status", "created_at", "series")
+    list_filter = ("tenant", "customer", "status", "created_at", "series")
     search_fields = (
+        "customer__name",
+        "customer__email",
         "client__username",
         "service__name",
         "professional__name",
@@ -125,7 +132,7 @@ class AppointmentAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Informações do Agendamento",
-            {"fields": ("tenant", "client", "service", "professional", "slot", "series")},
+            {"fields": ("tenant", "client", "customer", "service", "professional", "slot", "series")},
         ),
         ("Status e Notas", {"fields": ("status", "notes", "cancelled_by")}),
         (
@@ -164,6 +171,77 @@ class AppointmentAdmin(admin.ModelAdmin):
 
     total_price_eur.short_description = "Preço"
 
+    def customer_name(self, obj):
+        if obj.customer:
+            return obj.customer.name
+        return "—"
+
+    customer_name.short_description = "Cliente"
+    customer_name.admin_order_field = "customer__name"
+
+    def save_model(self, request, obj, form, change):
+        previous_status = None
+        if change and obj.pk:
+            previous_status = (
+                Appointment.objects.filter(pk=obj.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+
+        super().save_model(request, obj, form, change)
+
+        obj.refresh_from_db()
+        customer = obj.customer
+        recipient_email = (
+            customer.email if customer and customer.email else (obj.client.email or "")
+        )
+        if not recipient_email:
+            return
+
+        client_display_name = (
+            customer.name
+            if customer and customer.name
+            else (
+                obj.client.get_full_name()
+                or obj.client.username
+                or (obj.client.email or "").split("@")[0]
+            )
+        )
+
+        try:
+            if not change:
+                salon_name = obj.tenant.name if obj.tenant else "Salonix"
+                send_appointment_confirmation_email(
+                    to_email=recipient_email,
+                    client_name=client_display_name,
+                    service_name=obj.service.name,
+                    date_time=obj.slot.start_time,
+                    salon_name=salon_name,
+                )
+            elif previous_status != "cancelled" and obj.status == "cancelled":
+                salon_email = obj.professional.user.email if obj.professional else ""
+                if salon_email:
+                    salon_name = obj.tenant.name if obj.tenant else "Salonix"
+                    send_appointment_cancellation_email(
+                        client_email=recipient_email,
+                        salon_email=salon_email,
+                        client_name=client_display_name,
+                        service_name=obj.service.name,
+                        date_time=obj.slot.start_time,
+                        salon_name=salon_name,
+                    )
+        except Exception as exc:  # pragma: no cover - apenas log
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Falha ao enviar e-mail via admin",
+                extra={
+                    "appointment_id": obj.id,
+                    "tenant_id": getattr(obj.tenant, "id", None),
+                    "error": str(exc),
+                },
+            )
+
     def series_link(self, obj):
         """Link para a série relacionada."""
         if obj.series:
@@ -180,12 +258,14 @@ class AppointmentInline(admin.TabularInline):
     model = Appointment
     fields = (
         "client",
+        "customer",
         "slot",
         "status",
         "appointment_datetime",
     )
     readonly_fields = (
         "client",
+        "customer",
         "slot",
         "status",
         "appointment_datetime",
@@ -277,3 +357,28 @@ class AppointmentSeriesAdmin(admin.ModelAdmin):
         return "-"
 
     updated_at_display.short_description = "Última ocorrência"
+@admin.register(SalonCustomer)
+class SalonCustomerAdmin(admin.ModelAdmin):
+    """Admin do Django para clientes do salão."""
+
+    list_display = ("name", "tenant_name", "email", "phone_number", "is_active", "marketing_opt_in", "created_at")
+    list_filter = ("tenant", "is_active", "marketing_opt_in", "created_at")
+    search_fields = ("name", "email", "phone_number", "tenant__name")
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("name",)
+
+    fieldsets = (
+        ("Informações Básicas", {"fields": ("tenant", "name", "email", "phone_number")}),
+        ("Preferências", {"fields": ("marketing_opt_in", "is_active")}),
+        ("Notas", {"fields": ("notes",)}),
+        ("Metadados", {"fields": ("created_at", "updated_at")}),
+    )
+
+    def tenant_name(self, obj):
+        if obj.tenant:
+            url = reverse("admin:users_tenant_change", args=[obj.tenant.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.tenant.name)
+        return "-"
+
+    tenant_name.short_description = "Tenant"
+    tenant_name.admin_order_field = "tenant__name"
