@@ -203,6 +203,21 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Validação de datas futuras
 - ✅ Limites de agendamento por usuário
 
+#### **Clientes do Salão e Vínculo de Agendamentos (BE-280)**
+**Status**: 🚧 Em andamento  
+**Arquivos**:
+- `core/models.py` – Modelo `SalonCustomer` e FK em `Appointment`
+- `core/serializers.py` / `core/views.py` – CRUD `salon/customers/` e associação automática em criações/cancelamentos
+- `core/management/commands/seed_demo.py` – Seeds criam cliente demo e vinculam agendamentos default
+- `core/admin.py` / `salonix_backend/admin.py` – Gestão de clientes no DAP com e-mails personalizados
+- `core/email_utils.py` – E-mails incluem o nome do salão
+
+**Características**:
+- ✅ API isolada por tenant (`GET/POST/PATCH/DELETE /api/salon/customers/`)
+- ✅ Agendamentos públicos criam/reutilizam cliente automaticamente com base no usuário
+- ✅ Envio de e-mails usa o contato/nome do cliente e do salão
+- ✅ Seeds e smoke tests compatíveis com o novo fluxo
+
 #### **Agendamentos Múltiplos (BE-153)**
 **Status**: ✅ Implementado  
 **Arquivos**:

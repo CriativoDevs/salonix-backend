@@ -16,7 +16,7 @@ from core.email_utils import (
     send_appointment_confirmation_email,
     send_appointment_cancellation_email,
 )
-from core.models import Appointment, AppointmentSeries, Professional, Service, ScheduleSlot
+from core.models import Appointment, AppointmentSeries, Professional, SalonCustomer, Service, ScheduleSlot
 from users.models import Tenant
 from core.serializers import (
     AppointmentDetailSerializer,
@@ -29,6 +29,7 @@ from core.serializers import (
     BulkAppointmentResponseSerializer,
     BulkAppointmentSerializer,
     ProfessionalSerializer,
+    SalonCustomerSerializer,
     ServiceSerializer,
     ScheduleSlotSerializer,
 )
@@ -193,6 +194,38 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["allow_auto_customer"] = True
+        return context
+
+    def _ensure_customer(self, tenant: Optional[Tenant], customer: Optional[SalonCustomer]):
+        if customer or tenant is None:
+            return customer
+
+        user = self.request.user
+        email = (user.email or "").strip() or None
+        base_name = user.get_full_name() or user.username or "Cliente"
+
+        query = SalonCustomer.objects.filter(tenant=tenant)
+        if email:
+            existing = query.filter(email__iexact=email).first()
+            if existing:
+                return existing
+        existing = query.filter(name=base_name).first()
+        if existing:
+            return existing
+
+        return SalonCustomer.objects.create(
+            tenant=tenant,
+            name=base_name,
+            email=email,
+            phone_number=getattr(user, "phone_number", "") or "",
+            marketing_opt_in=True,
+            is_active=True,
+            notes="Gerado automaticamente via autoagendamento.",
+        )
+
     def perform_create(self, serializer):
         data = cast(Dict[str, Any], serializer.validated_data)
         slot = data["slot"]
@@ -208,24 +241,47 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
         tenant = getattr(self.request, "tenant", None) or getattr(
             self.request.user, "tenant", None
         )
+        customer = self._ensure_customer(tenant, data.get("customer"))
+
+        save_kwargs: Dict[str, Any] = {"client": self.request.user}
         if tenant:
-            appointment = serializer.save(client=self.request.user, tenant=tenant)
-        else:
-            appointment = serializer.save(client=self.request.user)
+            save_kwargs["tenant"] = tenant
+        if customer:
+            save_kwargs["customer"] = customer
+
+        appointment = serializer.save(**save_kwargs)
+
+        if customer and appointment.customer_id != customer.id:
+            appointment.customer = customer
+            appointment.save(update_fields=["customer"])
 
         # Envia e-mail de confirmação
         try:
-            send_appointment_confirmation_email(
-                to_email=self.request.user.email,
-                client_name=(
-                    self.request.user.get_full_name()
-                    or self.request.user.username
-                    or self.request.user.email.split("@")[0]
-                ),
-                service_name=appointment.service.name,
-                date_time=appointment.slot.start_time,
+            customer = appointment.customer
+            recipient_email = (
+                customer.email
+                if customer and customer.email
+                else (self.request.user.email or "")
             )
-        except Exception as e:
+            if recipient_email:
+                client_display_name = (
+                    customer.name
+                    if customer and customer.name
+                    else (
+                        self.request.user.get_full_name()
+                        or self.request.user.username
+                        or (self.request.user.email or "").split("@")[0]
+                    )
+                )
+                salon_name = appointment.tenant.name if appointment.tenant else "Salonix"
+                send_appointment_confirmation_email(
+                    to_email=recipient_email,
+                    client_name=client_display_name,
+                    service_name=appointment.service.name,
+                    date_time=appointment.slot.start_time,
+                    salon_name=salon_name,
+                )
+        except Exception as e:  # pragma: no cover - apenas logging
             print("Falha ao enviar e-mail:", e)
 
 
@@ -273,6 +329,39 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             professional = Professional.objects.get(
                 id=cast(int, data["professional_id"]), tenant=tenant
             )
+            customer = None
+            customer_id = data.get("customer_id")
+            if customer_id is not None:
+                customer = SalonCustomer.objects.get(
+                    id=cast(int, customer_id), tenant=tenant
+                )
+            elif tenant is not None:
+                customer_email = data.get("client_email")
+                customer_name = data.get("client_name") or "Cliente do salão"
+                if customer_email:
+                    customer = (
+                        SalonCustomer.objects.filter(
+                            tenant=tenant, email__iexact=customer_email
+                        )
+                        .order_by("id")
+                        .first()
+                    )
+                if not customer:
+                    customer = (
+                        SalonCustomer.objects.filter(tenant=tenant)
+                        .order_by("id")
+                        .first()
+                    )
+                if not customer:
+                    customer = SalonCustomer.objects.create(
+                        tenant=tenant,
+                        name=customer_name,
+                        email=customer_email,
+                        phone_number=data.get("client_phone") or "",
+                        marketing_opt_in=True,
+                        is_active=True,
+                        notes="Gerado via seed/bulk de agendamentos.",
+                    )
 
             appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
@@ -293,6 +382,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         ),
                         status="scheduled",
                         tenant=tenant,
+                        customer=customer,
                     )
                     appointments.append(appointment)
 
@@ -416,6 +506,39 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
             professional = Professional.objects.get(
                 id=cast(int, data["professional_id"]), tenant=tenant
             )
+            customer = None
+            customer_id = data.get("customer_id")
+            if customer_id is not None:
+                customer = SalonCustomer.objects.get(
+                    id=cast(int, customer_id), tenant=tenant
+                )
+            elif tenant is not None:
+                customer_email = data.get("client_email")
+                customer_name = data.get("client_name") or "Cliente do salão"
+                if customer_email:
+                    customer = (
+                        SalonCustomer.objects.filter(
+                            tenant=tenant, email__iexact=customer_email
+                        )
+                        .order_by("id")
+                        .first()
+                    )
+                if not customer:
+                    customer = (
+                        SalonCustomer.objects.filter(tenant=tenant)
+                        .order_by("id")
+                        .first()
+                    )
+                if not customer:
+                    customer = SalonCustomer.objects.create(
+                        tenant=tenant,
+                        name=customer_name,
+                        email=customer_email,
+                        phone_number=data.get("client_phone") or "",
+                        marketing_opt_in=True,
+                        is_active=True,
+                        notes="Gerado via criação de série de agendamentos.",
+                    )
 
             appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
@@ -437,6 +560,7 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                     slot.mark_booked()
                     appointment = Appointment.objects.create(
                         client=user,
+                        customer=customer,
                         service=service,
                         professional=professional,
                         slot=slot,
@@ -877,14 +1001,32 @@ class AppointmentCancelView(APIView):
 
         # E-mail para cliente e salão (não bloqueia a resposta)
         try:
-            send_appointment_cancellation_email(
-                client_email=appointment.client.email,
-                salon_email=appointment.professional.user.email,
-                client_name=appointment.client.get_full_name()
-                or appointment.client.username,
-                service_name=appointment.service.name,
-                date_time=appointment.slot.start_time,
+            customer = appointment.customer
+            client_email = (
+                customer.email
+                if customer and customer.email
+                else appointment.client.email
             )
+            client_name = (
+                customer.name
+                if customer and customer.name
+                else (
+                    appointment.client.get_full_name()
+                    or appointment.client.username
+                    or (appointment.client.email or "").split("@")[0]
+                )
+            )
+            salon_email = appointment.professional.user.email
+            if client_email:
+                salon_name = appointment.tenant.name if appointment.tenant else "Salonix"
+                send_appointment_cancellation_email(
+                    client_email=client_email,
+                    salon_email=salon_email,
+                    client_name=client_name,
+                    service_name=appointment.service.name,
+                    date_time=appointment.slot.start_time,
+                    salon_name=salon_name,
+                )
         except Exception as e:
             print("Erro ao enviar e-mail de cancelamento:", str(e))
 
@@ -975,6 +1117,59 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         if tenant and hasattr(obj, 'tenant'):
             if obj.tenant_id != tenant.id:
                 raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+        return obj
+
+
+class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
+    queryset = SalonCustomer.objects.all().select_related("tenant")
+    serializer_class = SalonCustomerSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if not getattr(self.request, "tenant", None) and getattr(
+            self.request.user, "tenant", None
+        ):
+            self.request.tenant = self.request.user.tenant
+
+        qs = super().get_queryset()
+        params = self.request.query_params
+        search = params.get("q")
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(phone_number__icontains=search)
+            )
+        is_active = params.get("is_active")
+        if is_active is not None:
+            is_active_bool = str(is_active).lower() in {"1", "true", "t", "yes", "y"}
+            qs = qs.filter(is_active=is_active_bool)
+        return qs.order_by("name", "id")
+
+    def perform_create(self, serializer):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant is None and not self.request.user.is_superuser:
+            raise ValidationError(
+                {"tenant": ["Tenant não encontrado para o usuário autenticado."]}
+            )
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        serializer.save(tenant=serializer.instance.tenant)
+
+    def get_object(self):
+        obj = super().get_object()
+        if self.request.user.is_superuser:
+            return obj
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant and obj.tenant_id != tenant.id:
+            raise PermissionDenied(
+                "Acesso negado: cliente não pertence ao seu tenant."
+            )
         return obj
 
 
@@ -1071,7 +1266,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
         # Depois filtrar por user dentro do tenant
         qs = (
             qs.filter(Q(professional__user=user) | Q(service__user=user))
-            .select_related("client", "service", "professional", "slot")
+            .select_related("client", "customer", "service", "professional", "slot")
             .order_by("-created_at")
         )
 
@@ -1123,6 +1318,10 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
         service_id = cast(Optional[str], params.get("service_id"))
         if service_id:
             qs = qs.filter(service_id=service_id)
+
+        customer_id = cast(Optional[str], params.get("customer_id"))
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
 
         # ordering
         ordering = cast(Optional[str], params.get("ordering"))
@@ -1222,17 +1421,32 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
 
                 # e-mail (não bloqueia a resposta)
                 try:
-                    send_appointment_cancellation_email(
-                        client_email=instance.client.email,
-                        salon_email=instance.professional.user.email,
-                        client_name=(
+                    customer = instance.customer
+                    client_email = (
+                        customer.email
+                        if customer and customer.email
+                        else instance.client.email
+                    )
+                    client_name = (
+                        customer.name
+                        if customer and customer.name
+                        else (
                             instance.client.get_full_name()
                             or instance.client.username
                             or (instance.client.email or "").split("@")[0]
-                        ),
-                        service_name=instance.service.name,
-                        date_time=instance.slot.start_time,
+                        )
                     )
+                    salon_email = instance.professional.user.email
+                    if client_email:
+                        salon_name = instance.tenant.name if instance.tenant else "Salonix"
+                        send_appointment_cancellation_email(
+                            client_email=client_email,
+                            salon_email=salon_email,
+                            client_name=client_name,
+                            service_name=instance.service.name,
+                            date_time=instance.slot.start_time,
+                            salon_name=salon_name,
+                        )
                 except Exception as e:
                     print("Erro ao enviar e-mail de cancelamento:", str(e))
 

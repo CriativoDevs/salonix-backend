@@ -6,6 +6,34 @@ from users.models import CustomUser, Tenant
 from django.conf import settings as dj_settings
 
 
+class SalonCustomer(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="customers",
+    )
+    name = models.CharField(max_length=120)
+    email = models.EmailField(blank=True, null=True)
+    phone_number = models.CharField(max_length=32, blank=True, null=True)
+    notes = models.TextField(blank=True)
+    marketing_opt_in = models.BooleanField(default=cast(Any, False))
+    is_active = models.BooleanField(default=cast(Any, True))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_customer_tenant_idx"),
+            models.Index(fields=["tenant", "name"], name="core_customer_name_idx"),
+            models.Index(fields=["tenant", "email"], name="core_customer_email_idx"),
+            models.Index(fields=["tenant", "phone_number"], name="core_customer_phone_idx"),
+        ]
+        ordering = ("name", "id")
+
+    def __str__(self):
+        return f"{self.name} ({self.tenant.slug if hasattr(self.tenant, 'slug') else self.tenant_id})"
+
+
 class Service(models.Model):
     tenant = models.ForeignKey(
         Tenant,
@@ -144,6 +172,13 @@ class Appointment(models.Model):
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="appointments"
     )
+    customer = models.ForeignKey(
+        "SalonCustomer",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="appointments",
+    )
     service = models.ForeignKey(
         Service, on_delete=models.CASCADE, related_name="appointments"
     )
@@ -184,6 +219,7 @@ class Appointment(models.Model):
         indexes = [
             models.Index(fields=["tenant"]),
             models.Index(fields=["tenant", "client"]),
+            models.Index(fields=["tenant", "customer"], name="core_appoin_tenant_c_idx"),
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["tenant", "created_at"]),
             models.Index(fields=["tenant", "service"]),
@@ -192,4 +228,5 @@ class Appointment(models.Model):
 
     def __str__(self):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"
-        return f"{self.client.username} - {self.service.name} com {self.professional.name} ({tenant_name})"
+        customer_name = self.customer.name if self.customer else "Sem cliente"
+        return f"{customer_name} - {self.service.name} com {self.professional.name} ({tenant_name})"

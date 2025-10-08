@@ -3,6 +3,8 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import override_settings
 
+from core.models import Appointment, SalonCustomer
+
 
 User = get_user_model()
 
@@ -18,3 +20,7 @@ def test_seed_demo_uses_configurable_password():
 
     assert pro.check_password(custom_password)
     assert client.check_password(custom_password)
+
+    customers = SalonCustomer.objects.filter(tenant__slug="default")
+    assert customers.exists()
+    assert Appointment.objects.filter(customer__isnull=False).count() > 0

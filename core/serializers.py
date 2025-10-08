@@ -2,13 +2,14 @@ from rest_framework import serializers
 from typing import Any, cast
 from django.utils import timezone
 
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import Service, Professional, ScheduleSlot, Appointment, SalonCustomer
 from salonix_backend.validators import (
     validate_appointment_data,
     validate_service_data,
     validate_professional_data,
     validate_price,
     validate_duration,
+    validate_phone_number,
     sanitize_text_input,
 )
 
@@ -65,6 +66,65 @@ class ProfessionalSerializer(serializers.ModelSerializer):
         return validate_professional_data(data)
 
 
+class SalonCustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalonCustomer
+        fields = [
+            "id",
+            "name",
+            "email",
+            "phone_number",
+            "notes",
+            "marketing_opt_in",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_name(self, value):
+        sanitized = sanitize_text_input(value, max_length=120)
+        if not sanitized:
+            raise serializers.ValidationError("Nome do cliente é obrigatório.")
+        return sanitized
+
+    def validate_phone_number(self, value):
+        if not value:
+            return value
+        sanitized = sanitize_text_input(value, max_length=32)
+        if not sanitized:
+            return value
+        try:
+            validate_phone_number(sanitized)
+        except Exception as exc:  # pragma: no cover
+            raise serializers.ValidationError(str(exc)) from exc
+        return sanitized
+
+    def validate_notes(self, value):
+        if value:
+            return sanitize_text_input(value, max_length=1000)
+        return value
+
+    def validate_email(self, value):
+        if value:
+            return value.strip().lower()
+        return value
+
+    def validate(self, data):
+        email = data.get("email")
+        phone = data.get("phone_number")
+        if self.instance:
+            if email is None:
+                email = self.instance.email
+            if phone is None:
+                phone = self.instance.phone_number
+        if not email and not phone:
+            raise serializers.ValidationError(
+                "Informe pelo menos email ou telefone para o cliente."
+            )
+        return data
+
+
 class ScheduleSlotSerializer(serializers.ModelSerializer):
     start_time = serializers.DateTimeField(format=cast(Any, "%Y-%m-%d %H:%M"))
     end_time = serializers.DateTimeField(format=cast(Any, "%Y-%m-%d %H:%M"))
@@ -86,12 +146,19 @@ class ScheduleSlotSerializer(serializers.ModelSerializer):
         return data
 
 
+class SalonCustomerMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalonCustomer
+        fields = ["id", "name", "email", "phone_number"]
+
+
 class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         fields = [
             "id",
             "client",
+            "customer",
             "service",
             "professional",
             "slot",
@@ -113,6 +180,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = request.user if request else None
         tenant = getattr(request, "tenant", None) if request else None
+        customer = data.get("customer")
+        allow_auto_customer = bool(self.context.get("allow_auto_customer"))
 
         # Validações básicas existentes
         slot = data.get("slot")
@@ -139,6 +208,20 @@ class AppointmentSerializer(serializers.ModelSerializer):
             and Appointment.objects.filter(client=user, slot=slot).exists()
         ):
             errors["slot"] = "Você já tem um agendamento para este horário."
+
+        if customer is None and self.instance is not None:
+            customer = self.instance.customer
+
+        if customer is None:
+            if allow_auto_customer:
+                data["customer"] = None
+            else:
+                errors["customer"] = "Selecione um cliente para o agendamento."
+        else:
+            if tenant and customer.tenant_id != tenant.id:
+                errors["customer"] = "Cliente não pertence ao tenant atual."
+            elif not customer.is_active:
+                errors["customer"] = "Cliente está inativo."
 
         if errors:
             raise serializers.ValidationError(errors)
@@ -181,6 +264,7 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
     slot = ScheduleSlotMiniSerializer(read_only=True)
     client_username = serializers.CharField(source="client.username", read_only=True)
     client_email = serializers.EmailField(source="client.email", read_only=True)
+    customer = SalonCustomerMiniSerializer(read_only=True)
 
     class Meta:
         model = Appointment
@@ -191,6 +275,7 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "client_username",
             "client_email",
+            "customer",
             "service",
             "professional",
             "slot",
@@ -239,6 +324,7 @@ class BulkAppointmentSerializer(serializers.Serializer):
 
     service_id = serializers.IntegerField()
     professional_id = serializers.IntegerField()
+    customer_id = serializers.IntegerField(required=False, allow_null=True)
     client_name = serializers.CharField(max_length=100, required=False)
     client_email = serializers.EmailField(required=False)
     client_phone = serializers.CharField(max_length=20, required=False)
