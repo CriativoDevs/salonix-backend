@@ -182,6 +182,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
         tenant = getattr(request, "tenant", None) if request else None
         customer = data.get("customer")
         allow_auto_customer = bool(self.context.get("allow_auto_customer"))
+        enforce_client_slot_uniqueness = bool(
+            self.context.get("enforce_client_slot_uniqueness")
+        )
 
         # Validações básicas existentes
         slot = data.get("slot")
@@ -202,12 +205,12 @@ class AppointmentSerializer(serializers.ModelSerializer):
             errors["slot"] = "Não é possível agendar horários no passado."
 
         # 4. Verifica se o cliente já tem um agendamento para o mesmo slot
-        if (
-            user
-            and slot
-            and Appointment.objects.filter(client=user, slot=slot).exists()
-        ):
-            errors["slot"] = "Você já tem um agendamento para este horário."
+        if user and slot and enforce_client_slot_uniqueness:
+            base_qs = Appointment.objects.filter(client=user, slot=slot)
+            if self.instance:
+                base_qs = base_qs.exclude(pk=self.instance.pk)
+            if base_qs.exclude(status="cancelled").exists():
+                errors["slot"] = "Você já tem um agendamento para este horário."
 
         if customer is None and self.instance is not None:
             customer = self.instance.customer

@@ -36,6 +36,7 @@ from core.serializers import (
 from core.mixins import TenantIsolatedMixin
 
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Q
 from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -197,6 +198,7 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["allow_auto_customer"] = True
+        context.setdefault("enforce_client_slot_uniqueness", False)
         return context
 
     def _ensure_customer(self, tenant: Optional[Tenant], customer: Optional[SalonCustomer]):
@@ -1171,6 +1173,21 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
                 "Acesso negado: cliente não pertence ao seu tenant."
             )
         return obj
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": (
+                        "Clientes com histórico de agendamentos não podem ser excluídos. "
+                        "Defina como inativo para mantê-lo fora da agenda."
+                    )
+                },
+                status=drf_status.HTTP_409_CONFLICT,
+            )
 
 
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
