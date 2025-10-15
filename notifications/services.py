@@ -10,6 +10,22 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def send_customer_pwa_invite(tenant: Tenant, customer, invited_by: Optional[Any] = None) -> bool:
+    """Placeholder para envio de convite do PWA Cliente."""
+    logger.info(
+        "PWA invite dispatched",
+        extra={
+            "tenant_id": getattr(tenant, "id", None),
+            "tenant_slug": getattr(tenant, "slug", None),
+            "customer_id": getattr(customer, "id", None),
+            "customer_email": getattr(customer, "email", None),
+            "invited_by": getattr(invited_by, "id", None),
+        },
+    )
+    # TODO: integrar com serviço real de envio (email/SMS) assim que definido.
+    return True
+
+
 class NotificationService:
     """
     Serviço central para envio de notificações.

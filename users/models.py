@@ -42,6 +42,10 @@ class Tenant(models.Model):
         validators=[validate_hex_color],
         help_text="Cor secundária (hex) para branding",
     )
+    auto_invite_enabled = models.BooleanField(
+        default=cast(Any, False),
+        help_text="Envia automaticamente convite do PWA Cliente para novos clientes",
+    )
 
     # Configurações
     timezone = models.CharField(
@@ -198,6 +202,10 @@ class Tenant(models.Model):
                 "whatsapp": self.whatsapp_enabled
                 and self.can_use_advanced_notifications(),
                 "enabled_channels": self.get_enabled_notification_channels(),
+            },
+            "invites": {
+                "auto_invite_enabled": bool(self.auto_invite_enabled),
+                "can_auto_invite": self.pwa_client_enabled,
             },
             "branding": {
                 "white_label_enabled": self.can_use_white_label(),
