@@ -218,6 +218,20 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Envio de e-mails usa o contato/nome do cliente e do salão
 - ✅ Seeds e smoke tests compatíveis com o novo fluxo
 
+#### **Convite automático do PWA (BE-281)**
+**Status**: 🚧 Em andamento  
+**Arquivos**:
+- `users/models.py` / `users/serializers.py` / `users/views.py` – Flag `auto_invite_enabled` no tenant e PATCH em `/api/users/tenant/meta/`.
+- `core/views.py` – Endpoint `POST /api/salon/customers/{id}/invite/` e disparo automático ao criar clientes.
+- `notifications/services.py` – Stub `send_customer_pwa_invite` com logs e ponto de integração futuro.
+- `core/tests/test_salon_customer_invite.py` / `users/tests/test_feature_flags.py` – Cobertura de reenvio, auto invite e validações de plano.
+
+**Características**:
+- ✅ Reenvio manual de convite do PWA com validações de plano/e-mail.
+- ✅ Auto invite dispara na criação de clientes quando flag + PWA Cliente estão habilitados.
+- ✅ Logs incluem tenant, cliente e usuário para observabilidade.
+- ⏳ Integração real de envio (e-mail/SMS) será definida após escolha do canal.
+
 #### **Agendamentos Múltiplos (BE-153)**
 **Status**: ✅ Implementado  
 **Arquivos**:

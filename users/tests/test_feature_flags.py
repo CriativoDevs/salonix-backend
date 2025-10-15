@@ -321,6 +321,64 @@ class TestTenantMetaEndpoint:
         assert "error" in response.data
         assert "inativo" in response.data["error"]["message"]
 
+    def test_tenant_meta_patch_auto_invite_success(self):
+        """Permite habilitar auto invite quando PWA cliente está disponível."""
+        tenant = Tenant.objects.create(
+            name="Invite Salon",
+            slug="invite-salon",
+            plan_tier=Tenant.PLAN_STANDARD,
+            pwa_client_enabled=True,
+        )
+
+        user = CustomUser.objects.create_user(
+            username="owner",
+            email="owner@invite.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"auto_invite_enabled": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        tenant.refresh_from_db()
+        assert tenant.auto_invite_enabled is True
+        assert response.json()["auto_invite_enabled"] is True
+
+    def test_tenant_meta_patch_auto_invite_requires_pwa(self):
+        """Bloqueia habilitação de auto invite sem PWA cliente."""
+        tenant = Tenant.objects.create(
+            name="NoPwa",
+            slug="nopwa",
+            plan_tier=Tenant.PLAN_BASIC,
+            pwa_client_enabled=False,
+        )
+
+        user = CustomUser.objects.create_user(
+            username="basic",
+            email="basic@nopwa.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"auto_invite_enabled": True},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "PWA" in response.data["detail"]
+        tenant.refresh_from_db()
+        assert tenant.auto_invite_enabled is False
+
 
 @pytest.mark.django_db
 class TestPlanUpgradeScenarios:

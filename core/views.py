@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status as drf_status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
@@ -18,6 +20,7 @@ from core.email_utils import (
 )
 from core.models import Appointment, AppointmentSeries, Professional, SalonCustomer, Service, ScheduleSlot
 from users.models import Tenant
+from notifications.services import send_customer_pwa_invite
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
@@ -1156,7 +1159,30 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
             raise ValidationError(
                 {"tenant": ["Tenant não encontrado para o usuário autenticado."]}
             )
-        serializer.save(tenant=tenant)
+        customer = serializer.save(tenant=tenant)
+
+        if (
+            tenant
+            and tenant.auto_invite_enabled
+            and tenant.pwa_client_enabled
+            and customer.email
+        ):
+            try:
+                send_customer_pwa_invite(
+                    tenant=tenant,
+                    customer=customer,
+                    invited_by=self.request.user,
+                )
+            except Exception as exc:  # pragma: no cover
+                logger.error(
+                    "Auto invite dispatch failed",
+                    exc_info=True,
+                    extra={
+                        "tenant_id": tenant.id,
+                        "customer_id": customer.id,
+                        "user_id": getattr(self.request.user, "id", None),
+                    },
+                )
 
     def perform_update(self, serializer):
         serializer.save(tenant=serializer.instance.tenant)
@@ -1188,6 +1214,56 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
                 },
                 status=drf_status.HTTP_409_CONFLICT,
             )
+
+    @action(detail=True, methods=["post"], url_path="invite")
+    def invite(self, request, pk=None):
+        customer = self.get_object()
+        tenant = getattr(request, "tenant", None) or getattr(request.user, "tenant", None)
+
+        if tenant is None:
+            return Response(
+                {"detail": "Tenant não identificado para o usuário autenticado."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not tenant.pwa_client_enabled:
+            return Response(
+                {
+                    "detail": "PWA Cliente não habilitado para este salão. Atualize o plano para reenviar convites."
+                },
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not customer.email:
+            return Response(
+                {
+                    "detail": "Cliente não possui e-mail cadastrado. Informe um e-mail antes de reenviar o convite."
+                },
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            send_customer_pwa_invite(
+                tenant=tenant,
+                customer=customer,
+                invited_by=request.user,
+            )
+        except Exception as exc:  # pragma: no cover - logging crítico
+            logger.error(
+                "Falha ao reenviar convite do PWA",
+                exc_info=True,
+                extra={
+                    "tenant_id": getattr(tenant, "id", None),
+                    "customer_id": customer.id,
+                    "user_id": getattr(request.user, "id", None),
+                },
+            )
+            return Response(
+                {"detail": "Erro ao reenviar convite. Tente novamente mais tarde."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"status": "queued"}, status=drf_status.HTTP_202_ACCEPTED)
 
 
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):

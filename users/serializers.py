@@ -300,6 +300,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
 
     feature_flags = serializers.SerializerMethodField()
     logo_url = serializers.SerializerMethodField()
+    auto_invite_enabled = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Tenant
@@ -313,6 +314,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "currency",
             "plan_tier",
             "feature_flags",
+            "auto_invite_enabled",
         ]
         read_only_fields = [
             "name",
@@ -324,6 +326,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "currency",
             "plan_tier",
             "feature_flags",
+            "auto_invite_enabled",
         ]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -343,6 +346,8 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
     Permite upload de logo e atualização de cores.
     """
 
+    auto_invite_enabled = serializers.BooleanField(required=False)
+
     class Meta:
         model = Tenant
         fields = [
@@ -350,12 +355,14 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
             "logo_url",
             "primary_color",
             "secondary_color",
+            "auto_invite_enabled",
         ]
         extra_kwargs = {
             "logo": {"required": False},
             "logo_url": {"required": False},
             "primary_color": {"required": False},
             "secondary_color": {"required": False},
+            "auto_invite_enabled": {"required": False},
         }
 
     def validate(self, data):

@@ -218,24 +218,37 @@ class TenantMetaView(APIView):
         serializer = TenantBrandingUpdateSerializer(
             tenant, data=request.data, partial=True
         )
-        if serializer.is_valid():
-            # Limpar logo anterior se novo logo for enviado
-            from typing import Any, Dict, cast
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            vdata = cast(Dict[str, Any], serializer.validated_data)
-            if vdata.get("logo"):
-                if tenant.logo:
-                    tenant.logo.delete(save=False)  # Não salvar ainda
-                # Limpar logo_url se logo for enviado
-                vdata["logo_url"] = None
+        from typing import Any, Dict, cast
 
-            serializer.save()
+        vdata = cast(Dict[str, Any], serializer.validated_data)
 
-            # Retornar dados atualizados
-            response_serializer = TenantMetaSerializer(tenant)
-            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        # Validar permissão para ativar auto invite
+        if "auto_invite_enabled" in vdata:
+            desired_state = bool(vdata["auto_invite_enabled"])
+            if desired_state and not tenant.pwa_client_enabled:
+                return Response(
+                    {
+                        "detail": (
+                            "Plano atual não permite convites automáticos. "
+                            "Habilite o PWA Cliente para usar esta funcionalidade."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Limpar logo anterior se novo logo for enviado
+        if vdata.get("logo"):
+            if tenant.logo:
+                tenant.logo.delete(save=False)
+            vdata["logo_url"] = None
+
+        serializer.save()
+
+        response_serializer = TenantMetaSerializer(tenant)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class MeTenantView(APIView):

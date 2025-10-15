@@ -266,7 +266,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         # taxa geral por usuário (ajuste se quiser)
-        "user": "10000/day",
+        "user": "10000/day",  # CHange back to 5000/day when go to prod
         # escopo específico para exportação CSV
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
