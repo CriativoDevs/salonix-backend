@@ -24,6 +24,7 @@ from .serializers import (
     UserFeatureFlagsSerializer,
     UserFeatureFlagsUpdateSerializer,
     TenantSelfServiceSerializer,
+    UserSelfSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -282,6 +283,15 @@ class MeTenantView(APIView):
         )
 
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class MeProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        serializer = UserSelfSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class UsersPasswordResetThrottle(ScopedRateThrottle):
