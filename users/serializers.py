@@ -241,6 +241,23 @@ class UserFeatureFlagsUpdateSerializer(UserFeatureFlagsSerializer):
         read_only_fields = UserFeatureFlagsSerializer.Meta.read_only_fields
 
 
+class UserSelfSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    first_name = serializers.CharField(read_only=True)
+    last_name = serializers.CharField(read_only=True)
+
+    def to_representation(self, instance):
+        return {
+            "id": instance.id,
+            "username": instance.username or "",
+            "email": instance.email or "",
+            "first_name": instance.first_name or "",
+            "last_name": instance.last_name or "",
+        }
+
+
 class EmailTokenObtainPairSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
@@ -289,6 +306,13 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
             "refresh": str(refresh),
             "access": str(access_token),
             "tenant": tenant_payload,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "first_name": user.first_name or "",
+                "last_name": user.last_name or "",
+            },
         }
 
 

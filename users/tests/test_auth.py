@@ -16,6 +16,7 @@ class TestAuthEndpoints:
         self.register_url = reverse("register")
         self.token_url = reverse("token_obtain_pair")
         self.me_tenant_url = reverse("me_tenant")
+        self.me_profile_url = reverse("me_profile")
 
     def test_successful_registration(self):
         payload = {
@@ -52,6 +53,8 @@ class TestAuthEndpoints:
         assert "access" in response.data
         assert "refresh" in response.data
         assert response.data["tenant"]["slug"] == "test-default"
+        assert response.data["user"]["username"] == "lucas"
+        assert response.data["user"]["email"] == "lucas@example.com"
 
         refresh = RefreshToken(response.data["refresh"])
         access = refresh.access_token
@@ -190,3 +193,17 @@ class TestAuthEndpoints:
     def test_me_tenant_requires_authentication(self):
         response = self.client.get(self.me_tenant_url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_me_profile_returns_user_payload(self):
+        user = User.objects.create_user(
+            username="profileuser",
+            email="profile@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get(self.me_profile_url)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["username"] == "profileuser"
+        assert response.data["email"] == "profile@example.com"
