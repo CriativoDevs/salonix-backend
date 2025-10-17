@@ -1,4 +1,7 @@
+import string
+
 from django.contrib.auth.models import BaseUserManager
+from django.utils.crypto import get_random_string
 
 
 class CustomUserManager(BaseUserManager):
@@ -19,3 +22,13 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault("is_active", True)
 
         return self.create_user(username, email, password, **extra_fields)
+
+    def make_random_password(
+        self,
+        length: int = 12,
+        allowed_chars: str = string.ascii_letters + string.digits,
+    ) -> str:
+        """
+        Replica do helper removido do Django 5.x.
+        """
+        return get_random_string(length, allowed_chars)
