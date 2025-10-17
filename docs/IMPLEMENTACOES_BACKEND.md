@@ -149,6 +149,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Colaboradores só veem/alteram seus próprios profissionais, slots e agendamentos; owner/manager mantêm visão global.
 - ✅ Desativar staff aplica soft-disable e desativa profissionais associados; reativar staff marca profissionais como ativos novamente.
 - ✅ Django Admin exibe staff com tokens, status, ações rápidas e link direto para o profissional associado.
+- ✅ Owners não recebem flag `is_superuser`; apenas contas Ops (sem tenant) podem ser superusers, garantindo isolamento multi-tenant mesmo em seeds/demo.
 
 #### **Tenant Staff Management (BE-282) – English Summary**
 **Status**: ✅ Shipped  
