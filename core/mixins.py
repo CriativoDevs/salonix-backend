@@ -20,6 +20,7 @@ class TenantIsolatedMixin:
         if (
             hasattr(self.request.user, "is_superuser")
             and self.request.user.is_superuser
+            and getattr(self.request.user, "tenant_id", None) is None
         ):
             return queryset
 
@@ -54,6 +55,7 @@ class TenantValidationMixin:
         if (
             hasattr(self.request.user, "is_superuser")
             and self.request.user.is_superuser
+            and getattr(self.request.user, "tenant_id", None) is None
         ):
             return obj
 

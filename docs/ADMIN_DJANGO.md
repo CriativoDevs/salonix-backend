@@ -25,6 +25,7 @@ O Django Admin do Salonix foi completamente personalizado para fornecer uma inte
   - `Tenant Managers`: Gestão limitada ao próprio tenant
   - `Support`: Apenas visualização
 - **Isolamento por Tenant**: Staff só vê dados do próprio tenant
+- **Superusuários Ops**: Apenas contas Ops (sem tenant associado) recebem `is_superuser`; owners/tenants comuns permanecem staff
 - **Permissões Customizadas**: Controle granular de acesso
 
 ### 📊 Administração Multi-Model

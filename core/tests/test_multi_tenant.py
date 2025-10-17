@@ -125,6 +125,26 @@ class TenantIsolationServiceTest(MultiTenantTestCase):
         self.assertIn(self.service1.id, service_ids)
         self.assertNotIn(self.service2.id, service_ids)
 
+    def test_superuser_with_tenant_still_isolated(self):
+        """Usuário com tenant não deve escapar do isolamento mesmo se marcado como superuser"""
+        self.user1.is_superuser = True
+        self.user1.save(update_fields=["is_superuser"])
+
+        self.api_client.force_authenticate(user=self.user1)
+
+        response = self.api_client.get("/api/services/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        services = (
+            response.json()["results"]
+            if "results" in response.json()
+            else response.json()
+        )
+
+        service_ids = [s["id"] for s in services]
+        self.assertIn(self.service1.id, service_ids)
+        self.assertNotIn(self.service2.id, service_ids)
+
     def test_user_cannot_access_other_tenant_service(self):
         """Usuário não pode acessar serviço de outro tenant"""
         self.api_client.force_authenticate(user=self.user1)

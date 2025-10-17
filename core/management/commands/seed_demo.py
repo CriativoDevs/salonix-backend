@@ -59,7 +59,6 @@ class Command(BaseCommand):
                 defaults={
                     "email": "admin@demo.local",
                     "is_staff": True,
-                    "is_superuser": True,
                     "tenant": default_tenant,
                 },
             )

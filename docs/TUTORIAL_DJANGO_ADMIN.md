@@ -319,6 +319,8 @@ Busque por:
 python manage.py createsuperuser
 ```
 
+> **Importante:** Superusuários são contas Ops/desenvolvimento sem tenant associado. Owners criados via plataforma não devem ter `is_superuser` habilitado para manter o isolamento multi-tenant.
+
 ### **Setup Inicial do Admin**
 ```bash
 python manage.py setup_admin
