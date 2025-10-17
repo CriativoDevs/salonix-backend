@@ -3,6 +3,7 @@ from typing import Any, cast
 from django.utils import timezone
 
 from core.models import Service, Professional, ScheduleSlot, Appointment, SalonCustomer
+from users.models import TenantStaffMember
 from salonix_backend.validators import (
     validate_appointment_data,
     validate_service_data,
@@ -43,9 +44,15 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 class ProfessionalSerializer(serializers.ModelSerializer):
+    staff_member = serializers.PrimaryKeyRelatedField(
+        queryset=TenantStaffMember.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = Professional
-        fields = ["id", "user", "name", "bio", "is_active"]
+        fields = ["id", "user", "name", "bio", "is_active", "staff_member"]
         read_only_fields = ["user"]
 
     def validate_name(self, value):
@@ -63,7 +70,20 @@ class ProfessionalSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """Validação completa do profissional."""
-        return validate_professional_data(data)
+        data = validate_professional_data(data)
+        request = self.context.get("request")
+        tenant = getattr(request.user, "tenant", None) if request else None
+        staff_member = data.get("staff_member")
+        if staff_member:
+            if tenant and staff_member.tenant_id != tenant.id:
+                raise serializers.ValidationError(
+                    {"staff_member": "Membro não pertence ao tenant informado."}
+                )
+            if staff_member.status != TenantStaffMember.Status.ACTIVE:
+                raise serializers.ValidationError(
+                    {"staff_member": "Membro de equipe está inativo."}
+                )
+        return data
 
 
 class SalonCustomerSerializer(serializers.ModelSerializer):

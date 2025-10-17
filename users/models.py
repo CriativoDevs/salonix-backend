@@ -1,11 +1,14 @@
 from __future__ import annotations
 from django.conf import settings
+from django.apps import apps
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Lower
 from typing import Any, cast
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 from .managers import CustomUserManager
 from .validators import validate_hex_color, validate_logo_image
@@ -263,6 +266,224 @@ class CustomUser(AbstractUser):
         if self.ops_role:
             self.is_staff = True
         super().save(*args, **kwargs)
+
+    @property
+    def is_owner(self) -> bool:
+        if hasattr(self, "_staff_cache"):
+            staff_member = getattr(self, "_staff_cache")
+            return bool(staff_member and staff_member.role == TenantStaffMember.Role.OWNER)
+        try:
+            staff_member = self.staff_member
+        except TenantStaffMember.DoesNotExist:
+            staff_member = None
+        setattr(self, "_staff_cache", staff_member)
+        return bool(staff_member and staff_member.role == TenantStaffMember.Role.OWNER)
+
+    @property
+    def staff_role(self) -> str | None:
+        if hasattr(self, "_staff_cache"):
+            staff_member = getattr(self, "_staff_cache")
+            return staff_member.role if staff_member else None
+        try:
+            staff_member = self.staff_member
+        except TenantStaffMember.DoesNotExist:
+            staff_member = None
+        setattr(self, "_staff_cache", staff_member)
+        return staff_member.role if staff_member else None
+
+    def has_staff_role(self, *roles: str) -> bool:
+        role = self.staff_role
+        return role is not None and role in roles
+
+
+class TenantStaffMember(models.Model):
+    class Role(models.TextChoices):
+        OWNER = "owner", "Owner"
+        MANAGER = "manager", "Manager"
+        COLLABORATOR = "collaborator", "Collaborator"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        INVITED = "invited", "Invited"
+        DISABLED = "disabled", "Disabled"
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="staff_members",
+        help_text="Tenant ao qual o membro de equipe pertence.",
+    )
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="staff_member",
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.COLLABORATOR,
+        help_text="Perfil de permissão dentro do tenant.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        help_text="Estado atual do membro de equipe.",
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="staff_invited",
+        help_text="Usuário responsável pelo convite (quando aplicável).",
+    )
+    invite_token = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        help_text="Token de convite pendente.",
+    )
+    invite_token_expires_at = models.DateTimeField(null=True, blank=True)
+    invited_at = models.DateTimeField(null=True, blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "role"]),
+            models.Index(fields=["tenant", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant"],
+                condition=Q(role="owner"),
+                name="unique_staff_owner_per_tenant",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} • {self.tenant} ({self.role})"
+
+    def set_invite(self, token: str, expires_at, invited_by=None):
+        self.invite_token = token
+        self.invite_token_expires_at = expires_at
+        self.status = self.Status.INVITED
+        self.invited_at = timezone.now()
+        update_fields = [
+            "invite_token",
+            "invite_token_expires_at",
+            "status",
+            "invited_at",
+            "updated_at",
+        ]
+        if invited_by is not None:
+            self.invited_by = invited_by
+            update_fields.append("invited_by")
+        self.save(
+            update_fields=update_fields
+        )
+
+    def mark_activated(self):
+        self.status = self.Status.ACTIVE
+        self.activated_at = timezone.now()
+        self.invite_token = None
+        self.invite_token_expires_at = None
+        self.save(
+            update_fields=[
+                "status",
+                "activated_at",
+                "updated_at",
+                "invite_token",
+                "invite_token_expires_at",
+            ]
+        )
+        self.ensure_professional()
+
+    def mark_disabled(self):
+        self.status = self.Status.DISABLED
+        self.deactivated_at = timezone.now()
+        self.save(update_fields=["status", "deactivated_at", "updated_at"])
+        self._set_professionals_active(active=False)
+
+    @property
+    def is_owner(self) -> bool:
+        return self.role == self.Role.OWNER
+
+    @property
+    def is_manager(self) -> bool:
+        return self.role == self.Role.MANAGER
+
+    @property
+    def is_collaborator(self) -> bool:
+        return self.role == self.Role.COLLABORATOR
+
+    def ensure_professional(self, *, auto_create: bool = True):
+        """
+        Garante que colaboradores tenham um Professional associado.
+        Reassocia registros existentes quando necessário.
+        """
+        if not self.tenant_id or not self.user_id:
+            return None
+
+        Professional = apps.get_model("core", "Professional")
+
+        professional = (
+            Professional.objects.filter(staff_member=self)
+            .select_related(None)
+            .first()
+        )
+
+        if not professional:
+            professional = (
+                Professional.objects.filter(tenant=self.tenant, user=self.user)
+                .order_by("id")
+                .first()
+            )
+
+        if professional:
+            fields_to_update: list[str] = []
+            if professional.staff_member_id != self.id:
+                professional.staff_member = self
+                fields_to_update.append("staff_member")
+            if professional.user_id != self.user_id:
+                professional.user = self.user
+                fields_to_update.append("user")
+            if professional.tenant_id != self.tenant_id:
+                professional.tenant = self.tenant
+                fields_to_update.append("tenant")
+            if self.role == self.Role.COLLABORATOR and not professional.is_active:
+                professional.is_active = True
+                fields_to_update.append("is_active")
+            if fields_to_update:
+                professional.save(update_fields=list(dict.fromkeys(fields_to_update)))
+            return professional
+
+        if not auto_create or self.role != self.Role.COLLABORATOR:
+            return None
+
+        display_name = (
+            self.user.get_full_name()
+            or self.user.first_name
+            or self.user.username
+            or (self.user.email or "").split("@")[0]
+            or "Professional"
+        )
+        professional = Professional.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            staff_member=self,
+            name=display_name[:100],
+            is_active=True,
+        )
+        return professional
+
+    def _set_professionals_active(self, *, active: bool):
+        Professional = apps.get_model("core", "Professional")
+        Professional.objects.filter(staff_member=self).update(is_active=active)
 
 
 class UserFeatureFlags(models.Model):

@@ -135,6 +135,35 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Chaves de cache incluem tenant_id
 - ✅ Configuração robusta com pooling
 
+#### **Gestão de Staff por Tenant (BE-282)**
+**Status**: ✅ Implementado  
+**Arquivos**:
+- `users/models.py` – Modelo `TenantStaffMember` com papeis (owner/manager/collaborator), status e helpers `mark_activated/mark_disabled/ensure_professional`.
+- `users/views.py` / `users/serializers.py` – Endpoints de convite, aceite, atualização e remoção de staff.
+- `core/views.py` – Guards de permissões para services, professionals, slots, appointments e bulk/series respeitando o papel do staff.
+- `users/tests/test_staff_professional_integration.py`, `tests/test_staff_permissions.py` – Cobertura de convites, criação automática de profissionais, bloqueios 403 e fluxos happy path.
+
+**Características**:
+- ✅ Owner/manager convidam colaboradores via `/api/users/staff/` (token + expiração + métricas).
+- ✅ Aceite do convite ativa usuário, define senha e gera (ou reassocia) `Professional` automaticamente ao staff.
+- ✅ Colaboradores só veem/alteram seus próprios profissionais, slots e agendamentos; owner/manager mantêm visão global.
+- ✅ Desativar staff aplica soft-disable e desativa profissionais associados; reativar staff marca profissionais como ativos novamente.
+- ✅ Django Admin exibe staff com tokens, status, ações rápidas e link direto para o profissional associado.
+
+#### **Tenant Staff Management (BE-282) – English Summary**
+**Status**: ✅ Shipped  
+**Key files**:
+- `users/models.py` – `TenantStaffMember` model with roles, invitation metadata and `ensure_professional` helper.
+- `users/views.py` / `users/serializers.py` – Staff invite/accept/update/delete endpoints.
+- `core/views.py` – Permission guards for services, professionals, slots, appointments (single and bulk/series) based on staff role.
+- Automated tests in `users/tests/test_staff_professional_integration.py` and `tests/test_staff_permissions.py`.
+
+**Highlights**:
+- ✅ Owners/managers send invitations with expiring tokens; acceptance activates the user and auto-creates or reattaches a `Professional`.
+- ✅ Collaborators are restricted to their own professionals, slots and appointments; owners/managers keep full access.
+- ✅ Disabling staff deactivates linked professionals; re-enabling restores them.
+- ✅ Django Admin now surfaces staff status, invite metadata and shortcuts to the linked professional record.
+
 ### **🎨 2. White-label e Branding**
 
 #### **Endpoint Tenant Meta (BE-105)**

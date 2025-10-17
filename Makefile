@@ -20,6 +20,7 @@ help:
 > echo "  make install        - instala dependências do requirements.txt"
 > echo "  make check          - django system check"
 > echo "  make migrate        - aplica migrações"
+> echo "  make makemigrations - aplica makemigrations"
 > echo "  make run            - inicia o servidor em 0.0.0.0:8000 (DJANGO_ENV=$(DJANGO_ENV))"
 > echo "  make env-example    - cria .env.example com variáveis padrão"
 > echo "  make env-local      - cria .env local (cópia do example, se não existir)"
@@ -91,6 +92,10 @@ check:
 .PHONY: migrate
 migrate:
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) migrate
+
+.PHONY: makemigrations
+makemigrations:
+> DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) makemigrations
 
 .PHONY: run
 run:

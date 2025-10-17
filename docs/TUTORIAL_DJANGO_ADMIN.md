@@ -118,6 +118,38 @@ Permissões Específicas:
 - Terá acesso apenas aos dados do seu tenant
 - Pode gerenciar agendamentos e relatórios
 
+## 👥 **Gestão de Staff (Convites e Profissionais)**
+
+### 🇧🇷 **Fluxo via Admin**
+1. Acesse **Users → Tenant staff members**.
+2. Clique em **"Add tenant staff member"**.
+3. Preencha:
+   ```
+   Tenant: Salão Beleza & Estilo
+   User: (escolha um CustomUser existente ou crie pelo botão verde “+”)
+   Role: manager | collaborator
+   Status: Invited (gera token) ou Active (para fixtures/seeds)
+   ```
+4. Após salvar, copie o campo **Invite token** (ou use o botão de reenviar convite quando integrado ao serviço de email).
+5. Quando o colaborador aceitar o convite (endpoint `/api/users/staff/accept/`), o status muda para **Active** e um `Professional` é criado/vinculado automaticamente ao staff (visível na aba **Core → Professionals**).
+6. Para revogar acesso, defina **Status = Disabled** — o profissional ligado fica inativo mas permanece no histórico.
+
+### 🇬🇧 **Admin Flow (English)**
+1. Go to **Users → Tenant staff members**.
+2. Click **“Add tenant staff member”**.
+3. Fill out:
+   ```
+   Tenant: choose the salon
+   User: pick an existing CustomUser or create a new one via the green “+” button
+   Role: manager | collaborator
+   Status: Invited (issues a token) or Active (for seeds/internal bootstrap)
+   ```
+4. After saving, copy the **Invite token** (or use the “resend invite” action once email integration is configured).
+5. When the collaborator follows the invite (POST `/api/users/staff/accept/`), the status flips to **Active** and a matching `Professional` record is created/linked automatically (check **Core → Professionals**).
+6. To revoke access, set **Status = Disabled** — linked professionals become inactive while keeping appointment history intact.
+
+> 💡 **Dica/Tip**: caso esteja migrando dados antigos, associe os profissionais existentes ao novo campo `staff_member` diretamente no admin ou via script antes de desativar o caminho legado.
+
 ## 🎨 **Configurando White-label**
 
 ### **Upload de Logo**

@@ -158,6 +158,35 @@ python manage.py setup_admin
 
 **3. Filtros não funcionam**
 - Verificar se campos existem nos modelos
+
+---
+
+## 🇬🇧 Django Admin – English Summary
+
+**Overview**
+- Customised admin tailored for Salonix: dashboard with real-time stats, top tenants, recent activity and alerts.
+
+**Key features**
+- Tenant management with feature flags, bulk actions, upgrade shortcuts, detailed fieldsets.
+- Permission system with predefined groups (`Salonix Admins`, `Tenant Managers`, `Support`) and tenant isolation.
+- Cross-linked admin for users, appointments, services, professionals, payments, notifications.
+
+**Getting started**
+```bash
+python manage.py setup_admin --create-superuser
+```
+- Default login: `admin` / `admin123` (change immediately).
+- Key URLs: `/admin/`, `/admin/users/tenant/`, `/admin/users/customuser/`.
+
+**Structure & security**
+- Custom admin definitions (`salonix_backend/admin.py`, templates under `templates/admin/`).
+- Logging middleware captures actions; CSP/XSS headers configured; data isolation enforced per tenant.
+
+**Metrics & monitoring**
+- Dashboard shows active tenants, users, appointments (today/week), subscriptions, notifications, and alerts (inactive subscriptions, failed notifications, system errors).
+
+**Roadmap**
+- Interactive charts, report export, admin push notifications, metrics API, Slack/Discord integrations, tenant-specific themes and widgets.
 - Confirmar relacionamentos ForeignKey
 
 ### Logs Úteis

@@ -158,6 +158,24 @@ sanitize_postal_code("1000001")           # → "1000-001"
 - Duração: 5-480 min, múltiplos de 5
 ```
 
+---
+
+## 🇬🇧 Data Validation System – English Summary
+
+**Purpose**: describe the reusable validation framework powering Salonix backend.
+
+**Highlights**
+- Custom validators (phone, postal code, NIF, price, duration, business hours, future slots, workdays).
+- Automatic sanitisation helpers (`sanitize_text_input`, `sanitize_phone_number`, `sanitize_postal_code`).
+- Business validators: `validate_appointment_data`, `validate_service_data`, `validate_professional_data` enforcing tenant ownership, schedules and formatting.
+- Serializer integration: fields are cleaned/validated before persistence; errors surface with domain-specific messages.
+- Integrity helpers: `TenantOwnershipValidator`, `UniqueTogetherValidator` prevent cross-tenant access and duplicates.
+
+**Usage examples**
+- Phone/price validation functions returning `ValidationError` on invalid input.
+- Sanitisation trimming whitespace, removing control chars, normalising formats.
+- Appointment validation ensures future date, business hours, workdays, tenant ownership and slot compatibility.
+
 ### **UserRegistrationSerializer**
 ```python
 # Validações automáticas aplicadas:
