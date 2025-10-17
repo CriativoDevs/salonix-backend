@@ -7,14 +7,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.exceptions import ValidationError, AuthenticationFailed
+from rest_framework.exceptions import ValidationError, AuthenticationFailed, PermissionDenied
 
 from drf_spectacular.utils import extend_schema
 
 from rest_framework.exceptions import NotFound
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
-from .models import UserFeatureFlags, Tenant
+from .models import UserFeatureFlags, Tenant, TenantStaffMember
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -25,6 +25,10 @@ from .serializers import (
     UserFeatureFlagsUpdateSerializer,
     TenantSelfServiceSerializer,
     UserSelfSerializer,
+    TenantStaffMemberSerializer,
+    StaffInviteSerializer,
+    StaffAcceptInviteSerializer,
+    StaffUpdateSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -292,6 +296,110 @@ class MeProfileView(APIView):
         user = request.user
         serializer = UserSelfSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class TenantStaffView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        staff_qs = TenantStaffMember.objects.filter(tenant=tenant).select_related("user")
+        serializer = TenantStaffMemberSerializer(staff_qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        serializer = StaffInviteSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        staff_member = serializer.save()
+        response_data = TenantStaffMemberSerializer(staff_member).data
+        response_data["invite_token"] = serializer.invite_token
+        response_data["invite_token_expires_at"] = staff_member.invite_token_expires_at
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+    def patch(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        member_id = request.data.get("id")
+        if not member_id:
+            raise ValidationError({"id": "Informe o identificador do membro."})
+
+        try:
+            staff_member = TenantStaffMember.objects.select_related("user").get(
+                tenant=tenant, id=member_id
+            )
+        except TenantStaffMember.DoesNotExist as exc:
+            raise NotFound("Membro de equipe não encontrado.") from exc
+
+        if staff_member.role == TenantStaffMember.Role.OWNER:
+            raise ValidationError("Owner não pode ser alterado por este endpoint.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        serializer = StaffUpdateSerializer(
+            instance=staff_member, data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        staff_member = serializer.save()
+        response_data = TenantStaffMemberSerializer(staff_member).data
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        member_id = request.data.get("id")
+        if not member_id:
+            raise ValidationError({"id": "Informe o identificador do membro."})
+
+        try:
+            staff_member = TenantStaffMember.objects.select_related("user").get(
+                tenant=tenant, id=member_id
+            )
+        except TenantStaffMember.DoesNotExist as exc:
+            raise NotFound("Membro de equipe não encontrado.") from exc
+
+        if staff_member.role == TenantStaffMember.Role.OWNER:
+            raise ValidationError("Owner não pode ser desativado.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        staff_member.mark_disabled()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TenantStaffAcceptInviteView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = StaffAcceptInviteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        staff_member = serializer.save()
+        response_data = TenantStaffMemberSerializer(staff_member).data
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class UsersPasswordResetThrottle(ScopedRateThrottle):

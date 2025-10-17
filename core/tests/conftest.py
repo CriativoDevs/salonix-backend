@@ -1,5 +1,5 @@
 import pytest
-from users.models import CustomUser, Tenant
+from users.models import CustomUser, Tenant, TenantStaffMember
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 
@@ -64,6 +64,15 @@ def tenant_fixture(db, setup_default_tenant):
 
 @pytest.fixture
 def user_fixture(db, tenant_fixture):
-    return CustomUser.objects.create_user(
+    user = CustomUser.objects.create_user(
         username="testuser", email="test@example.com", password="testpass"
     )
+    staff = TenantStaffMember.objects.create(
+        tenant=tenant_fixture,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+    setattr(user, "_staff_cache", staff)
+    setattr(user, "staff_member", staff)
+    return user

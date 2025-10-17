@@ -9,7 +9,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import Tenant
+from users.models import Tenant, TenantStaffMember
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 
@@ -45,12 +45,24 @@ class MultiTenantTestCase(TestCase):
             password="testpass123",
             tenant=self.tenant1,
         )
+        TenantStaffMember.objects.create(
+            tenant=self.tenant1,
+            user=self.user1,
+            role=TenantStaffMember.Role.OWNER,
+            status=TenantStaffMember.Status.ACTIVE,
+        )
 
         self.user2 = User.objects.create_user(
             username="salon2_owner",
             email="owner2@salon.com",
             password="testpass123",
             tenant=self.tenant2,
+        )
+        TenantStaffMember.objects.create(
+            tenant=self.tenant2,
+            user=self.user2,
+            role=TenantStaffMember.Role.OWNER,
+            status=TenantStaffMember.Status.ACTIVE,
         )
 
         # Criar clientes para cada tenant

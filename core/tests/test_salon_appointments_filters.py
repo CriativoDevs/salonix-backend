@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from users.models import CustomUser
+from users.models import CustomUser, Tenant
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 
@@ -16,6 +16,9 @@ def test_filter_by_status_and_visibility(user_fixture):
     other = CustomUser.objects.create_user(
         username="other", email="other@example.com", password="pass"
     )
+    other_tenant = Tenant.objects.create(name="Tenant Filter", slug="tenant-filter")
+    other.tenant = other_tenant
+    other.save(update_fields=["tenant"])
 
     # recursos do salão logado
     svc = Service.objects.create(
@@ -45,18 +48,31 @@ def test_filter_by_status_and_visibility(user_fixture):
 
     # recursos de outro salão (não devem aparecer)
     svc_o = Service.objects.create(
-        user=other, name="Barba", duration_minutes=20, price_eur="8.00"
+        tenant=other_tenant,
+        user=other,
+        name="Barba",
+        duration_minutes=20,
+        price_eur="8.00",
     )
-    prof_o = Professional.objects.create(user=other, name="João", bio="Pro")
+    prof_o = Professional.objects.create(
+        tenant=other_tenant, user=other, name="João", bio="Pro"
+    )
     s_o = ScheduleSlot.objects.create(
+        tenant=other_tenant,
         professional=prof_o,
         start_time=now + timedelta(days=1),
         end_time=now + timedelta(days=1, minutes=20),
         is_available=False,
     )
-    Appointment.objects.create(
-        client=other, service=svc_o, professional=prof_o, slot=s_o, status="scheduled"
+    other_appt = Appointment.objects.create(
+        tenant=other_tenant,
+        client=other,
+        service=svc_o,
+        professional=prof_o,
+        slot=s_o,
+        status="scheduled",
     )
+    assert other_appt.tenant_id == other_tenant.id
 
     # filtra scheduled
     resp = client.get("/api/salon/appointments/", {"status": "scheduled"})

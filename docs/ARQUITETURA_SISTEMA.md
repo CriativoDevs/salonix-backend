@@ -492,6 +492,37 @@ Production   → PostgreSQL + Redis + Load Balancer
 
 ---
 
+## 🇬🇧 System Architecture – English Summary
+
+**Purpose**  
+This document explains the Salonix backend architecture: guiding principles, technology choices and folder structure.
+
+**Key principles**
+- *Multi-tenancy first*: tenant isolation on every model/query, automatic middleware detection.
+- *Performance*: Redis cache, optimised queryset usage, pagination everywhere, DB indexes.
+- *Security*: mandatory JWT auth, strict validation/sanitisation, granular permissions.
+- *Observability*: structured logs, Prometheus metrics, request correlation IDs.
+
+**Tech stack**
+- Django + DRF, PostgreSQL, Redis, Prometheus metrics, structured logging.
+- Core libs: `django-redis`, JWT auth, Pillow, drf-spectacular.
+
+**Layered architecture**
+- Frontend (web/mobile) → API (Django/DRF) → Business logic (views/serializers) → Data layer (models/managers) → Cache (Redis) → Database (PostgreSQL).
+
+**Repository structure**
+- `salonix_backend/` settings, URLs, middleware, error handling.
+- `users/`, `core/`, `reports/`, `notifications/`, `payments/`, `tests/`, `docs/` folders with clear responsibilities.
+
+**Coding guidelines**
+- Kebab-case URLs, snake_case variables.
+- Fat models/clean views, serializers handle validation, utilities extracted, signals for events/logging.
+
+**Roadmap**
+- Upcoming improvements around performance (indexing, cache warming), features (bulk appointments, audit log), and infrastructure (Kubernetes, monitoring, DR).
+
+---
+
 *Documento criado: 4 Setembro 2025*  
 *Última atualização: 4 Setembro 2025*  
 *Versão: 1.0*

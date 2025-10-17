@@ -11,6 +11,7 @@ from core.models import (
     ScheduleSlot,
     Service,
 )
+from users.models import Tenant
 
 
 @pytest.mark.django_db
@@ -327,6 +328,9 @@ def test_series_occurrence_cancel_forbidden(user_fixture, django_user_model):
         password="pass",
         email="tenant-two@example.com",
     )
+    other_tenant = Tenant.objects.create(name="Tenant Two", slug="tenant-two")
+    other_user.tenant = other_tenant
+    other_user.save(update_fields=["tenant"])
 
     service = Service.objects.create(
         user=other_user, name="SPA", price_eur=90, duration_minutes=90

@@ -4,7 +4,7 @@ Configurações globais de testes para multi-tenant
 
 import pytest
 from unittest.mock import patch
-from users.models import CustomUser, Tenant
+from users.models import CustomUser, Tenant, TenantStaffMember
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 
@@ -96,9 +96,18 @@ def tenant_fixture(setup_default_tenant):
 @pytest.fixture
 def user_fixture(db, tenant_fixture):
     """Cria usuário padrão para testes"""
-    return CustomUser.objects.create_user(
+    user = CustomUser.objects.create_user(
         username="testuser", email="test@example.com", password="testpass"
     )
+    staff = TenantStaffMember.objects.create(
+        tenant=tenant_fixture,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+    setattr(user, "_staff_cache", staff)
+    setattr(user, "staff_member", staff)
+    return user
 
 
 @pytest.fixture(autouse=True)

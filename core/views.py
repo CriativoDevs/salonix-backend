@@ -4,8 +4,7 @@ from rest_framework import status as drf_status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated
-from django.core.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -19,7 +18,7 @@ from core.email_utils import (
     send_appointment_cancellation_email,
 )
 from core.models import Appointment, AppointmentSeries, Professional, SalonCustomer, Service, ScheduleSlot
-from users.models import Tenant
+from users.models import Tenant, TenantStaffMember
 from notifications.services import send_customer_pwa_invite
 from core.serializers import (
     AppointmentDetailSerializer,
@@ -118,6 +117,29 @@ APPOINTMENT_SERIES_SIZE_TOTAL = _get_or_create_counter(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _user_has_staff_role(user, *roles: str) -> bool:
+    checker = getattr(user, "has_staff_role", None)
+    if callable(checker):
+        return checker(*roles)
+    return False
+
+
+def _is_owner_or_manager(user) -> bool:
+    return _user_has_staff_role(
+        user,
+        TenantStaffMember.Role.OWNER,
+        TenantStaffMember.Role.MANAGER,
+    )
+
+
+def _is_collaborator(user) -> bool:
+    return _user_has_staff_role(user, TenantStaffMember.Role.COLLABORATOR)
+
+
+def _get_staff_member(user):
+    return getattr(user, "staff_member", None)
 
 
 class PublicServiceListView(TenantIsolatedMixin, ListAPIView):
@@ -334,6 +356,15 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             professional = Professional.objects.get(
                 id=cast(int, data["professional_id"]), tenant=tenant
             )
+            staff_member = _get_staff_member(user)
+            if _is_collaborator(user):
+                allowed = professional.user_id == getattr(user, "id", None)
+                if staff_member and professional.staff_member_id == staff_member.id:
+                    allowed = True
+                if not allowed:
+                    raise PermissionDenied(
+                        "Colaboradores só podem criar agendamentos para si mesmos."
+                    )
             customer = None
             customer_id = data.get("customer_id")
             if customer_id is not None:
@@ -457,6 +488,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             ).inc()
             return Response({"detail": str(e)}, status=drf_status.HTTP_400_BAD_REQUEST)
 
+        except PermissionDenied:
+            raise
+
         except Exception as e:
             # garante 500 para o teste que mocka .create
             tenant_id = tenant.id if tenant else "unknown"
@@ -511,6 +545,15 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
             professional = Professional.objects.get(
                 id=cast(int, data["professional_id"]), tenant=tenant
             )
+            staff_member = _get_staff_member(user)
+            if _is_collaborator(user):
+                allowed = professional.user_id == getattr(user, "id", None)
+                if staff_member and professional.staff_member_id == staff_member.id:
+                    allowed = True
+                if not allowed:
+                    raise PermissionDenied(
+                        "Colaboradores só podem criar séries para si mesmos."
+                    )
             customer = None
             customer_id = data.get("customer_id")
             if customer_id is not None:
@@ -620,6 +663,8 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                 },
                 status=drf_status.HTTP_201_CREATED,
             )
+        except PermissionDenied:
+            raise
         except Exception as e:
             APPOINTMENT_SERIES_CREATED_TOTAL.labels(
                 tenant_id=getattr(tenant, "id", "unknown") or "unknown",
@@ -645,11 +690,33 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
     serializer_class = AppointmentSeriesSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        user = self.request.user
-        return qs.filter(
-            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("tenant", "service", "professional__staff_member", "professional")
         )
+        user = self.request.user
+
+        if user.is_superuser:
+            return qs
+
+        tenant = getattr(user, "tenant", None)
+        if _is_owner_or_manager(user) and tenant:
+            return qs.filter(tenant_id=tenant.id)
+
+        base_filter = Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+
+        if _is_collaborator(user):
+            staff_member = _get_staff_member(user)
+            if staff_member:
+                base_filter = (
+                    Q(client=user)
+                    | Q(professional__staff_member=staff_member)
+                    | Q(professional__user=user)
+                    | Q(service__user=user)
+                )
+
+        return qs.filter(base_filter)
 
     @extend_schema(
         request=AppointmentSeriesUpdateSerializer,
@@ -978,7 +1045,20 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
     def _user_has_access(series: AppointmentSeries, user) -> bool:
         if user.is_superuser:
             return True
-        return user == series.client or user == series.service.user or user == series.professional.user
+        if _is_owner_or_manager(user):
+            tenant_id = getattr(series.tenant, "id", None) or series.tenant_id
+            return tenant_id is not None and tenant_id == getattr(user, "tenant_id", None)
+
+        if _is_collaborator(user):
+            staff_member = _get_staff_member(user)
+            if staff_member and series.professional.staff_member_id == staff_member.id:
+                return True
+
+        return (
+            user == series.client
+            or user == series.service.user
+            or user == series.professional.user
+        )
 
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1070,6 +1150,14 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
 
             raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
 
+        if not (
+            self.request.user.is_superuser
+            or self.request.user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied("Apenas owner ou manager podem criar serviços.")
+
         serializer.save(user=self.request.user, tenant=tenant)
 
     def get_object(self):
@@ -1077,6 +1165,18 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
         obj = get_object_or_404(Service, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
         if self.request.user.is_superuser:
             return obj
+
+        if self.request.method not in SAFE_METHODS:
+            if not (
+                self.request.user.has_staff_role(
+                    TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+                )
+            ):
+                if obj.user_id != self.request.user.id:
+                    raise PermissionDenied(
+                        "Apenas owner/manager ou o responsável pelo serviço podem alterar."
+                    )
+
         tenant = getattr(self.request, 'tenant', None) or getattr(self.request.user, 'tenant', None)
         if tenant and hasattr(obj, 'tenant'):
             if obj.tenant_id != tenant.id:
@@ -1090,8 +1190,20 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Filtrar apenas por tenant (TenantIsolatedMixin cuida do escopo)
-        return super().get_queryset()
+        qs = super().get_queryset()
+        user = self.request.user
+        if user.is_superuser or user.has_staff_role(
+            TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+        ):
+            return qs
+
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(user, "staff_member", None)
+            if staff_member:
+                return qs.filter(staff_member=staff_member)
+            return qs.none()
+
+        return qs.filter(user=user)
 
     def perform_create(self, serializer):
         tenant = getattr(self.request, "tenant", None) or getattr(
@@ -1112,7 +1224,31 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
 
             raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
 
-        serializer.save(user=self.request.user, tenant=tenant)
+        staff_member = serializer.validated_data.get("staff_member")
+        user = self.request.user
+
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            requester_staff = getattr(user, "staff_member", None)
+            if not requester_staff:
+                raise PermissionDenied("Colaborador não possui staff associado.")
+            if staff_member and staff_member.id != requester_staff.id:
+                raise PermissionDenied("Colaborador não pode criar profissional para outro membro.")
+            staff_member = requester_staff
+        elif not (
+            user.is_superuser
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied("Apenas owner ou manager podem criar profissionais.")
+
+        target_user = staff_member.user if staff_member else user
+
+        serializer.save(
+            user=target_user,
+            tenant=tenant,
+            staff_member=staff_member,
+        )
 
     def get_object(self):
         obj = get_object_or_404(Professional, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
@@ -1122,7 +1258,42 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         if tenant and hasattr(obj, 'tenant'):
             if obj.tenant_id != tenant.id:
                 raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+
+        if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(self.request.user, "staff_member", None)
+            if not staff_member or obj.staff_member_id != staff_member.id:
+                raise PermissionDenied("Você só pode acessar o seu próprio perfil.")
         return obj
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        self._ensure_update_allowed(instance)
+        staff_member = serializer.validated_data.get("staff_member", instance.staff_member)
+        user = self.request.user
+
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(user, "staff_member", None)
+            if not staff_member or instance.staff_member_id != staff_member.id:
+                raise PermissionDenied("Colaborador não pode alterar outro profissional.")
+        elif staff_member and staff_member.tenant_id != instance.tenant_id:
+            raise PermissionDenied("Staff informado não pertence ao tenant.")
+
+        target_user = staff_member.user if staff_member else instance.user
+        serializer.save(staff_member=staff_member, user=target_user)
+
+    def perform_destroy(self, instance):
+        self._ensure_update_allowed(instance)
+        super().perform_destroy(instance)
+
+    def _ensure_update_allowed(self, instance: Professional):
+        user = self.request.user
+        if user.is_superuser or user.has_staff_role(
+            TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+        ):
+            return
+        staff_member = getattr(user, "staff_member", None)
+        if not staff_member or instance.staff_member_id != staff_member.id:
+            raise PermissionDenied("Você não possui permissão para esta operação.")
 
 
 class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
@@ -1277,6 +1448,13 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             self.request.tenant = self.request.user.tenant
 
         qs = super().get_queryset()
+        user = self.request.user
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(user, "staff_member", None)
+            if staff_member:
+                qs = qs.filter(professional__staff_member=staff_member)
+            else:
+                qs = qs.none()
         params = self.request.query_params
         professional_id = params.get("professional_id")
         if professional_id:
@@ -1308,12 +1486,46 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             from rest_framework.exceptions import ValidationError
             raise ValidationError({"professional": ["Profissional não pertence ao tenant atual."]})
 
+        user = self.request.user
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(user, "staff_member", None)
+            if (
+                not staff_member
+                or professional.staff_member_id != staff_member.id
+            ):
+                raise PermissionDenied("Colaboradores só podem criar slots para si mesmos.")
+        elif not (
+            user.is_superuser
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied("Permissão insuficiente para criar slots.")
+
         serializer.save(tenant=tenant)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()  # get_object valida o tenant via mixin/checagem
         obj.delete()
         return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+    def perform_update(self, serializer):
+        obj = serializer.instance
+        tenant = getattr(self.request.user, "tenant", None)
+        professional = serializer.validated_data.get("professional", obj.professional)
+        if professional.tenant_id != tenant.id:
+            raise PermissionDenied("Profissional não pertence ao tenant.")
+
+        user = self.request.user
+        if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(user, "staff_member", None)
+            if (
+                not staff_member
+                or professional.staff_member_id != staff_member.id
+            ):
+                raise PermissionDenied("Colaborador só pode alterar seus próprios slots.")
+
+        serializer.save()
 
     def get_object(self):
         obj = get_object_or_404(
@@ -1327,6 +1539,10 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         if tenant and hasattr(obj, 'tenant'):
             if obj.tenant_id != tenant.id:
                 raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+        if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(self.request.user, "staff_member", None)
+            if not staff_member or obj.professional.staff_member_id != staff_member.id:
+                raise PermissionDenied("Colaboradores só podem acessar seus próprios slots.")
         return obj
 
 
@@ -1347,21 +1563,24 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
-        # Garantir que request.tenant esteja definido (algumas integrações não passam pelo middleware)
         if getattr(self.request, "tenant", None) is None:
             tenant_from_user = getattr(user, "tenant", None)
             if tenant_from_user is not None:
                 self.request.tenant = tenant_from_user
 
-        # Usar o mixin para filtrar por tenant primeiro
-        qs = super().get_queryset()
-
-        # Depois filtrar por user dentro do tenant
-        qs = (
-            qs.filter(Q(professional__user=user) | Q(service__user=user))
-            .select_related("client", "customer", "service", "professional", "slot")
-            .order_by("-created_at")
+        qs = super().get_queryset().select_related(
+            "client", "customer", "service", "professional", "slot"
         )
+
+        if not (
+            user.is_superuser
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            qs = qs.filter(Q(professional__user=user) | Q(service__user=user))
+
+        qs = qs.order_by("-created_at")
 
         params = self.request.query_params
 
@@ -1426,6 +1645,34 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             )
 
         return qs
+
+    def perform_create(self, serializer):
+        tenant = getattr(self.request.user, "tenant", None)
+        if tenant is None:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"tenant": ["Usuário sem tenant."]})
+
+        professional = serializer.validated_data.get("professional")
+        if professional is None:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"professional": ["Profissional é obrigatório."]})
+
+        if professional.tenant_id != tenant.id:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"professional": ["Profissional não pertence ao tenant."]})
+
+        if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+            staff_member = getattr(self.request.user, "staff_member", None)
+            if (
+                not staff_member
+                or professional.staff_member_id != staff_member.id
+            ):
+                raise PermissionDenied("Colaboradores só podem agendar para si mesmos.")
+
+        serializer.save(tenant=tenant)
 
     def partial_update(self, request, *args, **kwargs):
         """
@@ -1745,15 +1992,39 @@ class AppointmentDetailView(TenantIsolatedMixin, RetrieveAPIView):
     def get_queryset(self):
         user = self.request.user
         # Usar o mixin para filtrar por tenant primeiro
-        qs = super().get_queryset()
+        qs = (
+            super()
+            .get_queryset()
+            .select_related(
+                "client",
+                "service",
+                "professional",
+                "professional__staff_member",
+                "slot",
+                "tenant",
+            )
+        )
 
-        # Acessível para:
-        # - o próprio cliente do agendamento
-        # - o salão (dono) via service.user ou professional.user
-        cond_any = cast(Any, Q(client=user))
-        cond_any = cond_any | cast(Any, Q(service__user=user))
-        cond_any = cond_any | cast(Any, Q(professional__user=user))
-        return qs.filter(cond_any).select_related("client", "service", "professional", "slot")
+        if user.is_superuser:
+            return qs
+
+        tenant = getattr(user, "tenant", None)
+        if _is_owner_or_manager(user) and tenant:
+            return qs.filter(tenant_id=tenant.id)
+
+        filters: Any = Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+
+        if _is_collaborator(user):
+            staff_member = _get_staff_member(user)
+            if staff_member:
+                filters = (
+                    Q(client=user)
+                    | Q(professional__staff_member=staff_member)
+                    | Q(professional__user=user)
+                )
+            filters = filters | Q(service__user=user)
+
+        return qs.filter(filters)
 
 
 class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
@@ -1787,74 +2058,30 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
             )
 
         try:
-            # Buscar agendamento com verificação de permissão
-            appointment = get_object_or_404(
-                Appointment.objects.select_related(
-                    "client", "service", "professional", "slot", "tenant"
-                )
-                .filter(
-                    # Filtro por tenant
-                    tenant=tenant,
-                    # Permissão: cliente do agendamento OU dono do salão
-                    **{
-                        "pk": pk,
-                    },
-                )
-                .filter(
-                    (cast(Any, Q(client=user))
-                     | cast(Any, Q(service__user=user))
-                     | cast(Any, Q(professional__user=user)))
-                )
-            )
-
-            # Gerar conteúdo .ics
-            ics_content = ICSGenerator.generate_ics(appointment)
-            filename = ICSGenerator.get_filename(appointment)
-
-            # Criar response com headers apropriados
-            response = HttpResponse(
-                ics_content.encode("utf-8"), content_type="text/calendar; charset=utf-8"
-            )
-            response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response["Pragma"] = "no-cache"
-            response["Expires"] = "0"
-
-            # Métricas e logs
-            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="success").inc()
-
-            logger.info(
-                f"ICS download successful for appointment {appointment.id}",
-                extra={
-                    "tenant_id": tenant.id,
-                    "user_id": user.id,
-                    "appointment_id": appointment.id,
-                    "filename": filename,
-                },
-            )
-
-            return response
-
+            appointment = Appointment.objects.select_related(
+                "client",
+                "service",
+                "professional",
+                "professional__staff_member",
+                "slot",
+                "tenant",
+            ).get(pk=pk, tenant=tenant)
         except Appointment.DoesNotExist:
             ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="not_found").inc()
-
             logger.warning(
-                f"ICS download failed - appointment {pk} not found or no permission",
+                f"ICS download failed - appointment {pk} not found",
                 extra={
                     "tenant_id": tenant.id,
                     "user_id": user.id,
                     "appointment_id": pk,
                 },
             )
-
             return Response(
-                {"detail": "Agendamento não encontrado ou sem permissão."},
+                {"detail": "Agendamento não encontrado."},
                 status=drf_status.HTTP_404_NOT_FOUND,
             )
-
         except Exception as e:
             ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="error").inc()
-
             logger.error(
                 f"ICS download failed with error: {e}",
                 exc_info=True,
@@ -1865,8 +2092,66 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
                     "error": str(e),
                 },
             )
-
             return Response(
                 {"detail": "Erro interno do servidor."},
                 status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        has_permission = appointment.client_id == user.id or IsSalonOwnerOfAppointment().has_object_permission(
+            request, self, appointment
+        )
+        if not has_permission:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="forbidden").inc()
+            logger.warning(
+                "ICS download forbidden",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "appointment_id": appointment.id,
+                },
+            )
+            return Response(
+                {"detail": "Você não tem permissão para acessar este agendamento."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            ics_content = ICSGenerator.generate_ics(appointment)
+            filename = ICSGenerator.get_filename(appointment)
+        except Exception as e:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="error").inc()
+            logger.error(
+                f"ICS generation failed with error: {e}",
+                exc_info=True,
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "appointment_id": appointment.id,
+                    "error": str(e),
+                },
+            )
+            return Response(
+                {"detail": "Erro interno do servidor."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        response = HttpResponse(
+            ics_content.encode("utf-8"), content_type="text/calendar; charset=utf-8"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+
+        ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="success").inc()
+
+        logger.info(
+            f"ICS download successful for appointment {appointment.id}",
+            extra={
+                "tenant_id": tenant.id,
+                "user_id": user.id,
+                "appointment_id": appointment.id,
+                "ics_filename": filename,
+            },
+        )
+        return response

@@ -159,6 +159,32 @@ Este documento define a estratégia de desenvolvimento em fases para o Salonix M
 - **Controle total** sobre quando ativar custos
 - **Validação do produto** antes do investimento
 
+---
+
+## 🇬🇧 Development Strategy – English Summary
+
+**Goal**: outline the phased roadmap for the Salonix MVP, balancing speed of delivery with cost control.
+
+**Current status**
+- Backend MVP ~95% ready: multi-tenant infrastructure, JWT auth, Redis cache, scheduling core, analytics/reports, white-label branding, notification scaffolding, >240 automated tests.
+- Remaining 5%: bulk appointments, customer metrics/reactivation, series management.
+- Real SMS/WhatsApp will only be enabled in the production stage.
+
+**Phases**
+1. **Backend MVP** – finish backlog (bulk appointments, customer metrics/reactivation, appointment series). Dev environment with simulated comms; acceptance = endpoints live + tests green.
+2. **Frontend Web (FEW)** – UI for all backend features, responsive dashboard, white-label, integration tests.
+3. **Mobile (MOB)** – React Native apps for admin/client, push notifications (mocked at first).
+4. **Staging/UAT** – deploy to isolated environment, integration & load tests, deployment docs, CI/CD.
+5. **Production + real comms** – go-live, Twilio SMS + Meta WhatsApp, monitoring/alerts, backup/DR.
+
+**Cost control**
+- Phases 1–4 simulate notifications (zero external cost).
+- Phase 5 turns on real comms; projected costs: SMS €0.045/message, WhatsApp €0.0384/conversation, infra ~€50–100/month.
+
+**Benefits**
+- *Technical*: linear development, deterministic testing, safe deployment, easier debugging.
+- *Business*: fast time-to-market, real feedback before spending on comms, controlled spend, validated product before investment.
+
 ### **✅ Operacionais**
 - **Configuração simples** em dev/staging
 - **Menos variáveis** durante desenvolvimento

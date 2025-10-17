@@ -1,5 +1,7 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
+from .models import TenantStaffMember
+
 
 class IsSalonOwnerOfAppointment(BasePermission):
     """
@@ -15,14 +17,24 @@ class IsSalonOwnerOfAppointment(BasePermission):
         )
         salon_user_from_service = getattr(getattr(obj, "service", None), "user", None)
 
-        return (
-            request.user
-            and request.user.is_authenticated
-            and (
-                request.user == salon_user_from_professional
-                or request.user == salon_user_from_service
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        if (
+            getattr(user, "tenant_id", None) is not None
+            and getattr(obj, "tenant_id", None) == user.tenant_id
+            and user.has_staff_role(
+                TenantStaffMember.Role.OWNER,
+                TenantStaffMember.Role.MANAGER,
             )
-        )
+        ):
+            return True
+
+        return user == salon_user_from_professional or user == salon_user_from_service
 
 
 class IsSelf(BasePermission):

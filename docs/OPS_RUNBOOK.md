@@ -82,3 +82,39 @@ Este documento orienta a equipe de suporte/operations no uso do backend Ops do S
 - Integrar alertas automáticos a partir de falhas críticas (ex.: webhook Stripe, detectores de segurança).
 - Expor painel Ops no frontend, consumindo estes endpoints.
 - Conectar métricas ao sistema de observabilidade central (Grafana/Prometheus).
+
+---
+
+## 🇬🇧 OPS Console Runbook – English Summary
+
+**Purpose**: guide the support/operations team when using the Salonix Ops backend.
+
+**Access & Auth**
+- Bootstrap Ops staff with `make ops-bootstrap EMAIL=... ROLE=ops_support|ops_admin`.
+- Main endpoints: `POST /api/ops/auth/login/`, `POST /api/ops/auth/refresh/` (JWT scopes `ops_admin` / `ops_support`).
+
+**Metrics (OPS-BE-03)**
+- `GET /api/ops/metrics/overview/` shows active tenants, trials expiring soon, alert counts, estimated MRR per plan, 7-day notification series.
+
+**Alerts**
+- List with `GET /api/ops/alerts/` (filters for resolved/category/severity).
+- Resolve via `POST /api/ops/alerts/{id}/resolve/`; audit trail captured automatically.
+
+**Support services**
+- Resend notification: `POST /api/ops/support/resend-notification/` (only failed/pending logs). Updates metrics `ops_notifications_resend_total` and audit logs.
+- Clear lockouts (admins only): `POST /api/ops/support/clear-lockout/` with optional note; sets `resolved_at`, re-enables user and records audit entry + metric `ops_lockouts_cleared_total`.
+
+**Audit Log**
+- Model `OpsSupportAuditLog` stores actor/action/payload/result. Browse via Django Admin.
+
+**Operational checklist**
+1. Run migrations.
+2. Ensure Ops staff exists.
+3. Monitor metrics via `/api/ops/metrics/overview/` + Prometheus.
+4. Review open alerts daily.
+5. Use the provided endpoints so every manual action is auto-audited.
+
+**Next steps**
+- Automate alert ingestion (Stripe webhooks, security detectors).
+- Provide Ops frontend dashboards.
+- Hook Prometheus metrics into Grafana or central monitoring.

@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
+from django.utils import timezone
 from django.urls import reverse
 from django.db import models
 from django.forms import TextInput, Select
-from .models import CustomUser, Tenant, UserFeatureFlags
 from typing import Any, cast
+
+from .models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember
 
 
 @admin.register(Tenant)
@@ -252,3 +254,93 @@ class UserFeatureFlagsAdmin(admin.ModelAdmin):
             {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
         ),
     )
+
+
+class TenantStaffMemberAdmin(admin.ModelAdmin):
+    """
+    Admin para gestão de membros de staff do tenant.
+    """
+
+    list_display = [
+        "user",
+        "tenant",
+        "role",
+        "status",
+        "invited_by",
+        "invited_at",
+        "activated_at",
+    ]
+    list_filter = ["tenant", "role", "status"]
+    search_fields = [
+        "user__username",
+        "user__email",
+        "tenant__name",
+    ]
+    autocomplete_fields = ["tenant", "user", "invited_by"]
+    readonly_fields = [
+        "invite_token",
+        "invite_token_expires_at",
+        "invited_at",
+        "activated_at",
+        "deactivated_at",
+        "created_at",
+        "updated_at",
+    ]
+    fieldsets = (
+        (
+            "Identificação",
+            {
+                "fields": (
+                    "tenant",
+                    "user",
+                    "role",
+                    "status",
+                )
+            },
+        ),
+        (
+            "Convite",
+            {
+                "fields": (
+                    "invited_by",
+                    "invite_token",
+                    "invite_token_expires_at",
+                    "invited_at",
+                    "activated_at",
+                    "deactivated_at",
+                ),
+            },
+        ),
+        (
+            "Metadados",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+    actions = ["marcar_ativos", "desativar"]
+
+    @admin.action(description="Marcar selecionados como ativos")
+    def marcar_ativos(self, request, queryset):
+        updated = queryset.exclude(
+            role=TenantStaffMember.Role.OWNER
+        ).update(
+            status=TenantStaffMember.Status.ACTIVE,
+            deactivated_at=None,
+            updated_at=timezone.now(),
+        )
+        self.message_user(request, f"{updated} membro(s) marcado(s) como ativo(s).")
+
+    @admin.action(description="Desativar selecionados")
+    def desativar(self, request, queryset):
+        updated = queryset.exclude(
+            role=TenantStaffMember.Role.OWNER
+        ).update(
+            status=TenantStaffMember.Status.DISABLED,
+            deactivated_at=timezone.now(),
+        )
+        self.message_user(request, f"{updated} membro(s) desativado(s).")

@@ -34,6 +34,11 @@ Esta pasta contém toda a documentação técnica e operacional do backend Salon
 - Implementação: [`IMPLEMENTACOES_BACKEND.md#multi-tenancy`](./IMPLEMENTACOES_BACKEND.md#1-infraestrutura-base)
 - Arquitetura: [`ARQUITETURA_SISTEMA.md#multi-tenancy-first`](./ARQUITETURA_SISTEMA.md#multi-tenancy-first)
 
+### **👥 Staff / Equipe**
+- Visão técnica: [`IMPLEMENTACOES_BACKEND.md#gestão-de-staff-por-tenant-be-282`](./IMPLEMENTACOES_BACKEND.md#gestão-de-staff-por-tenant-be-282)
+- Alinhamento de negócio (PT/EN): [`BE_BUSINESS_BRIEF.md`](./BE_BUSINESS_BRIEF.md#1-resumo-do-modelo-de-negócio)
+- Operação/Admin: [`TUTORIAL_DJANGO_ADMIN.md#gestão-de-staff-convites-e-profissionais`](./TUTORIAL_DJANGO_ADMIN.md#gestão-de-staff-convites-e-profissionais)
+
 ### **🎨 White-label**
 - Tutorial: [`TUTORIAL_DJANGO_ADMIN.md#white-label`](./TUTORIAL_DJANGO_ADMIN.md#configurando-white-label)
 - Implementação: [`IMPLEMENTACOES_BACKEND.md#white-label`](./IMPLEMENTACOES_BACKEND.md#2-white-label-e-branding)
@@ -127,3 +132,13 @@ python manage.py check
 
 *Documentação mantida pela equipe Salonix*  
 *Última atualização: 11 Setembro 2025*
+
+---
+
+## 🇬🇧 Documentation Overview (English Summary)
+
+- **Strategy & Status**: `ESTRATEGIA_DESENVOLVIMENTO.md`, `MVP_STATUS_ATUAL.md`, `BE_BUSINESS_BRIEF.md`.
+- **Architecture & Implementation**: `ARQUITETURA_SISTEMA.md`, `IMPLEMENTACOES_BACKEND.md` (includes English highlights).
+- **Operations & Admin**: `ADMIN_DJANGO.md`, `TUTORIAL_DJANGO_ADMIN.md`, `OPS_RUNBOOK.md` (each contains bilingual guidance).
+- **Rules & Validation**: `BE_RULES.md`, `VALIDATION_SYSTEM.md`, `PYRIGHT_TYPING_CLEANUP.md`.
+- **How to start**: run `python manage.py runserver 0.0.0.0:8000`, execute `python -m pytest`, manage admin with `python manage.py setup_admin`.

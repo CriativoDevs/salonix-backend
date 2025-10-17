@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from typing import Any, cast
 
-from users.models import CustomUser, Tenant
+from users.models import CustomUser, Tenant, TenantStaffMember
 from django.conf import settings as dj_settings
 
 
@@ -102,6 +102,14 @@ class Professional(models.Model):
     user = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, related_name="professionals"
     )
+    staff_member = models.ForeignKey(
+        TenantStaffMember,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="professionals",
+        help_text="Staff associado a este profissional (quando aplicável).",
+    )
     name = models.CharField(max_length=100)
     bio = models.TextField(blank=True)
     is_active = models.BooleanField(default=cast(Any, True))
@@ -111,6 +119,7 @@ class Professional(models.Model):
             models.Index(fields=["tenant"]),
             models.Index(fields=["tenant", "user"]),
             models.Index(fields=["tenant", "is_active"]),
+            models.Index(fields=["tenant", "staff_member"]),
         ]
 
     def __str__(self):

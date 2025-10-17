@@ -158,6 +158,34 @@ A maioria são melhorias avançadas:
 **Pronto:**
 - Autenticação + multi-tenant + agendamentos + relatórios + branding + admin + métricas.
 
+---
+
+## 🇬🇧 Salonix MVP Status – English Summary
+
+**Overview**  
+Backend covers the core multi-tenant scheduling platform (appointments, reports, branding, observability). Remaining MVP work (~20%) focuses on real communications (SMS/WhatsApp), phone validation and stricter plan enforcement.
+
+**Delivered (19 tasks)**
+- Infrastructure: Django/DRF architecture, JWT auth, tenant isolation, feature flags, Redis cache, environment config, custom admin.
+- Scheduling: services/professionals/slots/appointments, status updates, validation rules, multi-tenant filters, recurring series with bulk edit/cancel.
+- Reporting: endpoints + CSV export, cache invalidation, throttling, Prometheus metrics, plan-based access.
+- White-label: `/api/tenant/meta`, logo upload, color palette, feature gating.
+- Notifications: event hooks, Prometheus metrics, structured logs (drivers for real channels pending).
+- Calendar: .ics downloads compatible with major calendar providers.
+- Quality: error handling, validation, structured logging, 270+ tests green.
+
+**Remaining MVP items**
+- BE-128 Twilio SMS (real delivery), BE-129 WhatsApp (Meta), BE-130 Portuguese number validation.
+- Plan enforcement / theme preferences persistence (paywall ties).
+
+**Stats**
+- Progress bars show ~80% backend completion; communications real channel still at 25%.
+- 270+ automated tests across 17 files / 48 classes.
+
+**Next steps**
+- Implement real comms, billing/paywall enforcement, theme persistence.
+- Post-MVP backlog: analytics optimisations, audit log, i18n, advanced notifications dashboard, etc.
+
 **Em aberto para cumprir promessa comercial:**
 - SMS/WhatsApp reais, validação telefones PT, paywall/flags efetivamente refletindo planos, preferências persistidas.
 

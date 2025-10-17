@@ -5,7 +5,8 @@ from django.urls import path
 from django.db.models import Count, Q
 from django.utils.html import format_html
 from django.urls import reverse
-from users.models import Tenant, CustomUser
+from users.models import Tenant, CustomUser, TenantStaffMember
+from users.admin import TenantAdmin, CustomUserAdmin, UserFeatureFlagsAdmin, TenantStaffMemberAdmin
 from core.models import Appointment, Service, Professional
 from notifications.models import Notification, NotificationLog
 from payments.models import Subscription
@@ -255,6 +256,7 @@ from users.models import UserFeatureFlags
 admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)
 admin_site.register(UserFeatureFlags, UserFeatureFlagsAdmin)
+admin_site.register(TenantStaffMember, TenantStaffMemberAdmin)
 
 from core.models import (
     Service,
