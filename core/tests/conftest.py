@@ -30,6 +30,21 @@ def setup_default_tenant(db):
     def professional_save_with_tenant(self, *args, **kwargs):
         if self.tenant_id is None:
             self.tenant = tenant
+
+        current_tenant = self.tenant or tenant
+
+        if self.staff_member_id is None and self.user_id:
+            staff = TenantStaffMember.objects.filter(
+                tenant=current_tenant, user_id=self.user_id
+            ).first()
+            if not staff:
+                staff = TenantStaffMember.objects.create(
+                    tenant=current_tenant,
+                    user=self.user,
+                    role=TenantStaffMember.Role.MANAGER,
+                    status=TenantStaffMember.Status.ACTIVE,
+                )
+            self.staff_member = staff
         return original_professional_save(self, *args, **kwargs)
 
     def slot_save_with_tenant(self, *args, **kwargs):

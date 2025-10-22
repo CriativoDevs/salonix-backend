@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.db.models import Count
 from django.utils import timezone
@@ -15,6 +16,7 @@ from core.email_utils import (
     send_appointment_confirmation_email,
     send_appointment_cancellation_email,
 )
+from users.models import TenantStaffMember
 
 
 @admin.register(Service)
@@ -41,20 +43,45 @@ class ServiceAdmin(admin.ModelAdmin):
     tenant_name.admin_order_field = "tenant__name"
 
 
+class ProfessionalAdminForm(forms.ModelForm):
+    class Meta:
+        model = Professional
+        fields = ("staff_member", "name", "bio", "is_active")
+
+
 @admin.register(Professional)
 class ProfessionalAdmin(admin.ModelAdmin):
     """Admin para profissionais com filtro por tenant."""
 
-    list_display = ("name", "tenant_name", "user", "is_active")
+    form = ProfessionalAdminForm
+    list_display = ("name", "tenant_name", "user", "staff_member", "is_active")
     list_filter = ("tenant", "is_active")
     search_fields = ("name", "user__username", "tenant__name")
+    readonly_fields = ("tenant", "user")
 
     fieldsets = (
         (
             "Informações Básicas",
-            {"fields": ("tenant", "user", "name", "bio", "is_active")},
+            {"fields": ("staff_member", "name", "bio", "is_active", "tenant", "user")},
         ),
     )
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "staff_member":
+            qs = TenantStaffMember.objects.filter(
+                status=TenantStaffMember.Status.ACTIVE
+            ).select_related("user", "tenant")
+            tenant = getattr(request.user, "tenant", None)
+            if tenant and not request.user.is_superuser:
+                qs = qs.filter(tenant=tenant)
+            kwargs["queryset"] = qs
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if obj.staff_member:
+            obj.user = obj.staff_member.user
+            obj.tenant = obj.staff_member.tenant
+        super().save_model(request, obj, form, change)
 
     def tenant_name(self, obj):
         """Exibe nome do tenant com link."""

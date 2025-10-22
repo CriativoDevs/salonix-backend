@@ -24,12 +24,14 @@ class TenantIsolatedMixin:
         ):
             return queryset
 
-        # Para usuários normais, filtrar por tenant
-        if hasattr(self.request, "tenant") and self.request.tenant:
-            if hasattr(queryset.model, "tenant"):
-                return queryset.filter(tenant=self.request.tenant)
+        # Determinar tenant a partir do request ou do usuário autenticado
+        tenant = getattr(self.request, "tenant", None)
+        if tenant is None and hasattr(self.request, "user"):
+            tenant = getattr(self.request.user, "tenant", None)
 
-        # Se não tem tenant, retornar queryset vazio
+        if tenant and hasattr(queryset.model, "tenant"):
+            return queryset.filter(tenant=tenant)
+
         return queryset.none()
 
     def perform_create(self, serializer):
@@ -37,6 +39,9 @@ class TenantIsolatedMixin:
         Automaticamente define o tenant ao criar objetos.
         """
         tenant = getattr(self.request, "tenant", None)
+        if tenant is None and hasattr(self.request, "user"):
+            tenant = getattr(self.request.user, "tenant", None)
+
         if tenant and hasattr(serializer.Meta.model, "tenant"):
             serializer.save(tenant=tenant)
         else:
@@ -61,6 +66,9 @@ class TenantValidationMixin:
 
         # Validar tenant
         tenant = getattr(self.request, "tenant", None)
+        if tenant is None and hasattr(self.request, "user"):
+            tenant = getattr(self.request.user, "tenant", None)
+
         if tenant and hasattr(obj, "tenant"):
             if obj.tenant_id != tenant.id:
                 raise PermissionDenied(

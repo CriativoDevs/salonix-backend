@@ -95,6 +95,25 @@ get_with_backoff_csv() {
 main() {
   log "Base URL: $BASE_URL"
 
+  log "GET /api/users/staff/"
+  req GET "$BASE_URL/api/users/staff/" 200
+  staff_count=$(FILE="$curl_body_file" python3 - <<'PY'
+import json, os
+from pathlib import Path
+payload = Path(os.environ["FILE"]).read_text() or "[]"
+data = json.loads(payload)
+print(len(data))
+PY
+)
+  if [[ -z "$staff_count" ]]; then
+    fail "Não foi possível determinar a quantidade de membros de equipe."
+  fi
+  if (( staff_count < 2 )); then
+    echo "--- Corpo da resposta staff ---"; cat "$curl_body_file"
+    fail "Esperava pelo menos 2 membros de equipe, obtive $staff_count."
+  fi
+  ok "staff list OK (count=$staff_count, X-Request-ID: $(cat "$curl_headers_file.rid"))"
+
   # Date range (portável)
   if date -v-7d +%F >/dev/null 2>&1; then START=$(date -v-7d +%F); else START=$(date -d '-7 days' +%F); fi
   END=$(date +%F)

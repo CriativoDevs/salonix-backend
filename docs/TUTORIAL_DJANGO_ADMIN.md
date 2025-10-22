@@ -131,7 +131,7 @@ Permissões Específicas:
    Status: Invited (gera token) ou Active (para fixtures/seeds)
    ```
 4. Após salvar, copie o campo **Invite token** (ou use o botão de reenviar convite quando integrado ao serviço de email).
-5. Quando o colaborador aceitar o convite (endpoint `/api/users/staff/accept/`), o status muda para **Active** e um `Professional` é criado/vinculado automaticamente ao staff (visível na aba **Core → Professionals**).
+5. Quando o colaborador aceitar o convite (endpoint `/api/users/staff/accept/`), o status muda para **Active** e um `Professional` é criado/vinculado automaticamente ao staff (visível na aba **Core → Professionals**). Profissionais criados manualmente no admin também devem ser associados a um staff ativo.
 6. Para revogar acesso, defina **Status = Disabled** — o profissional ligado fica inativo mas permanece no histórico.
 
 ### 🇬🇧 **Admin Flow (English)**
@@ -145,10 +145,10 @@ Permissões Específicas:
    Status: Invited (issues a token) or Active (for seeds/internal bootstrap)
    ```
 4. After saving, copy the **Invite token** (or use the “resend invite” action once email integration is configured).
-5. When the collaborator follows the invite (POST `/api/users/staff/accept/`), the status flips to **Active** and a matching `Professional` record is created/linked automatically (check **Core → Professionals**).
+5. When the collaborator follows the invite (POST `/api/users/staff/accept/`), the status flips to **Active** and a matching `Professional` record is created/linked automatically (check **Core → Professionals**). When creating professionals manually, always select an active staff member.
 6. To revoke access, set **Status = Disabled** — linked professionals become inactive while keeping appointment history intact.
 
-> 💡 **Dica/Tip**: caso esteja migrando dados antigos, associe os profissionais existentes ao novo campo `staff_member` diretamente no admin ou via script antes de desativar o caminho legado.
+> 💡 **Dica/Tip**: caso esteja migrando dados antigos, execute a migração `core/0019_attach_professionals_to_staff` (ou associe via admin) para garantir que todos os profissionais tenham `staff_member` definido.
 
 ## 🎨 **Configurando White-label**
 

@@ -92,6 +92,7 @@ class TestStaffPermissions(TestCase):
         self.other_professional = Professional.objects.create(
             name="Pro 2",
             user=self.manager,
+            staff_member=self.manager_staff,
             tenant=self.tenant,
         )
 

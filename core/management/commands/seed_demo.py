@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from core.models import Professional, Service, ScheduleSlot, Appointment, SalonCustomer
-from users.models import UserFeatureFlags, Tenant
+from users.models import UserFeatureFlags, Tenant, TenantStaffMember
 
 
 User = get_user_model()
@@ -97,6 +97,54 @@ class Command(BaseCommand):
                     client.save(update_fields=["password"])
             created_counts["user_client_created"] = int(client_created)
 
+            owner_staff, owner_staff_created = TenantStaffMember.objects.get_or_create(
+                tenant=default_tenant,
+                user=admin,
+                defaults={
+                    "role": TenantStaffMember.Role.OWNER,
+                    "status": TenantStaffMember.Status.ACTIVE,
+                    "activated_at": timezone.now(),
+                },
+            )
+            if not owner_staff_created and owner_staff.role != TenantStaffMember.Role.OWNER:
+                owner_staff.role = TenantStaffMember.Role.OWNER
+                owner_staff.status = TenantStaffMember.Status.ACTIVE
+                owner_staff.activated_at = owner_staff.activated_at or timezone.now()
+                owner_staff.save(
+                    update_fields=["role", "status", "activated_at", "updated_at"]
+                )
+            created_counts["staff_owner_created"] = int(owner_staff_created)
+
+            pro_staff, pro_staff_created = TenantStaffMember.objects.get_or_create(
+                tenant=default_tenant,
+                user=pro,
+                defaults={
+                    "role": TenantStaffMember.Role.MANAGER,
+                    "status": TenantStaffMember.Status.ACTIVE,
+                    "invited_by": admin,
+                    "invited_at": timezone.now(),
+                    "activated_at": timezone.now(),
+                },
+            )
+            if not pro_staff_created and pro_staff.role != TenantStaffMember.Role.MANAGER:
+                pro_staff.role = TenantStaffMember.Role.MANAGER
+                pro_staff.status = TenantStaffMember.Status.ACTIVE
+                pro_staff.activated_at = pro_staff.activated_at or timezone.now()
+                pro_staff.save(
+                    update_fields=["role", "status", "activated_at", "updated_at"]
+                )
+            created_counts["staff_manager_created"] = int(pro_staff_created)
+
+            # Garantir que pro_smoke (manager) tenha Professional associado se for colaborador
+            # Isso é necessário para o novo fluxo unificado
+            if pro_staff.role == TenantStaffMember.Role.COLLABORATOR:
+                pro_professional = pro_staff.ensure_professional()
+                if pro_professional:
+                    # Atualizar dados do professional para ser consistente
+                    pro_professional.name = "Pablo"
+                    pro_professional.bio = "Barbeiro"
+                    pro_professional.save(update_fields=["name", "bio"])
+
             customer_defaults = {
                 "name": "Cliente Demo",
                 "phone_number": "+351912345678",
@@ -124,18 +172,100 @@ class Command(BaseCommand):
                 ff.reports_enabled = True
                 ff.save(update_fields=["is_pro", "reports_enabled"])
 
-            # --- Profissionais do salão do pro_smoke ---
-            prof1, p1_new = Professional.objects.get_or_create(
-                user=pro,
-                name="Alice",
-                defaults={"is_active": True, "tenant": default_tenant},
+            def ensure_collaborator_staff(
+                username: str,
+                email: str,
+                first_name: str,
+                last_name: str,
+                role: str = TenantStaffMember.Role.COLLABORATOR,
+            ) -> tuple[TenantStaffMember, bool]:
+                user_defaults = {
+                    "email": email,
+                    "tenant": default_tenant,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                }
+                user_obj, user_created = User.objects.get_or_create(
+                    username=username, defaults=user_defaults
+                )
+                if user_created:
+                    user_obj.set_unusable_password()
+                    user_obj.save()
+                else:
+                    needs_update = False
+                    for field, value in user_defaults.items():
+                        if getattr(user_obj, field) != value and value:
+                            setattr(user_obj, field, value)
+                            needs_update = True
+                    if needs_update:
+                        user_obj.save(
+                            update_fields=["email", "first_name", "last_name", "tenant"]
+                        )
+
+                staff_defaults = {
+                    "role": role,
+                    "status": TenantStaffMember.Status.ACTIVE,
+                    "invited_by": admin,
+                    "invited_at": timezone.now(),
+                    "activated_at": timezone.now(),
+                }
+                staff_obj, staff_created = TenantStaffMember.objects.get_or_create(
+                    tenant=default_tenant,
+                    user=user_obj,
+                    defaults=staff_defaults,
+                )
+                if not staff_created:
+                    updated_fields = []
+                    if staff_obj.role != role:
+                        staff_obj.role = role
+                        updated_fields.append("role")
+                    if staff_obj.status != TenantStaffMember.Status.ACTIVE:
+                        staff_obj.status = TenantStaffMember.Status.ACTIVE
+                        updated_fields.append("status")
+                    if staff_obj.activated_at is None:
+                        staff_obj.activated_at = timezone.now()
+                        updated_fields.append("activated_at")
+                    if updated_fields:
+                        staff_obj.save(update_fields=updated_fields + ["updated_at"])
+                return staff_obj, staff_created
+
+            alice_staff, alice_staff_created = ensure_collaborator_staff(
+                "staff_alice",
+                "alice@demo.local",
+                first_name="Alice",
+                last_name="Demo",
             )
-            prof2, p2_new = Professional.objects.get_or_create(
-                user=pro,
-                name="Bruno",
-                defaults={"is_active": True, "tenant": default_tenant},
+            bruno_staff, bruno_staff_created = ensure_collaborator_staff(
+                "staff_bruno",
+                "bruno@demo.local",
+                first_name="Bruno",
+                last_name="Demo",
             )
-            created_counts["professionals_created"] = int(p1_new) + int(p2_new)
+            created_counts["staff_collaborators_created"] = int(
+                alice_staff_created
+            ) + int(bruno_staff_created)
+
+            # Garantir que todos os staff colaboradores tenham Professional usando ensure_professional
+            alice_professional = alice_staff.ensure_professional()
+            if alice_professional:
+                # Atualizar dados se necessário
+                if alice_professional.name != "Alice" or alice_professional.bio != "Especialista em cortes e coloração.":
+                    alice_professional.name = "Alice"
+                    alice_professional.bio = "Especialista em cortes e coloração."
+                    alice_professional.save(update_fields=["name", "bio"])
+
+            bruno_professional = bruno_staff.ensure_professional()
+            if bruno_professional:
+                # Atualizar dados se necessário
+                if bruno_professional.name != "Bruno" or bruno_professional.bio != "Barbeiro especialista em fade.":
+                    bruno_professional.name = "Bruno"
+                    bruno_professional.bio = "Barbeiro especialista em fade."
+                    bruno_professional.save(update_fields=["name", "bio"])
+
+            # Contar professionals criados/atualizados
+            prof1_exists = Professional.objects.filter(staff_member=alice_staff).exists()
+            prof2_exists = Professional.objects.filter(staff_member=bruno_staff).exists()
+            created_counts["professionals_created"] = int(not prof1_exists) + int(not prof2_exists)
 
             # --- Serviços do salão do pro_smoke ---
             svc1, s1_new = Service.objects.get_or_create(
@@ -167,6 +297,11 @@ class Command(BaseCommand):
             )
             created_counts["services_created"] = int(s1_new) + int(s2_new) + int(s3_new)
 
+            # Buscar professionals para criar slots
+            alice_professional = Professional.objects.filter(staff_member=alice_staff).first()
+            bruno_professional = Professional.objects.filter(staff_member=bruno_staff).first()
+            professionals = [p for p in [alice_professional, bruno_professional] if p is not None]
+
             # --- Slots próximos 3 dias (9h–17h, de hora em hora) ---
             tz_now = timezone.now()
             base_day = tz_now.replace(minute=0, second=0, microsecond=0)
@@ -176,7 +311,7 @@ class Command(BaseCommand):
             for d in range(0, 3):
                 day = (base_day + timedelta(days=d)).date()
                 for hour in working_hours:
-                    for prof in (prof1, prof2):
+                    for prof in professionals:
                         start = timezone.make_aware(
                             timezone.datetime(
                                 year=day.year, month=day.month, day=day.day, hour=hour
@@ -197,10 +332,16 @@ class Command(BaseCommand):
             created_counts["slots_created"] = slots_created
 
             # --- Alguns agendamentos (scheduled, cancelled, completed) ---
+            # Buscar professionals pelos staff members
+            alice_professional = Professional.objects.filter(staff_member=alice_staff).first()
+            bruno_professional = Professional.objects.filter(staff_member=bruno_staff).first()
+            
+            professionals = [p for p in [alice_professional, bruno_professional] if p]
+            
             # Seleciona 3 slots disponíveis e reserva para o cliente
             free_slots = (
                 ScheduleSlot.objects.filter(
-                    professional__in=[prof1, prof2], is_available=True
+                    professional__in=professionals, is_available=True
                 )
                 .order_by("start_time")
                 .distinct()[:6]
