@@ -47,7 +47,7 @@ class ProfessionalSerializer(serializers.ModelSerializer):
     staff_member = serializers.PrimaryKeyRelatedField(
         queryset=TenantStaffMember.objects.all(),
         required=False,
-        allow_null=True,
+        allow_null=False,
     )
 
     class Meta:
@@ -72,9 +72,41 @@ class ProfessionalSerializer(serializers.ModelSerializer):
         """Validação completa do profissional."""
         data = validate_professional_data(data)
         request = self.context.get("request")
-        tenant = getattr(request.user, "tenant", None) if request else None
+        user = getattr(request, "user", None) if request else None
+        tenant = getattr(request, "tenant", None) if request else None
         staff_member = data.get("staff_member")
+
+        if staff_member is None and self.instance is None:
+            if user and user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
+                staff_member = getattr(user, "staff_member", None)
+                if not staff_member:
+                    raise serializers.ValidationError(
+                        {"staff_member": "Colaborador não possui staff associado."}
+                    )
+                data["staff_member"] = staff_member
+            else:
+                raise serializers.ValidationError(
+                    {"staff_member": "Selecione um membro de equipe responsável."}
+                )
+
+        if self.instance is not None:
+            if staff_member is None:
+                staff_member = self.instance.staff_member
+                if staff_member is None:
+                    raise serializers.ValidationError(
+                        {
+                            "staff_member": (
+                                "Associe este profissional a um membro da equipe antes de continuar."
+                            )
+                        }
+                    )
+                data["staff_member"] = staff_member
+
         if staff_member:
+            if tenant is None and self.instance is not None:
+                tenant = self.instance.tenant
+            if tenant is None and user and hasattr(user, "tenant"):
+                tenant = getattr(user, "tenant", None)
             if tenant and staff_member.tenant_id != tenant.id:
                 raise serializers.ValidationError(
                     {"staff_member": "Membro não pertence ao tenant informado."}
@@ -83,6 +115,10 @@ class ProfessionalSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"staff_member": "Membro de equipe está inativo."}
                 )
+        elif self.instance is None:
+            raise serializers.ValidationError(
+                {"staff_member": "Selecione um membro de equipe responsável."}
+            )
         return data
 
 

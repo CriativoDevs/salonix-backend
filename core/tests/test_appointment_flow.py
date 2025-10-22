@@ -4,6 +4,7 @@ import pytest
 from rest_framework.test import APIClient
 from core.models import Service, Professional, ScheduleSlot, Appointment
 from typing import cast
+from users.models import CustomUser, TenantStaffMember
 
 
 @pytest.mark.django_db
@@ -30,10 +31,24 @@ def test_create_professional(user_fixture):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 
+    collaborator_user = CustomUser.objects.create_user(
+        username="collab_professional",
+        email="collab_professional@example.com",
+        password="testpass123",
+        tenant=user_fixture.tenant,
+    )
+    collaborator_staff = TenantStaffMember.objects.create(
+        tenant=user_fixture.tenant,
+        user=collaborator_user,
+        role=TenantStaffMember.Role.COLLABORATOR,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
     payload = {
         "name": "Lucas Silva",
         "bio": "Especialista em cortes modernos",
         "is_active": True,
+        "staff_member": collaborator_staff.id,
     }
 
     response = client.post("/api/professionals/", data=payload, format="json")
@@ -45,6 +60,8 @@ def test_create_professional(user_fixture):
     assert professional_created is not None
     professional_created = cast(Professional, professional_created)
     assert professional_created.name == "Lucas Silva"
+    assert professional_created.staff_member == collaborator_staff
+    assert professional_created.user == collaborator_user
 
 
 @pytest.mark.django_db
@@ -52,9 +69,27 @@ def test_create_slot(user_fixture):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 
+    collaborator_user = CustomUser.objects.create_user(
+        username="collab_slot",
+        email="collab_slot@example.com",
+        password="testpass123",
+        tenant=user_fixture.tenant,
+    )
+    collaborator_staff = TenantStaffMember.objects.create(
+        tenant=user_fixture.tenant,
+        user=collaborator_user,
+        role=TenantStaffMember.Role.COLLABORATOR,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
     # Cria um profissional
     professional = Professional.objects.create(
-        user=user_fixture, name="Lucas Silva", bio="Barbeiro top", is_active=True
+        user=collaborator_user,
+        staff_member=collaborator_staff,
+        name="Lucas Silva",
+        bio="Barbeiro top",
+        is_active=True,
+        tenant=user_fixture.tenant,
     )
 
     # Define horários válidos
@@ -93,8 +128,25 @@ def test_create_appointment(user_fixture):
     )
 
     # Cria profissional
+    collaborator_user = CustomUser.objects.create_user(
+        username="collab_appointment",
+        email="collab_appointment@example.com",
+        password="testpass123",
+        tenant=user_fixture.tenant,
+    )
+    collaborator_staff = TenantStaffMember.objects.create(
+        tenant=user_fixture.tenant,
+        user=collaborator_user,
+        role=TenantStaffMember.Role.COLLABORATOR,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
     professional = Professional.objects.create(
-        user=user_fixture, name="Lucas", bio="Top", is_active=True
+        user=collaborator_user,
+        staff_member=collaborator_staff,
+        tenant=user_fixture.tenant,
+        name="Lucas",
+        bio="Top",
+        is_active=True,
     )
 
     # Cria slot
@@ -145,8 +197,25 @@ def test_appointment_with_unavailable_slot(user_fixture):
     )
 
     # Cria profissional
+    collaborator_user = CustomUser.objects.create_user(
+        username="collab_unavailable",
+        email="collab_unavailable@example.com",
+        password="testpass123",
+        tenant=user_fixture.tenant,
+    )
+    collaborator_staff = TenantStaffMember.objects.create(
+        tenant=user_fixture.tenant,
+        user=collaborator_user,
+        role=TenantStaffMember.Role.COLLABORATOR,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
     professional = Professional.objects.create(
-        user=user_fixture, name="Lucas", bio="Top", is_active=True
+        user=collaborator_user,
+        staff_member=collaborator_staff,
+        tenant=user_fixture.tenant,
+        name="Lucas",
+        bio="Top",
+        is_active=True,
     )
 
     # Cria slot indisponível
@@ -183,7 +252,12 @@ def test_appointment_unauthenticated(user_fixture):
         user=user_fixture, name="Barba", duration_minutes=30, price_eur="15.00"
     )
     professional = Professional.objects.create(
-        user=user_fixture, name="João", bio="Top", is_active=True
+        user=user_fixture,
+        staff_member=user_fixture.staff_member,
+        tenant=user_fixture.tenant,
+        name="João",
+        bio="Top",
+        is_active=True,
     )
 
     tz = pytz.timezone("Europe/Lisbon")

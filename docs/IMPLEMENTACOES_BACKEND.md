@@ -150,6 +150,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Desativar staff aplica soft-disable e desativa profissionais associados; reativar staff marca profissionais como ativos novamente.
 - ✅ Django Admin exibe staff com tokens, status, ações rápidas e link direto para o profissional associado.
 - ✅ Owners não recebem flag `is_superuser`; apenas contas Ops (sem tenant) podem ser superusers, garantindo isolamento multi-tenant mesmo em seeds/demo.
+- ✅ Fluxo legado removido: `ProfessionalSerializer` exige `staff_member`, `ProfessionalViewSet` garante vínculo obrigatório e o Django Admin agora cria profissionais a partir de um staff ativo. Migração `core/0019_attach_professionals_to_staff` reconcilia registros antigos.
 
 #### **Tenant Staff Management (BE-282) – English Summary**
 **Status**: ✅ Shipped  

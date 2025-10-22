@@ -1206,34 +1206,24 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         return qs.filter(user=user)
 
     def perform_create(self, serializer):
-        tenant = getattr(self.request, "tenant", None) or getattr(
-            self.request.user, "tenant", None
-        )
-        if tenant is None:
-            slug = (
-                self.request.headers.get("X-Tenant-Slug")
-                or self.request.query_params.get("tenant")
-            )
-            if slug:
-                try:
-                    tenant = Tenant.objects.get(slug=slug, is_active=True)
-                except Tenant.DoesNotExist:
-                    tenant = None
-        if tenant is None and not self.request.user.is_superuser:
-            from rest_framework.exceptions import ValidationError
-
-            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
-
         staff_member = serializer.validated_data.get("staff_member")
         user = self.request.user
+
+        if staff_member is None:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                {"staff_member": ["Selecione um membro de equipe responsável."]}
+            )
 
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             requester_staff = getattr(user, "staff_member", None)
             if not requester_staff:
                 raise PermissionDenied("Colaborador não possui staff associado.")
-            if staff_member and staff_member.id != requester_staff.id:
-                raise PermissionDenied("Colaborador não pode criar profissional para outro membro.")
-            staff_member = requester_staff
+            if staff_member.id != requester_staff.id:
+                raise PermissionDenied(
+                    "Colaborador não pode criar profissional para outro membro."
+                )
         elif not (
             user.is_superuser
             or user.has_staff_role(
@@ -1242,10 +1232,17 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         ):
             raise PermissionDenied("Apenas owner ou manager podem criar profissionais.")
 
-        target_user = staff_member.user if staff_member else user
+        tenant = staff_member.tenant
+        current_tenant = getattr(self.request, "tenant", None)
+        if (
+            not user.is_superuser
+            and current_tenant is not None
+            and tenant.id != current_tenant.id
+        ):
+            raise PermissionDenied("Staff informado não pertence ao tenant atual.")
 
         serializer.save(
-            user=target_user,
+            user=staff_member.user,
             tenant=tenant,
             staff_member=staff_member,
         )
@@ -1268,7 +1265,9 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
         self._ensure_update_allowed(instance)
-        staff_member = serializer.validated_data.get("staff_member", instance.staff_member)
+        staff_member = serializer.validated_data.get(
+            "staff_member", instance.staff_member
+        )
         user = self.request.user
 
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
@@ -1278,8 +1277,18 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         elif staff_member and staff_member.tenant_id != instance.tenant_id:
             raise PermissionDenied("Staff informado não pertence ao tenant.")
 
-        target_user = staff_member.user if staff_member else instance.user
-        serializer.save(staff_member=staff_member, user=target_user)
+        if staff_member is None:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(
+                {"staff_member": ["Profissional deve estar associado a um staff."]}
+            )
+
+        serializer.save(
+            staff_member=staff_member,
+            user=staff_member.user,
+            tenant=staff_member.tenant,
+        )
 
     def perform_destroy(self, instance):
         self._ensure_update_allowed(instance)
