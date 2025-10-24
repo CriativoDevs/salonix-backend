@@ -297,6 +297,48 @@ class MeProfileView(APIView):
         serializer = UserSelfSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        description="Atualiza preferência de tema do usuário",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "theme_preference": {
+                        "type": "string",
+                        "enum": ["light", "dark", "system"],
+                        "description": "Preferência de tema do usuário"
+                    }
+                },
+                "required": ["theme_preference"]
+            }
+        },
+        responses={200: UserSelfSerializer}
+    )
+    def patch(self, request):
+        user = request.user
+        theme_preference = request.data.get('theme_preference')
+        
+        if not theme_preference:
+            return Response(
+                {"detail": "theme_preference é obrigatório"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validar se o valor é válido
+        from .models import CustomUser
+        valid_choices = [choice[0] for choice in CustomUser.ThemePreference.choices]
+        if theme_preference not in valid_choices:
+            return Response(
+                {"detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user.theme_preference = theme_preference
+        user.save(update_fields=['theme_preference'])
+        
+        serializer = UserSelfSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class TenantStaffView(APIView):
     permission_classes = [IsAuthenticated]

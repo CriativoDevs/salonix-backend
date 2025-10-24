@@ -578,6 +578,36 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ⏳ Planejado (10%):       2 funcionalidades
 ```
 
+## 🎨 **Persistência de Tema (Claro/Escuro)**
+
+**Implementação**: Setembro 2025  
+**Tarefa**: `BE-326: Implementar persistência de tema (claro/escuro) #267`
+
+### Funcionalidades
+
+- ✅ **Campo `theme_preference`** no modelo `CustomUser` com opções: `light`, `dark`, `system`
+- ✅ **Valor padrão** `system` para novos usuários
+- ✅ **Endpoint PATCH** `/api/users/me/profile/` para atualização de tema
+- ✅ **Serializers atualizados** para expor preferência de tema em APIs
+- ✅ **Validação robusta** com mensagens de erro claras
+- ✅ **Testes unitários** completos (4 cenários de teste)
+
+### Arquivos Modificados
+
+- `users/models.py` – Adicionado `ThemePreference` e campo `theme_preference`
+- `users/serializers.py` – Atualizado `UserSelfSerializer` e `EmailTokenObtainPairSerializer`
+- `users/views.py` – Adicionado método `PATCH` na `MeProfileView`
+- `users/migrations/0016_add_theme_preference.py` – Migração para o novo campo
+- `users/tests/test_auth.py` – Testes para funcionalidade de tema
+
+### Características
+
+- ✅ **Integração com login** – Tema retornado no token de autenticação
+- ✅ **Validação de entrada** – Apenas valores válidos aceitos (`light`, `dark`, `system`)
+- ✅ **Mensagens de erro** em português para melhor UX
+- ✅ **Documentação OpenAPI** com exemplos e esquemas
+- ✅ **Testes abrangentes** cobrindo casos de sucesso e erro
+
 ## 🚀 **Próximas Implementações**
 
 ### **📊 Métricas de Clientes (BE-154)**
