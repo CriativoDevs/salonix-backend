@@ -222,6 +222,11 @@ class CustomUser(AbstractUser):
         OPS_ADMIN = "ops_admin", "Ops Admin"
         OPS_SUPPORT = "ops_support", "Ops Support"
 
+    class ThemePreference(models.TextChoices):
+        LIGHT = "light", "Light"
+        DARK = "dark", "Dark"
+        SYSTEM = "system", "System"
+
     tenant = models.ForeignKey(
         Tenant,
         on_delete=models.CASCADE,
@@ -237,6 +242,12 @@ class CustomUser(AbstractUser):
         blank=True,
         null=True,
         help_text="Role de staff do console Ops (ops_admin ou ops_support)",
+    )
+    theme_preference = models.CharField(
+        max_length=10,
+        choices=ThemePreference.choices,
+        default=ThemePreference.SYSTEM,
+        help_text="Preferência de tema do usuário (light/dark/system)",
     )
     objects: Any = CustomUserManager()
 

@@ -482,6 +482,7 @@ class UserSelfSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    theme_preference = serializers.CharField(read_only=True)
 
     def to_representation(self, instance):
         return {
@@ -490,6 +491,7 @@ class UserSelfSerializer(serializers.Serializer):
             "email": instance.email or "",
             "first_name": instance.first_name or "",
             "last_name": instance.last_name or "",
+            "theme_preference": instance.theme_preference,
         }
 
 
@@ -547,6 +549,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "email": user.email,
                 "first_name": user.first_name or "",
                 "last_name": user.last_name or "",
+                "theme_preference": user.theme_preference,
             },
         }
 

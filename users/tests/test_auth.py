@@ -207,3 +207,56 @@ class TestAuthEndpoints:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["username"] == "profileuser"
         assert response.data["email"] == "profile@example.com"
+        assert "theme_preference" in response.data
+        assert response.data["theme_preference"] == "system"  # default value
+
+    def test_update_theme_preference_success(self):
+        user = User.objects.create_user(
+            username="themeuser",
+            email="theme@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=user)
+
+        # Test updating to light theme
+        response = self.client.patch(self.me_profile_url, {"theme_preference": "light"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["theme_preference"] == "light"
+
+        # Test updating to dark theme
+        response = self.client.patch(self.me_profile_url, {"theme_preference": "dark"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["theme_preference"] == "dark"
+
+        # Test updating to system theme
+        response = self.client.patch(self.me_profile_url, {"theme_preference": "system"})
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["theme_preference"] == "system"
+
+    def test_update_theme_preference_invalid_value(self):
+        user = User.objects.create_user(
+            username="invalidthemeuser",
+            email="invalidtheme@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(self.me_profile_url, {"theme_preference": "invalid"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "theme_preference deve ser um dos valores" in response.data["detail"]
+
+    def test_update_theme_preference_missing_field(self):
+        user = User.objects.create_user(
+            username="missingthemeuser",
+            email="missingtheme@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(self.me_profile_url, {})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "theme_preference é obrigatório" in response.data["detail"]
+
+    def test_update_theme_preference_requires_authentication(self):
+        response = self.client.patch(self.me_profile_url, {"theme_preference": "light"})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
