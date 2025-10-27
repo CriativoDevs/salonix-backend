@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone as dt_timezone
+from decimal import Decimal
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -14,11 +15,20 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 import stripe
 
 from . import stripe_utils
-from .models import Subscription, PaymentCustomer
+from .models import Subscription, PaymentCustomer, CreditPayment
+from .services import StripePaymentService, CreditPurchaseService, SubscriptionService, BillingService
 from .serializers import (
     CheckoutSessionRequestSerializer,
     CheckoutSessionResponseSerializer,
     PortalSessionResponseSerializer,
+    CreditPurchaseRequestSerializer,
+    CreditPurchaseResponseSerializer,
+    AvailableCreditPackagesResponseSerializer,
+    AvailablePlansSerializer,
+    CurrentSubscriptionSerializer,
+    PaymentHistorySerializer,
+    BillingOverviewSerializer,
+    SubscriptionActionSerializer,
 )
 
 
@@ -321,5 +331,276 @@ class StripeWebhookView(APIView):
             logger.exception("Stripe webhook processing failed", exc_info=exc)
             return HttpResponse(status=200)
 
-        return HttpResponse(status=200)
+
+class AvailableCreditPackagesView(APIView):
+    """Lista os pacotes de créditos disponíveis para compra."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: AvailableCreditPackagesResponseSerializer}
+    )
+    def get(self, request):
+        """Retorna os pacotes de créditos disponíveis."""
+        packages = CreditPurchaseService.get_available_credit_packages()
+        return Response({"packages": packages}, status=200)
+
+
+class CreateCreditPaymentIntentView(APIView):
+    """Cria um PaymentIntent para compra de créditos."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=CreditPurchaseRequestSerializer,
+        responses={200: CreditPurchaseResponseSerializer}
+    )
+    def post(self, request):
+        """
+        Cria um PaymentIntent para compra de créditos.
+        O valor em EUR será convertido para o price_id correspondente.
+        """
+        serializer = CreditPurchaseRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        amount_eur = serializer.validated_data['amount_eur']
+        
+        # Mapear valor para price_id
+        amount_to_price_id = {
+            Decimal('5.00'): settings.STRIPE_PRICE_CREDITS_5_ID,
+            Decimal('10.00'): settings.STRIPE_PRICE_CREDITS_10_ID,
+            Decimal('25.00'): settings.STRIPE_PRICE_CREDITS_25_ID,
+            Decimal('50.00'): settings.STRIPE_PRICE_CREDITS_50_ID,
+            Decimal('100.00'): settings.STRIPE_PRICE_CREDITS_100_ID,
+        }
+        
+        price_id = amount_to_price_id.get(amount_eur)
+        if not price_id:
+            return Response(
+                {"detail": f"Valor não suportado: {amount_eur}. Valores disponíveis: 5, 10, 25, 50, 100"},
+                status=400
+            )
+        
+        try:
+            result = CreditPurchaseService.create_payment_intent(
+                user=request.user,
+                tenant=request.user.tenant,
+                price_id=price_id
+            )
+            
+            return Response({
+                "client_secret": result["client_secret"],
+                "payment_intent_id": result["payment_intent_id"],
+                "amount_eur": result["amount"]
+            }, status=200)
+            
+        except Exception as e:
+            logger.error(f"Error creating credit payment intent: {str(e)}")
+            return Response({"detail": str(e)}, status=400)
+
+
+class AvailablePlansView(APIView):
+    """View para listar planos disponíveis."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: AvailablePlansSerializer(many=True)}
+    )
+    def get(self, request):
+        """Retorna lista de planos disponíveis com informações de upgrade."""
+        try:
+            current_subscription = SubscriptionService.get_current_subscription(request.user)
+            current_plan = current_subscription['plan_code'] if current_subscription else None
+            
+            plans = SubscriptionService.get_available_plans(current_plan)
+            
+            return Response(plans, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao buscar planos: {str(e)}"},
+                status=500
+            )
+
+
+class CurrentSubscriptionView(APIView):
+    """View para obter informações da assinatura atual."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: CurrentSubscriptionSerializer}
+    )
+    def get(self, request):
+        """Retorna informações da assinatura atual do usuário."""
+        try:
+            subscription = SubscriptionService.get_current_subscription(request.user)
+            
+            if not subscription:
+                return Response(
+                    {"detail": "Nenhuma assinatura ativa encontrada"},
+                    status=404
+                )
+            
+            return Response(subscription, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao buscar assinatura: {str(e)}"},
+                status=500
+            )
+
+
+class SubscriptionActionView(APIView):
+    """View para ações de assinatura (cancelar, reativar)."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=SubscriptionActionSerializer,
+        responses={200: {"type": "object", "properties": {"success": {"type": "boolean"}, "message": {"type": "string"}}}}
+    )
+    def post(self, request):
+        """Executa ações na assinatura (cancelar ou reativar)."""
+        serializer = SubscriptionActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        action = serializer.validated_data['action']
+        cancel_at_period_end = serializer.validated_data.get('cancel_at_period_end', True)
+        
+        try:
+            if action == 'cancel':
+                success = SubscriptionService.cancel_subscription(
+                    request.user, 
+                    cancel_at_period_end=cancel_at_period_end
+                )
+                message = "Assinatura cancelada com sucesso" if success else "Erro ao cancelar assinatura"
+                
+            elif action == 'reactivate':
+                success = SubscriptionService.reactivate_subscription(request.user)
+                message = "Assinatura reativada com sucesso" if success else "Erro ao reativar assinatura"
+                
+            else:
+                return Response(
+                    {"detail": "Ação inválida"},
+                    status=400
+                )
+            
+            return Response({
+                "success": success,
+                "message": message
+            }, status=200 if success else 400)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao executar ação: {str(e)}"},
+                status=500
+            )
+
+
+class PaymentHistoryView(APIView):
+    """View para histórico de pagamentos."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: PaymentHistorySerializer}
+    )
+    def get(self, request):
+        """Retorna histórico de pagamentos do usuário."""
+        try:
+            limit = int(request.query_params.get('limit', 50))
+            limit = min(limit, 100)  # Máximo de 100 registros
+            
+            history = BillingService.get_payment_history(request.user, limit=limit)
+            
+            return Response(history, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao buscar histórico: {str(e)}"},
+                status=500
+            )
+
+
+class BillingOverviewView(APIView):
+    """View para visão geral do billing."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: BillingOverviewSerializer}
+    )
+    def get(self, request):
+        """Retorna visão geral completa do billing do usuário."""
+        try:
+            overview = BillingService.get_billing_overview(request.user)
+            
+            return Response(overview, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao buscar visão geral: {str(e)}"},
+                status=500
+            )
+
+
+class ImprovedCheckoutSessionView(APIView):
+    """View melhorada para criar checkout sessions."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=CheckoutSessionRequestSerializer,
+        responses={200: CheckoutSessionResponseSerializer}
+    )
+    def post(self, request):
+        """Cria uma sessão de checkout usando o novo SubscriptionService."""
+        serializer = CheckoutSessionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        plan = serializer.validated_data.get('plan', 'basic')
+        
+        # URLs de sucesso e cancelamento
+        base_url = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')
+        success_url = f"{base_url}/billing/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{base_url}/billing/cancel"
+        
+        try:
+            result = SubscriptionService.create_checkout_session(
+                user=request.user,
+                plan=plan,
+                success_url=success_url,
+                cancel_url=cancel_url
+            )
+            
+            return Response(result, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao criar checkout session: {str(e)}"},
+                status=500
+            )
+
+
+class ImprovedPortalSessionView(APIView):
+    """View melhorada para criar portal sessions."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: PortalSessionResponseSerializer}
+    )
+    def post(self, request):
+        """Cria uma sessão do portal de billing usando o novo SubscriptionService."""
+        base_url = getattr(settings, 'FRONTEND_BASE_URL', 'http://localhost:3000').rstrip('/')
+        return_url = f"{base_url}/billing"
+        
+        try:
+            result = SubscriptionService.create_portal_session(
+                user=request.user,
+                return_url=return_url
+            )
+            
+            return Response(result, status=200)
+            
+        except Exception as e:
+            return Response(
+                {"detail": f"Erro ao criar portal session: {str(e)}"},
+                status=500
+            )
+
+
 logger = logging.getLogger(__name__)

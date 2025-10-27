@@ -14,7 +14,8 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import NotFound
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
-from .models import UserFeatureFlags, Tenant, TenantStaffMember
+from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
+from .services import CreditService
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -29,6 +30,10 @@ from .serializers import (
     StaffInviteSerializer,
     StaffAcceptInviteSerializer,
     StaffUpdateSerializer,
+    CommLedgerSerializer,
+    CreditBalanceSerializer,
+    ConsumeCreditsSerializer,
+    PurchaseCreditsSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -608,3 +613,134 @@ class PasswordResetConfirmView(APIView):
         user.save(update_fields=["password"])
         USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="success").inc()
         return Response({"status": "password_updated"}, status=status.HTTP_200_OK)
+
+
+class CreditBalanceView(APIView):
+    """Visualiza saldo e estatísticas de créditos de comunicação."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Obtém saldo atual e estatísticas de créditos de comunicação",
+        responses={200: CreditBalanceSerializer}
+    )
+    def get(self, request):
+        tenant = request.user.tenant
+        credit_service = CreditService(tenant)
+        
+        balance = credit_service.get_credit_balance()
+        stats = credit_service.get_credit_stats()
+        
+        data = {
+            'current_balance': balance,
+            'can_purchase_extra': tenant.can_purchase_extra_credits(),
+            'has_auto_renewal': tenant.has_auto_credit_renewal(),
+            **stats
+        }
+        
+        serializer = CreditBalanceSerializer(data)
+        return Response(serializer.data)
+
+
+class CreditHistoryView(APIView):
+    """Lista histórico de transações de créditos."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Lista histórico de transações de créditos de comunicação",
+        responses={200: CommLedgerSerializer(many=True)}
+    )
+    def get(self, request):
+        tenant = request.user.tenant
+        credit_service = CreditService(tenant)
+        
+        history = credit_service.get_credit_history()
+        serializer = CommLedgerSerializer(history, many=True)
+        return Response(serializer.data)
+
+
+class ConsumeCreditsView(APIView):
+    """Consome créditos de comunicação."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Consome créditos de comunicação",
+        request=ConsumeCreditsSerializer,
+        responses={
+            200: OpenApiResponse(description="Créditos consumidos com sucesso"),
+            400: OpenApiResponse(description="Saldo insuficiente ou dados inválidos")
+        }
+    )
+    def post(self, request):
+        serializer = ConsumeCreditsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        tenant = request.user.tenant
+        credit_service = CreditService(tenant)
+        
+        amount = serializer.validated_data['amount']
+        description = serializer.validated_data.get('description', 'Consumo de crédito')
+        reference_id = serializer.validated_data.get('reference_id')
+        
+        try:
+            transaction = credit_service.consume_credits(
+                amount=amount,
+                description=description,
+                reference_id=reference_id,
+                created_by=request.user
+            )
+            return Response({
+                'status': 'success',
+                'transaction_id': transaction.id,
+                'new_balance': credit_service.get_credit_balance()
+            })
+        except ValueError as e:
+            return Response(
+                {'detail': str(e)}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class PurchaseCreditsView(APIView):
+    """Compra créditos de comunicação."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Compra créditos de comunicação",
+        request=PurchaseCreditsSerializer,
+        responses={
+            200: OpenApiResponse(description="Créditos adicionados com sucesso"),
+            400: OpenApiResponse(description="Dados inválidos"),
+            403: OpenApiResponse(description="Compra de créditos não permitida")
+        }
+    )
+    def post(self, request):
+        tenant = request.user.tenant
+        
+        if not tenant.can_purchase_extra_credits():
+            return Response(
+                {'detail': 'Compra de créditos extras não permitida para este plano'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = PurchaseCreditsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        credit_service = CreditService(tenant)
+        
+        amount = serializer.validated_data['amount']
+        description = f"Compra de {amount}€ em créditos"
+        reference_id = serializer.validated_data.get('reference_id')
+        
+        transaction = credit_service.add_credits(
+            amount=amount,
+            transaction_type='purchase',
+            description=description,
+            reference_id=reference_id,
+            created_by=request.user
+        )
+        
+        return Response({
+            'status': 'success',
+            'transaction_id': transaction.id,
+            'new_balance': credit_service.get_credit_balance()
+        })

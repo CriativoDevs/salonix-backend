@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from django.urls import reverse
@@ -11,12 +12,18 @@ from users.models import CustomUser
 
 
 @pytest.mark.django_db
+@patch('ops.views.NotificationService')
 def test_resend_notification_success(
+    mock_notification_service,
     api_client,
     ops_user_factory,
     ops_authenticate,
     tenant_with_owner_factory,
 ):
+    # Mock the notification service to return success
+    mock_service_instance = mock_notification_service.return_value
+    mock_service_instance.send_notification.return_value = {"sms": True}  # Retornar dict com canal
+    
     support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com")
     tenant, owner = tenant_with_owner_factory("Salon Notify")
     owner.phone_number = "+351999888777"

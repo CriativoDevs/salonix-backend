@@ -13,6 +13,10 @@ from .views import (
     TenantStaffAcceptInviteView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
+    CreditBalanceView,
+    CreditHistoryView,
+    ConsumeCreditsView,
+    PurchaseCreditsView,
 )
 
 urlpatterns = [
@@ -31,4 +35,9 @@ urlpatterns = [
         PasswordResetConfirmView.as_view(),
         name="password_reset_confirm",
     ),
+    # Credit management endpoints
+    path("credits/balance/", CreditBalanceView.as_view(), name="credit_balance"),
+    path("credits/history/", CreditHistoryView.as_view(), name="credit_history"),
+    path("credits/consume/", ConsumeCreditsView.as_view(), name="consume_credits"),
+    path("credits/purchase/", PurchaseCreditsView.as_view(), name="purchase_credits"),
 ]

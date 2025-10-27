@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from core.models import Professional, Service, ScheduleSlot, Appointment, SalonCustomer
-from users.models import UserFeatureFlags, Tenant, TenantStaffMember
+from users.models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
 
 
 User = get_user_model()
@@ -40,6 +40,13 @@ class Command(BaseCommand):
                     "pwa_client_enabled": True,
                     "push_web_enabled": True,
                     "push_mobile_enabled": True,
+                    # Novos campos de comunicação
+                    "comm_credit_eur": Decimal("10.00"),  # 10 EUR de crédito inicial
+                    "comm_extra_allowed": True,  # Permite compra de créditos extras
+                    "comm_auto_renew": True,  # Renovação automática (Standard+)
+                    # Domínio personalizado desabilitado por padrão
+                    "custom_domain_enabled": False,
+                    "custom_domain": "",
                 },
             )
 
@@ -51,7 +58,81 @@ class Command(BaseCommand):
                 default_tenant.pwa_client_enabled = True
                 default_tenant.push_web_enabled = True
                 default_tenant.push_mobile_enabled = True
+                # Atualizar novos campos
+                default_tenant.comm_credit_eur = Decimal("10.00")
+                default_tenant.comm_extra_allowed = True
+                default_tenant.comm_auto_renew = True
+                default_tenant.custom_domain_enabled = False
+                default_tenant.custom_domain = ""
                 default_tenant.save()
+
+            # --- Tenants adicionais para demonstrar diferentes planos ---
+            
+            # Tenant Basic - sem créditos auto-renew
+            basic_tenant, basic_created = Tenant.objects.get_or_create(
+                slug="basic-demo",
+                defaults={
+                    "name": "Basic Salon Demo",
+                    "primary_color": "#10B981",
+                    "secondary_color": "#1F2937",
+                    "plan_tier": "basic",
+                    "reports_enabled": True,  # Basic agora tem relatórios
+                    "pwa_admin_enabled": True,
+                    "pwa_client_enabled": False,
+                    "push_web_enabled": False,
+                    "push_mobile_enabled": False,
+                    "comm_credit_eur": Decimal("5.00"),  # Menos créditos iniciais
+                    "comm_extra_allowed": True,  # Pode comprar créditos extras
+                    "comm_auto_renew": False,  # Sem auto-renovação
+                    "custom_domain_enabled": False,
+                    "custom_domain": "",
+                },
+            )
+            created_counts["basic_tenant_created"] = int(basic_created)
+
+            # Tenant Pro - com domínio personalizado
+            pro_tenant, pro_created = Tenant.objects.get_or_create(
+                slug="pro-demo",
+                defaults={
+                    "name": "Pro Salon Demo",
+                    "primary_color": "#8B5CF6",
+                    "secondary_color": "#1F2937",
+                    "plan_tier": "pro",
+                    "reports_enabled": True,
+                    "pwa_admin_enabled": True,
+                    "pwa_client_enabled": True,
+                    "push_web_enabled": True,
+                    "push_mobile_enabled": True,
+                    "comm_credit_eur": Decimal("25.00"),  # Mais créditos iniciais
+                    "comm_extra_allowed": True,
+                    "comm_auto_renew": True,
+                    "custom_domain_enabled": True,  # Pro tem domínio personalizado
+                    "custom_domain": "pro-salon.example.com",
+                },
+            )
+            created_counts["pro_tenant_created"] = int(pro_created)
+
+            # Tenant sem créditos (para testar cenário de esgotamento)
+            empty_tenant, empty_created = Tenant.objects.get_or_create(
+                slug="empty-credits",
+                defaults={
+                    "name": "Empty Credits Demo",
+                    "primary_color": "#EF4444",
+                    "secondary_color": "#1F2937",
+                    "plan_tier": "standard",
+                    "reports_enabled": True,
+                    "pwa_admin_enabled": True,
+                    "pwa_client_enabled": True,
+                    "push_web_enabled": True,
+                    "push_mobile_enabled": True,
+                    "comm_credit_eur": Decimal("0.00"),  # Sem créditos
+                    "comm_extra_allowed": True,
+                    "comm_auto_renew": False,
+                    "custom_domain_enabled": False,
+                    "custom_domain": "",
+                },
+            )
+            created_counts["empty_tenant_created"] = int(empty_created)
 
             # --- Usuários ---
             admin, admin_created = User.objects.get_or_create(
@@ -403,6 +484,190 @@ class Command(BaseCommand):
                 appts_created += _book(free_slots[5], svc3, status="scheduled")
 
             created_counts["appointments_created"] = appts_created
+
+        # --- Histórico de transações de créditos (CommLedger) ---
+        comm_ledger_created = 0
+        
+        # Transações para o tenant padrão
+        if default_tenant:
+            # Crédito inicial
+            initial_credit, created = CommLedger.objects.get_or_create(
+                tenant=default_tenant,
+                transaction_type="purchase",
+                amount_eur=Decimal("10.00"),
+                description="Créditos iniciais do plano",
+                defaults={
+                    "balance_before": Decimal("0.00"),
+                    "balance_after": Decimal("10.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=30),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Compra de créditos extras
+            purchase_credit, created = CommLedger.objects.get_or_create(
+                tenant=default_tenant,
+                transaction_type="purchase",
+                amount_eur=Decimal("5.00"),
+                description="Compra de créditos extras",
+                defaults={
+                    "balance_before": Decimal("10.00"),
+                    "balance_after": Decimal("15.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=20),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Consumo por SMS
+            sms_debit, created = CommLedger.objects.get_or_create(
+                tenant=default_tenant,
+                transaction_type="consumption",
+                amount_eur=Decimal("0.50"),
+                description="Envio de SMS para cliente",
+                defaults={
+                    "balance_before": Decimal("15.00"),
+                    "balance_after": Decimal("14.50"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=15),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Consumo por WhatsApp
+            whatsapp_debit, created = CommLedger.objects.get_or_create(
+                tenant=default_tenant,
+                transaction_type="consumption",
+                amount_eur=Decimal("0.30"),
+                description="Envio de mensagem WhatsApp",
+                defaults={
+                    "balance_before": Decimal("14.50"),
+                    "balance_after": Decimal("14.20"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=10),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+        # Transações para o tenant Pro
+        if pro_tenant:
+            # Crédito inicial maior para plano Pro
+            pro_initial, created = CommLedger.objects.get_or_create(
+                tenant=pro_tenant,
+                transaction_type="purchase",
+                amount_eur=Decimal("25.00"),
+                description="Créditos iniciais do plano Pro",
+                defaults={
+                    "balance_before": Decimal("0.00"),
+                    "balance_after": Decimal("25.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=25),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Múltiplos consumos para mostrar atividade
+            consumos_pro = [
+                (Decimal("1.20"), "Campanha de marketing por SMS", 20),
+                (Decimal("0.80"), "Lembretes de agendamento", 18),
+                (Decimal("2.50"), "Notificações promocionais", 15),
+                (Decimal("0.60"), "Confirmações de agendamento", 12),
+            ]
+            
+            balance_before = Decimal("25.00")
+            for amount, desc, days_ago in consumos_pro:
+                balance_after = balance_before - amount
+                debit_entry, created = CommLedger.objects.get_or_create(
+                    tenant=pro_tenant,
+                    transaction_type="consumption",
+                    amount_eur=amount,
+                    description=desc,
+                    defaults={
+                        "balance_before": balance_before,
+                        "balance_after": balance_after,
+                        "status": "completed",
+                        "created_at": timezone.now() - timedelta(days=days_ago),
+                    }
+                )
+                if created:
+                    comm_ledger_created += 1
+                balance_before = balance_after
+
+        # Transações para o tenant Basic
+        if basic_tenant:
+            # Crédito inicial menor
+            basic_initial, created = CommLedger.objects.get_or_create(
+                tenant=basic_tenant,
+                transaction_type="purchase",
+                amount_eur=Decimal("5.00"),
+                description="Créditos iniciais do plano Basic",
+                defaults={
+                    "balance_before": Decimal("0.00"),
+                    "balance_after": Decimal("5.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=15),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Alguns consumos básicos
+            basic_sms, created = CommLedger.objects.get_or_create(
+                tenant=basic_tenant,
+                transaction_type="consumption",
+                amount_eur=Decimal("0.50"),
+                description="SMS de confirmação",
+                defaults={
+                    "balance_before": Decimal("5.00"),
+                    "balance_after": Decimal("4.50"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=10),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+        # Para o tenant sem créditos, criar histórico que mostra esgotamento
+        if empty_tenant:
+            # Crédito inicial que foi totalmente consumido
+            empty_initial, created = CommLedger.objects.get_or_create(
+                tenant=empty_tenant,
+                transaction_type="purchase",
+                amount_eur=Decimal("3.00"),
+                description="Créditos iniciais",
+                defaults={
+                    "balance_before": Decimal("0.00"),
+                    "balance_after": Decimal("3.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=10),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+            # Consumo que esgotou os créditos
+            empty_consumed, created = CommLedger.objects.get_or_create(
+                tenant=empty_tenant,
+                transaction_type="consumption",
+                amount_eur=Decimal("3.00"),
+                description="Consumo total dos créditos disponíveis",
+                defaults={
+                    "balance_before": Decimal("3.00"),
+                    "balance_after": Decimal("0.00"),
+                    "status": "completed",
+                    "created_at": timezone.now() - timedelta(days=5),
+                }
+            )
+            if created:
+                comm_ledger_created += 1
+
+        created_counts["comm_ledger_created"] = comm_ledger_created
 
         self.stdout.write(self.style.SUCCESS("Seed concluído."))
         for k, v in created_counts.items():
