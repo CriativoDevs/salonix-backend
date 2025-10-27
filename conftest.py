@@ -3,6 +3,7 @@ Configurações globais de testes para multi-tenant
 """
 
 import pytest
+from decimal import Decimal
 from unittest.mock import patch
 from users.models import CustomUser, Tenant, TenantStaffMember
 from core.models import Service, Professional, ScheduleSlot, Appointment
@@ -26,6 +27,9 @@ def setup_default_tenant(db):
         pwa_client_enabled=True,
         push_web_enabled=True,
         push_mobile_enabled=True,
+        sms_enabled=True,
+        whatsapp_enabled=True,
+        comm_credit_eur=Decimal("100.00"),  # Adicionar créditos para testes
     )
 
     # Monkey patch para definir tenant automaticamente em objetos que não têm

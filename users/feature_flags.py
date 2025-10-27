@@ -25,7 +25,7 @@ class RequiresFeatureFlag(BasePermission):
         if not hasattr(request, "user") or not request.user.is_authenticated:
             return False
 
-        if not hasattr(request.user, "tenant") or not request.user.tenant:
+        if not hasattr(request.user, "tenant") or request.user.tenant is None:
             return False
 
         tenant = request.user.tenant

@@ -7,7 +7,7 @@ from django.db import models
 from django.forms import TextInput, Select
 from typing import Any, cast
 
-from .models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember
+from .models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember, CommLedger
 
 
 @admin.register(Tenant)
@@ -47,6 +47,17 @@ class TenantAdmin(admin.ModelAdmin):
             "Branding/White-label",
             {
                 "fields": ("logo", "logo_url", "primary_color", "secondary_color"),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Créditos de Comunicação",
+            {
+                "fields": (
+                    "comm_credit_eur",
+                    "comm_extra_allowed", 
+                    "comm_auto_renew",
+                ),
                 "classes": ("collapse",),
             },
         ),
@@ -256,6 +267,7 @@ class UserFeatureFlagsAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(TenantStaffMember)
 class TenantStaffMemberAdmin(admin.ModelAdmin):
     """
     Admin para gestão de membros de staff do tenant.
@@ -344,3 +356,50 @@ class TenantStaffMemberAdmin(admin.ModelAdmin):
             deactivated_at=timezone.now(),
         )
         self.message_user(request, f"{updated} membro(s) desativado(s).")
+
+
+@admin.register(CommLedger)
+class CommLedgerAdmin(admin.ModelAdmin):
+    """
+    Admin para visualização do histórico de créditos de comunicação.
+    """
+    
+    list_display = [
+        "tenant",
+        "transaction_type", 
+        "amount_eur",
+        "balance_before",
+        "balance_after",
+        "status",
+        "created_at",
+    ]
+    list_filter = [
+        "tenant",
+        "transaction_type",
+        "status", 
+        "created_at",
+    ]
+    search_fields = ["tenant__name", "description"]
+    readonly_fields = [
+        "tenant",
+        "transaction_type",
+        "amount_eur", 
+        "balance_before",
+        "balance_after",
+        "status",
+        "description",
+        "created_at",
+        "updated_at",
+    ]
+    
+    def has_add_permission(self, request):
+        """Não permite adicionar registros manualmente."""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Não permite editar registros."""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Não permite deletar registros."""
+        return False

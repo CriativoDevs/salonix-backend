@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from users.models import Tenant
 from .models import Notification, NotificationDevice, NotificationLog
+from .credit_service import credit_service
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -317,7 +318,7 @@ class SMSDriver(NotificationDriverBase):
         message: str,
         metadata: Dict[str, Any],
     ) -> bool:
-        """Simular envio de SMS"""
+        """Enviar SMS com cobrança de créditos"""
         # Verificar se usuário tem telefone
         if not user.phone_number:
             logger.warning(
@@ -326,14 +327,38 @@ class SMSDriver(NotificationDriverBase):
             )
             return False
 
-        # FASE 1: Apenas simular e logar
+        # Verificar e cobrar créditos
+        charge_result = credit_service.charge_for_message(
+            tenant=tenant,
+            communication_type='sms',
+            description=f"SMS para {user.username} - {notification_type}",
+            user=user
+        )
+        
+        if not charge_result['success']:
+            logger.warning(
+                f"SMS não enviado - {charge_result['error']}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "error": charge_result['error'],
+                    "cost": str(charge_result.get('cost', 0)),
+                    "balance": str(charge_result.get('balance', 0))
+                },
+            )
+            return False
+
+        # FASE 1: Apenas simular e logar (com cobrança real de créditos)
         logger.info(
-            f"[SIMULADO] SMS enviado para {user.username}",
+            f"[SIMULADO] SMS enviado para {user.username} - Crédito cobrado: €{charge_result['cost']}",
             extra={
                 "tenant_id": tenant.id,
                 "user_id": user.id,
                 "phone": user.phone_number,
-                "notification_message": message,  # Renomeado para evitar conflito
+                "notification_message": message,
+                "cost_charged": str(charge_result['cost']),
+                "new_balance": str(charge_result['new_balance']),
+                "ledger_id": charge_result['ledger_entry'].id
             },
         )
         return True
@@ -351,7 +376,7 @@ class WhatsAppDriver(NotificationDriverBase):
         message: str,
         metadata: Dict[str, Any],
     ) -> bool:
-        """Simular envio de WhatsApp"""
+        """Enviar WhatsApp com cobrança de créditos"""
         # Verificar se usuário tem telefone
         if not user.phone_number:
             logger.warning(
@@ -360,14 +385,48 @@ class WhatsAppDriver(NotificationDriverBase):
             )
             return False
 
-        # FASE 1: Apenas simular e logar
+        # Determinar categoria da mensagem WhatsApp baseado no tipo de notificação
+        message_category = 'utility'  # Padrão para confirmações/lembretes
+        if 'marketing' in notification_type.lower():
+            message_category = 'marketing'
+        elif 'service' in notification_type.lower():
+            message_category = 'service'
+
+        # Verificar e cobrar créditos
+        charge_result = credit_service.charge_for_message(
+            tenant=tenant,
+            communication_type='whatsapp',
+            message_category=message_category,
+            description=f"WhatsApp para {user.username} - {notification_type} ({message_category})",
+            user=user
+        )
+        
+        if not charge_result['success']:
+            logger.warning(
+                f"WhatsApp não enviado - {charge_result['error']}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "error": charge_result['error'],
+                    "cost": str(charge_result.get('cost', 0)),
+                    "balance": str(charge_result.get('balance', 0)),
+                    "message_category": message_category
+                },
+            )
+            return False
+
+        # FASE 1: Apenas simular e logar (com cobrança real de créditos)
         logger.info(
-            f"[SIMULADO] WhatsApp enviado para {user.username}",
+            f"[SIMULADO] WhatsApp enviado para {user.username} - Crédito cobrado: €{charge_result['cost']}",
             extra={
                 "tenant_id": tenant.id,
                 "user_id": user.id,
                 "phone": user.phone_number,
-                "notification_message": f"{title}\n{message}",  # Renomeado para evitar conflito
+                "notification_message": f"{title}\n{message}",
+                "message_category": message_category,
+                "cost_charged": str(charge_result['cost']),
+                "new_balance": str(charge_result['new_balance']),
+                "ledger_id": charge_result['ledger_entry'].id
             },
         )
         return True

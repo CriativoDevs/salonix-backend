@@ -233,8 +233,8 @@ class SalonixAdminSite(AdminSite):
 # Instância personalizada do admin
 admin_site = SalonixAdminSite(name="salonix_admin")
 
-# Registrar todos os modelos no admin personalizado
-from users.admin import TenantAdmin, CustomUserAdmin, UserFeatureFlagsAdmin
+# Importações dos admins
+from users.admin import TenantAdmin, CustomUserAdmin, UserFeatureFlagsAdmin, CommLedgerAdmin
 from core.admin import (
     ServiceAdmin,
     ProfessionalAdmin,
@@ -250,13 +250,14 @@ from notifications.admin import (
     NotificationLogAdmin,
 )
 
-# Registrar modelos
-from users.models import UserFeatureFlags
+# Registros dos modelos users
+from users.models import UserFeatureFlags, CommLedger
 
 admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)
 admin_site.register(UserFeatureFlags, UserFeatureFlagsAdmin)
 admin_site.register(TenantStaffMember, TenantStaffMemberAdmin)
+admin_site.register(CommLedger, CommLedgerAdmin)
 
 from core.models import (
     Service,

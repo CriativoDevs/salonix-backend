@@ -157,8 +157,10 @@ def test_webhook_checkout_session_completed_creates_subscription(
 
     # mocka stripe.Webhook.construct_event
     from payments import views as payments_views
+    from payments import webhooks as payments_webhooks
 
     monkeypatch.setattr(payments_views, "stripe", _StripeSDK)
+    monkeypatch.setattr(payments_webhooks, "stripe", _StripeSDK)
     from payments import stripe_utils as payments_stripe_utils
 
     assert payments_stripe_utils.get_plan_code_from_price("price_pro_123") == "pro"
@@ -192,6 +194,7 @@ def test_webhook_checkout_session_completed_creates_subscription(
     # evento simulando checkout.session.completed
     payload = json.dumps(
         {
+            "id": "evt_test_123",
             "type": "checkout.session.completed",
             "data": {
                 "object": {

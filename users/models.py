@@ -113,6 +113,33 @@ class Tenant(models.Model):
         default=cast(Any, False), help_text="Habilita notificações WhatsApp"
     )
 
+    # Feature Flags - Sistema de Créditos de Comunicação
+    comm_credit_eur = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00,
+        help_text="Crédito atual de comunicações em euros"
+    )
+    comm_extra_allowed = models.BooleanField(
+        default=cast(Any, True), 
+        help_text="Permite compra de créditos avulsos de comunicação"
+    )
+    comm_auto_renew = models.BooleanField(
+        default=cast(Any, False), 
+        help_text="Renovação automática de crédito mensal (Standard+)"
+    )
+    
+    # Feature Flags - White-label e Domínio
+    custom_domain_enabled = models.BooleanField(
+        default=cast(Any, False), help_text="Habilita domínio personalizado"
+    )
+    custom_domain = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Domínio personalizado configurado"
+    )
+
     # Metadados
     is_active = models.BooleanField(default=cast(Any, True))
     created_at = models.DateTimeField(auto_now_add=True)
@@ -154,6 +181,25 @@ class Tenant(models.Model):
     def can_use_white_label(self):
         """Verifica se pode usar white-label (Pro apenas)"""
         return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
+    
+    def can_use_custom_domain(self):
+        """Verifica se o tenant pode usar domínio personalizado (Pro+)."""
+        return self.custom_domain_enabled or self.plan_tier in [
+            self.PLAN_PRO, 
+            self.PLAN_ENTERPRISE
+        ]
+    
+    def can_purchase_extra_credits(self):
+        """Verifica se o tenant pode comprar créditos avulsos."""
+        return self.comm_extra_allowed
+    
+    def has_auto_credit_renewal(self):
+        """Verifica se o tenant tem renovação automática de crédito (Standard+)."""
+        return self.comm_auto_renew or self.plan_tier in [
+            self.PLAN_STANDARD,
+            self.PLAN_PRO,
+            self.PLAN_ENTERPRISE,
+        ]
 
     def can_use_native_apps(self):
         """Verifica se pode usar apps nativos (Pro + addons)"""
@@ -553,6 +599,97 @@ class UserFeatureFlags(models.Model):
 
     def __str__(self):
         return f"FeatureFlags<{self.user_id}> (pro={self.is_pro}, status={self.pro_status})"
+
+
+class CommLedger(models.Model):
+    """
+    Modelo para registrar histórico de créditos de comunicação.
+    Registra compras, consumos e expiração de créditos.
+    """
+    
+    class TransactionType(models.TextChoices):
+        PURCHASE = "purchase", "Compra"
+        CONSUMPTION = "consumption", "Consumo"
+        EXPIRATION = "expiration", "Expiração"
+        REFUND = "refund", "Reembolso"
+        BONUS = "bonus", "Bônus"
+    
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendente"
+        COMPLETED = "completed", "Concluído"
+        FAILED = "failed", "Falhou"
+        CANCELLED = "cancelled", "Cancelado"
+    
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="comm_ledger",
+        help_text="Tenant proprietário do crédito"
+    )
+    transaction_type = models.CharField(
+        max_length=20,
+        choices=TransactionType.choices,
+        help_text="Tipo de transação"
+    )
+    amount_eur = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Valor da transação em euros"
+    )
+    balance_before = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Saldo antes da transação"
+    )
+    balance_after = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Saldo após a transação"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        help_text="Status da transação"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Descrição detalhada da transação"
+    )
+    reference_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="ID de referência externa (ex: Stripe PaymentIntent)"
+    )
+    expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Data de expiração do crédito (para compras)"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Usuário que iniciou a transação"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Credit History"
+        verbose_name_plural = "Credit History"
+        indexes = [
+            models.Index(fields=["tenant", "created_at"]),
+            models.Index(fields=["tenant", "transaction_type"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["reference_id"]),
+        ]
+        ordering = ["-created_at"]
+    
+    def __str__(self):
+        return f"{self.tenant.name} - {self.transaction_type} - €{self.amount_eur}"
 
 
 # Cria/garante flags ao criar usuário
