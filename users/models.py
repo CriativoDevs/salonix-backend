@@ -163,7 +163,7 @@ class Tenant(models.Model):
 
     # Métodos para verificação de feature flags baseados no plano
     def can_use_reports(self):
-        """Verifica se pode usar relatórios (Standard+)"""
+        """Verifica se pode usar relatórios (Standard+ com relatórios básicos, Pro+ com relatórios avançados)"""
         return self.reports_enabled or self.plan_tier in [
             self.PLAN_STANDARD,
             self.PLAN_PRO,

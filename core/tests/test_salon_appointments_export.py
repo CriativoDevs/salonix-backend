@@ -55,22 +55,32 @@ def test_export_csv_basic(user_fixture):
     reader = csv.reader(io.StringIO(content))
     rows = list(reader)
 
-    # cabeçalho + 1 linha
-    assert len(rows) == 2
-    header = rows[0]
+    # Encontra a linha do cabeçalho das colunas (após o cabeçalho TimelyOne)
+    header_row_index = None
+    for i, row in enumerate(rows):
+        if row and row[0] == "ID":  # Procura pela coluna traduzida
+            header_row_index = i
+            break
+    
+    assert header_row_index is not None, "Cabeçalho das colunas não encontrado"
+    
+    # cabeçalho + 1 linha de dados
+    data_rows = rows[header_row_index:]
+    assert len(data_rows) == 2
+    header = data_rows[0]
     assert header == [
-        "id",
-        "client_name",
-        "client_email",
-        "service_name",
-        "professional_name",
-        "slot_start_time",
-        "slot_end_time",
-        "status",
-        "notes",
-        "created_at",
+        "ID",
+        "Nome do Cliente",
+        "Email do Cliente",
+        "Serviço",
+        "Profissional",
+        "Início",
+        "Fim",
+        "Status",
+        "Observações",
+        "Criado em",
     ]
-    data_row = rows[1]
+    data_row = data_rows[1]
     # service/prof/note presentes
     assert data_row[3] == "Corte"
     assert data_row[4] == "João"
@@ -150,9 +160,20 @@ def test_export_respects_filters_and_isolation(user_fixture):
 
     content = b"".join(resp.streaming_content).decode("utf-8")
     rows = list(csv.reader(io.StringIO(content)))
-    # header + 1 (somente appt_a deve entrar)
-    assert len(rows) == 2
-    assert rows[1][0] == str(appt_a.id)
+    
+    # Encontra a linha do cabeçalho das colunas (após o cabeçalho TimelyOne)
+    header_row_index = None
+    for i, row in enumerate(rows):
+        if row and row[0] == "ID":  # Procura pela coluna traduzida
+            header_row_index = i
+            break
+    
+    assert header_row_index is not None, "Cabeçalho das colunas não encontrado"
+    
+    # cabeçalho + 1 linha de dados (somente appt_a deve entrar)
+    data_rows = rows[header_row_index:]
+    assert len(data_rows) == 2
+    assert data_rows[1][0] == str(appt_a.id)
 
     # O 'other' não deve ver nada do owner
     c_other = _auth_client(other)
@@ -161,5 +182,16 @@ def test_export_respects_filters_and_isolation(user_fixture):
     assert resp_other.status_code == 200
     content_other = b"".join(resp_other.streaming_content).decode("utf-8")
     rows_other = list(csv.reader(io.StringIO(content_other)))
-    # apenas header
-    assert len(rows_other) == 1
+    
+    # Encontra a linha do cabeçalho das colunas para o usuário 'other'
+    header_row_index_other = None
+    for i, row in enumerate(rows_other):
+        if row and row[0] == "ID":
+            header_row_index_other = i
+            break
+    
+    assert header_row_index_other is not None, "Cabeçalho das colunas não encontrado para 'other'"
+    
+    # Deve ter apenas o cabeçalho, sem dados
+    data_rows_other = rows_other[header_row_index_other:]
+    assert len(data_rows_other) == 1  # apenas header, sem dados

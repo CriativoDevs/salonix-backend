@@ -7,12 +7,19 @@ from reports.views import (
     TopServicesReportView,
     RevenueReportView,
     ExportOverviewCSVView,
+    BasicReportsView,
+    AdvancedReportsView,
 )
 from reports.views_admin import CacheInvalidateView
 
 app_name = "reports"
 
 urlpatterns = [
+    # Novos endpoints para relatórios básicos e avançados
+    path("basic/", BasicReportsView.as_view(), name="basic_reports"),
+    path("advanced/", AdvancedReportsView.as_view(), name="advanced_reports"),
+    
+    # Endpoints existentes
     path("summary/", ReportsSummaryView.as_view(), name="summary"),
     path("overview/", OverviewReportView.as_view(), name="overview"),
     path("top-services/", TopServicesReportView.as_view(), name="top_services"),

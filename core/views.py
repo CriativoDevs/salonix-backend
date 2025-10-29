@@ -50,8 +50,14 @@ from users.permissions import IsSalonOwnerOfAppointment
 from core.utils.ics import ICSGenerator
 
 import csv
+import io
 import logging
 from typing import Any, Dict, List, Optional, cast
+from reports.utils.csv_formatter import (
+    write_timely_one_header,
+    format_datetime_pt,
+    translate_column_names
+)
 
 def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
     existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
@@ -1878,97 +1884,172 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
         Exporta a lista de agendamentos do salão (respeitando os mesmos filtros
         de listagem) em CSV.
         """
-        # 1) Começa com o mesmo queryset filtrado da listagem
-        qs = self.get_queryset()
-
-        # 2) Fallback: se o parâmetro veio como data pura (YYYY-MM-DD),
-        # reforça o filtro por __date para evitar edge cases de TZ/microsegundos.
-        params = request.query_params
-        df = params.get("date_from")
-        dt = params.get("date_to")
-
-        d_from = parse_date(df) if df and len(df) == 10 else None
-        d_to = parse_date(dt) if dt and len(dt) == 10 else None
-
-        if d_from:
-            qs = qs.filter(slot__start_time__date__gte=d_from)
-        if d_to:
-            qs = qs.filter(slot__start_time__date__lte=d_to)
-
-        # 3) Materializa as linhas antes do streaming (evita DB depois do yield)
-        headers = [
-            "id",
-            "client_name",
-            "client_email",
-            "service_name",
-            "professional_name",
-            "slot_start_time",
-            "slot_end_time",
-            "status",
-            "notes",
-            "created_at",
-        ]
-
-        def row(a):
-            client_name = (
-                a.client.get_full_name()
-                or a.client.username
-                or (a.client.email or "").split("@")[0]
-            )
-            return [
-                a.id,
-                client_name,
-                a.client.email,
-                a.service.name,
-                a.professional.name,
-                a.slot.start_time.isoformat(),
-                a.slot.end_time.isoformat(),
-                a.status,
-                (a.notes or "").replace("\n", " ").strip(),
-                a.created_at.isoformat(),
-            ]
-
-        # aplica o limite de linhas (proteção)
-        # importante: não alteramos o comportamento normal — apenas
-        # truncamos quando exceder o teto e sinalizamos por header
-        limited_qs = qs[: self.MAX_EXPORT_ROWS]
-        rows = [row(appt) for appt in limited_qs]
-
-        class Echo:
-            def write(self, value):
-                return value
-
-        writer = csv.writer(Echo())
-
-        def generate():
-            yield writer.writerow(headers)
-            for r in rows:
-                yield writer.writerow(r)
-
-        ts = timezone.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"salon_appointments_{ts}.csv"
-
-        response = StreamingHttpResponse(
-            generate(), content_type="text/csv; charset=utf-8"
-        )
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-
-        # headers de segurança/cache
-        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response["Pragma"] = "no-cache"
-        response["X-Content-Type-Options"] = "nosniff"
-
-        # sinaliza truncamento quando aplicável (sem quebrar clientes)
         try:
-            total = qs.count()
-        except Exception:
-            total = None
-        if total is not None and total > len(rows):
-            response["X-Result-Truncated"] = "1"
-            response["X-Result-Total"] = str(total)
-            response["X-Result-Returned"] = str(len(rows))
+            # 1) Começa com o mesmo queryset filtrado da listagem
+            qs = self.get_queryset()
 
-        return response
+            # 2) Fallback: se o parâmetro veio como data pura (YYYY-MM-DD),
+            # reforça o filtro por __date para evitar edge cases de TZ/microsegundos.
+            params = request.query_params
+            df = params.get("date_from")
+            dt = params.get("date_to")
+
+            try:
+                d_from = parse_date(df) if df and len(df) == 10 else None
+                d_to = parse_date(dt) if dt and len(dt) == 10 else None
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid date format in export request: {e}")
+                return Response(
+                    {"error": "Formato de data inválido. Use YYYY-MM-DD."},
+                    status=drf_status.HTTP_400_BAD_REQUEST
+                )
+
+            if d_from:
+                qs = qs.filter(slot__start_time__date__gte=d_from)
+            if d_to:
+                qs = qs.filter(slot__start_time__date__lte=d_to)
+
+            # 3) Materializa as linhas antes do streaming (evita DB depois do yield)
+            # Importar utilitários de formatação
+            from reports.utils.csv_formatter import (
+                write_timely_one_header,
+                format_datetime_pt,
+                translate_column_names
+            )
+
+            column_mapping = {
+                "id": "ID",
+                "client_name": "Nome do Cliente",
+                "client_email": "Email do Cliente",
+                "service_name": "Serviço",
+                "professional_name": "Profissional",
+                "slot_start_time": "Início",
+                "slot_end_time": "Fim",
+                "status": "Status",
+                "notes": "Observações",
+                "created_at": "Criado em"
+            }
+            
+            headers = list(column_mapping.values())
+
+            def row(a):
+                try:
+                    client_name = (
+                        a.client.get_full_name()
+                        or a.client.username
+                        or (a.client.email or "").split("@")[0]
+                    )
+                    return [
+                        a.id,
+                        client_name,
+                        a.client.email or "",
+                        a.service.name if a.service else "",
+                        a.professional.name if a.professional else "",
+                        format_datetime_pt(a.slot.start_time) if a.slot else "",
+                        format_datetime_pt(a.slot.end_time) if a.slot else "",
+                        a.status or "",
+                        (a.notes or "").replace("\n", " ").strip(),
+                        format_datetime_pt(a.created_at),
+                    ]
+                except Exception as e:
+                    logger.error(f"Error processing appointment {getattr(a, 'id', 'unknown')}: {e}")
+                    # Retorna linha com dados básicos em caso de erro
+                    return [
+                        getattr(a, 'id', ''),
+                        "Erro ao processar",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        getattr(a, 'status', ''),
+                        "Erro na exportação",
+                        format_datetime_pt(getattr(a, 'created_at', timezone.now())),
+                    ]
+
+            # aplica o limite de linhas (proteção)
+            # importante: não alteramos o comportamento normal — apenas
+            # truncamos quando exceder o teto e sinalizamos por header
+            try:
+                limited_qs = qs[: self.MAX_EXPORT_ROWS]
+                rows = [row(appt) for appt in limited_qs]
+            except Exception as e:
+                logger.error(f"Error querying appointments for export: {e}")
+                return Response(
+                    {"error": "Erro ao consultar agendamentos. Tente novamente."},
+                    status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            class Echo:
+                def write(self, value):
+                    return value
+
+            writer = csv.writer(Echo())
+
+            def generate():
+                try:
+                    # Cabeçalho TimelyOne
+                    header_buffer = io.StringIO()
+                    header_writer = csv.writer(header_buffer)
+                    write_timely_one_header(
+                        header_writer,
+                        report_title="Relatório de Agendamentos",
+                        start_date=d_from,
+                        end_date=d_to
+                    )
+                    yield header_buffer.getvalue()
+                    
+                    # Cabeçalho das colunas
+                    yield writer.writerow(headers)
+                    for r in rows:
+                        yield writer.writerow(r)
+                except Exception as e:
+                    logger.error(f"Error generating CSV content: {e}")
+                    yield writer.writerow(["Erro na geração do CSV"])
+
+            ts = timezone.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"salon_appointments_{ts}.csv"
+
+            response = StreamingHttpResponse(
+                generate(), content_type="text/csv; charset=utf-8"
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            # headers de segurança/cache
+            response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response["Pragma"] = "no-cache"
+            response["X-Content-Type-Options"] = "nosniff"
+
+            # sinaliza truncamento quando aplicável (sem quebrar clientes)
+            try:
+                total = qs.count()
+            except Exception as e:
+                logger.warning(f"Could not count total appointments for export: {e}")
+                total = None
+                
+            if total is not None and total > len(rows):
+                response["X-Result-Truncated"] = "1"
+                response["X-Result-Total"] = str(total)
+                response["X-Result-Returned"] = str(len(rows))
+
+            logger.info(f"CSV export completed successfully. Rows: {len(rows)}, Total: {total}")
+            return response
+
+        except PermissionDenied:
+            logger.warning(f"Permission denied for CSV export by user {request.user.id}")
+            raise
+        except ValidationError as e:
+            logger.warning(f"Validation error in CSV export: {e}")
+            return Response(
+                {"error": "Dados inválidos para exportação."},
+                status=drf_status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in CSV export: {e}", exc_info=True)
+            return Response(
+                {"error": "Erro interno do servidor. Tente novamente mais tarde."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class MyAppointmentsListView(TenantIsolatedMixin, ListAPIView):

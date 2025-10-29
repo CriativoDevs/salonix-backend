@@ -29,6 +29,7 @@ help:
 > echo "  make openapi        - gera schema com drf-spectacular em api-schema.yaml"
 > echo "  make smoke          - roda o scripts/smoke_reports.sh"
 > echo "  make seed           - roda o management command seed_demo"
+> echo "  make seed-mass      - gera dados de teste em massa (10k+ registros)"
 > echo "  make ops-bootstrap  - cria/atualiza staff Ops (use EMAIL=...)"
 > echo "  make cache-clear    - limpa o cache do Django (cuidado!)"
 > echo "  make lint           - (opcional) ruff check ."
@@ -118,6 +119,11 @@ seed:
 reset-seed:
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) migrate
 > DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) seed_demo
+
+.PHONY: seed-mass
+seed-mass:
+> chmod +x scripts/seed_mass.sh
+> DJANGO_ENV=$(DJANGO_ENV) ./scripts/seed_mass.sh
 
 # ---- Ops Console ----
 .PHONY: ops-bootstrap
