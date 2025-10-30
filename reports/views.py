@@ -227,12 +227,38 @@ class ReportsSummaryView(APIView):
                 {"detail": "Módulo de relatórios desativado."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        # Mock inicial
+        
+        # Processar parâmetros de data
+        start, end = _date_range(request)
+        date_gte = {f"{DATE_FIELD}__gte": start}
+        date_lte = {f"{DATE_FIELD}__lte": end}
+        
+        # Filtrar appointments por período
+        appointments_qs = Appointment.objects.filter(**date_gte, **date_lte, status__in=COMPLETED_STATUSES)
+        
+        # Calcular total de appointments
+        appointments_total = appointments_qs.count()
+        
+        # Calcular receita estimada
+        if APPT_PRICE_FIELD:
+            revenue_estimated = appointments_qs.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0.0
+        else:
+            revenue_estimated = appointments_qs.aggregate(total=_price_sum())["total"] or 0.0
+        
+        # Determinar range baseado nos parâmetros
+        from_param = request.query_params.get("from")
+        to_param = request.query_params.get("to")
+        
+        if not from_param and not to_param:
+            range_label = "last_30_days"
+        else:
+            range_label = f"custom_{start.date()}_{end.date()}"
+        
         data = {
-            "range": "last_30_days",
+            "range": range_label,
             "generated_at": timezone.now(),
-            "appointments_total": 42,
-            "revenue_estimated": 1234.56,
+            "appointments_total": appointments_total,
+            "revenue_estimated": float(revenue_estimated),
         }
         return Response(data, status=status.HTTP_200_OK)
 
@@ -956,7 +982,10 @@ class ExportBasicReportsCSVView(_BaseReports):
             
             # Cabeçalhos traduzidos para série temporal
             headers = ["Data", "Receita"]
-            translated_headers = translate_column_names(headers)
+            # translate_column_names espera um dict, não uma lista
+            headers_dict = {header: header for header in headers}
+            translated_headers_dict = translate_column_names(headers_dict)
+            translated_headers = list(translated_headers_dict.values())
             writer.writerow(translated_headers)
 
             # Dados da série
