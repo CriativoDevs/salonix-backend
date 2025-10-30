@@ -110,7 +110,15 @@ def _date_range(request):
     from_str = request.query_params.get("from")
     now = timezone.now()
     end = _parse_iso_dt(to_str) or now
-    start = _parse_iso_dt(from_str) or (end - timedelta(days=30))
+    
+    # Se from não foi fornecido, usa período padrão de 30 dias
+    # Considera diferentes tamanhos de mês (28, 29, 30, 31 dias)
+    if from_str is None:
+        # Subtrai 30 dias da data final, respeitando calendário
+        start = end - timedelta(days=30)
+    else:
+        start = _parse_iso_dt(from_str)
+    
     return start, end
 
 
@@ -163,14 +171,14 @@ PARAM_FROM = OpenApiParameter(
     name="from",
     type=OpenApiTypes.DATETIME,
     location=OpenApiParameter.QUERY,
-    description="Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.",
+    description="Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão de 30 dias antes da data final.",
     required=False,
 )
 PARAM_TO = OpenApiParameter(
     name="to",
     type=OpenApiTypes.DATETIME,
     location=OpenApiParameter.QUERY,
-    description="Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.",
+    description="Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.",
     required=False,
 )
 PARAM_LIMIT = OpenApiParameter(
