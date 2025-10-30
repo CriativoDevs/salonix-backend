@@ -9,6 +9,7 @@ from reports.views import (
     ExportOverviewCSVView,
     BasicReportsView,
     AdvancedReportsView,
+    ExportBasicReportsCSVView,
 )
 from reports.views_admin import CacheInvalidateView
 
@@ -17,6 +18,7 @@ app_name = "reports"
 urlpatterns = [
     # Novos endpoints para relatórios básicos e avançados
     path("basic/", BasicReportsView.as_view(), name="basic_reports"),
+    path("basic/export/", ExportBasicReportsCSVView.as_view(), name="basic_reports_export"),
     path("advanced/", AdvancedReportsView.as_view(), name="advanced_reports"),
     
     # Endpoints existentes

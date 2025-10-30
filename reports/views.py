@@ -867,6 +867,123 @@ class BasicReportsView(APIView):
         })
 
 
+class ExportBasicReportsCSVView(_BaseReports):
+    """
+    GET /api/reports/basic/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+    Gera um CSV com relatórios básicos (summary + overview)
+    """
+    
+    permission_classes = [IsAuthenticated, RequiresBasicReports]
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    @cache_drf_response(
+        prefix="reports:basic:csv",
+        ttl=settings.REPORTS_CACHE_TTL.get("basic_csv", 300),  # 5 min default
+        vary_on_params=["from", "to"],
+        vary_on_user=True,
+        view_label="basic",
+        format_label="csv",
+    )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Exportar Relatórios Básicos (CSV)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={200: RESP_CSV_OVERVIEW, 403: OpenApiTypes.OBJECT},
+    )
+    @observe_request(endpoint="/api/reports/basic/export/")
+    def get(self, request) -> HttpResponse:
+        """Exporta relatórios básicos em CSV"""
+        
+        try:
+            start, end = _date_range(request)
+            date_gte = {f"{DATE_FIELD}__gte": start}
+            date_lte = {f"{DATE_FIELD}__lte": end}
+
+            # Buscar dados básicos (mesmo que ExportOverviewCSVView)
+            qs = Appointment.objects.filter(**date_gte, **date_lte)
+            total_count = qs.count()
+            done_qs = qs.filter(status__in=COMPLETED_STATUSES)
+            done_count = done_qs.count()
+
+            if APPT_PRICE_FIELD:
+                revenue = done_qs.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0
+            else:
+                revenue = done_qs.aggregate(total=_price_sum())["total"] or 0
+
+            avg_ticket = (revenue / done_count) if done_count else 0
+
+            # Série diária
+            series_qs = (
+                done_qs.annotate(bucket=TruncDay(DATE_FIELD))
+                .values("bucket")
+                .annotate(revenue=_price_sum())
+                .order_by("bucket")
+            )
+
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+
+            # Importar utilitários de formatação
+            from reports.utils.csv_formatter import (
+                write_timely_one_header,
+                format_currency,
+                format_date_pt,
+                translate_column_names
+            )
+
+            # Cabeçalho bonito com branding TimelyOne
+            write_timely_one_header(writer, "Relatórios Básicos", start, end)
+
+            # Bloco de resumo com nomes traduzidos
+            writer.writerow(["📈 RESUMO EXECUTIVO"])
+            writer.writerow([])
+            writer.writerow(["Agendamentos Totais", "Agendamentos Concluídos", "Receita Total", "Ticket Médio"])
+            writer.writerow([
+                int(total_count or 0),
+                int(done_count or 0),
+                format_currency(revenue),
+                format_currency(avg_ticket)
+            ])
+
+            # Espaçamento
+            writer.writerow([])
+            writer.writerow([])
+
+            # Série temporal
+            writer.writerow(["📊 RECEITA DIÁRIA"])
+            writer.writerow([])
+            
+            # Cabeçalhos traduzidos para série temporal
+            headers = ["Data", "Receita"]
+            translated_headers = translate_column_names(headers)
+            writer.writerow(translated_headers)
+
+            # Dados da série
+            for row in series_qs:
+                writer.writerow([
+                    format_date_pt(row["bucket"]),
+                    format_currency(row["revenue"] or 0)
+                ])
+
+            # Preparar resposta
+            csv_content = buffer.getvalue()
+            buffer.close()
+
+            response = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+            filename = f"relatorios_basicos_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}.csv"
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating basic reports CSV: {e}")
+            return Response(
+                {"error": "Erro ao gerar CSV dos relatórios básicos."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 @extend_schema(
     tags=["Reports"],
     summary="Relatórios Avançados - Disponível apenas para planos Pro e Enterprise",
