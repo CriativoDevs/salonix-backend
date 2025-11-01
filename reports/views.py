@@ -468,16 +468,16 @@ class RevenueReportView(_BaseReports):
         )
 
         if APPT_PRICE_FIELD:
-            base = base.annotate(revenue=Sum(APPT_PRICE_FIELD))
+            base = base.annotate(revenue=Sum(APPT_PRICE_FIELD), appointment_count=Count("id"))
         else:
-            base = base.annotate(revenue=_price_sum())
+            base = base.annotate(revenue=_price_sum(), appointment_count=Count("id"))
 
         total = base.count()
 
         # mantemos ordem crescente por período; paginamos sobre ela
         qs = base.order_by("bucket")[offset : offset + limit]
 
-        data = [{"period_start": r["bucket"], "revenue": r["revenue"] or 0} for r in qs]
+        data = [{"period_start": r["bucket"], "revenue": r["revenue"] or 0, "appointment_count": r["appointment_count"] or 0} for r in qs]
         resp = Response({"interval": interval, "series": data})
         return _set_pagination_headers(
             resp, total=total, limit=limit, offset=offset, request=request

@@ -37,6 +37,7 @@ RESP_REVENUE_JSON = {
                 "properties": {
                     "period_start": {"type": "string", "format": "date-time"},
                     "revenue": {"type": "number"},
+                    "appointment_count": {"type": "integer"},
                 },
             },
         },
