@@ -349,8 +349,8 @@ class Command(BaseCommand):
                 client_user.save()
             client_users.append(client_user)
         
-        status_choices = ['scheduled', 'confirmed', 'completed', 'cancelled']
-        status_weights = [0.3, 0.2, 0.4, 0.1]  # Mais agendamentos completados
+        status_choices = ['scheduled', 'paid', 'completed', 'cancelled']
+        status_weights = [0.25, 0.35, 0.3, 0.1]  # Mais agendamentos pagos e completados
         
         for i in range(min(count, len(available_slots))):
             slot = available_slots[i]
