@@ -234,6 +234,90 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppointmentSeriesOccurrenceCancelResponse'
           description: ''
+  /api/auth/credits/balance/:
+    get:
+      operationId: auth_credits_balance_retrieve
+      description: Obtém saldo atual e estatísticas de créditos de comunicação
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditBalance'
+          description: ''
+  /api/auth/credits/consume/:
+    post:
+      operationId: auth_credits_consume_create
+      description: Consome créditos de comunicação
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Créditos consumidos com sucesso
+        '400':
+          description: Saldo insuficiente ou dados inválidos
+  /api/auth/credits/history/:
+    get:
+      operationId: auth_credits_history_list
+      description: Lista histórico de transações de créditos de comunicação
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommLedger'
+          description: ''
+  /api/auth/credits/purchase/:
+    post:
+      operationId: auth_credits_purchase_create
+      description: Compra créditos de comunicação
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Créditos adicionados com sucesso
+        '400':
+          description: Dados inválidos
+        '403':
+          description: Compra de créditos não permitida
   /api/auth/me/features/:
     get:
       operationId: auth_me_features_retrieve
@@ -296,6 +380,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserFeatureFlagsUpdate'
           description: ''
+  /api/auth/me/profile/:
+    get:
+      operationId: auth_me_profile_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: auth_me_profile_partial_update
+      description: Atualiza preferência de tema do usuário
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                theme_preference:
+                  type: string
+                  enum:
+                  - light
+                  - dark
+                  - system
+                  description: Preferência de tema do usuário
+              required:
+              - theme_preference
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSelf'
+          description: ''
+  /api/auth/me/tenant/:
+    get:
+      operationId: auth_me_tenant_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/auth/password/reset/:
+    post:
+      operationId: auth_password_reset_create
+      description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Always ok
+  /api/auth/password/reset/confirm/:
+    post:
+      operationId: auth_password_reset_confirm_create
+      description: Confirma o reset de senha com uid+token e define nova senha.
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: password_updated
   /api/auth/register/:
     post:
       operationId: auth_register_create
@@ -323,6 +480,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserRegistration'
           description: ''
+  /api/auth/staff/:
+    get:
+      operationId: auth_staff_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: auth_staff_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: auth_staff_partial_update
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: auth_staff_destroy
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/auth/staff/accept/:
+    post:
+      operationId: auth_staff_accept_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
   /api/auth/tenant/meta/:
     get:
       operationId: auth_tenant_meta_retrieve
@@ -384,6 +589,8 @@ paths:
             schema:
               $ref: '#/components/schemas/EmailTokenObtainPairRequest'
         required: true
+      security:
+      - {}
       responses:
         '200':
           content:
@@ -644,6 +851,248 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotificationTestResponse'
           description: ''
+  /api/ops/alerts/:
+    get:
+      operationId: ops_alerts_list
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsAlert'
+          description: ''
+  /api/ops/alerts/{id}/resolve/:
+    post:
+      operationId: ops_alerts_resolve_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops alert.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsAlert'
+          description: ''
+  /api/ops/auth/login/:
+    post:
+      operationId: ops_auth_login_create
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/ops/auth/refresh/:
+    post:
+      operationId: ops_auth_refresh_create
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/ops/metrics/overview/:
+    get:
+      operationId: ops_metrics_overview_retrieve
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/ops/support/clear-lockout/:
+    post:
+      operationId: ops_support_clear_lockout_create
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/ops/support/resend-notification/:
+    post:
+      operationId: ops_support_resend_notification_create
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/ops/tenants/:
+    get:
+      operationId: ops_tenants_list
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpsTenantList'
+          description: ''
+  /api/ops/tenants/{id}/:
+    get:
+      operationId: ops_tenants_retrieve
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
+  /api/ops/tenants/{id}/block/:
+    post:
+      operationId: ops_tenants_block_create
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
+  /api/ops/tenants/{id}/plan/:
+    patch:
+      operationId: ops_tenants_plan_partial_update
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
+  /api/ops/tenants/{id}/reset-owner/:
+    post:
+      operationId: ops_tenants_reset_owner_create
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
+  /api/ops/tenants/{id}/unblock/:
+    post:
+      operationId: ops_tenants_unblock_create
+      description: Endpoints de gestão de tenants para o console Ops.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
+  /api/ops/tenants/export/:
+    get:
+      operationId: ops_tenants_export_retrieve
+      description: Endpoints de gestão de tenants para o console Ops.
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTenant'
+          description: ''
   /api/payments/stripe/billing-portal/:
     post:
       operationId: payments_stripe_billing_portal_create
@@ -664,10 +1113,7 @@ paths:
   /api/payments/stripe/create-checkout-session/:
     post:
       operationId: payments_stripe_create_checkout_session_create
-      description: |-
-        Cria uma Checkout Session para assinatura (mensal/anual).
-        Body opcional:
-          - plan: "monthly" | "yearly" (default: "monthly")
+      description: Cria uma Checkout Session apontando para o plano escolhido.
       tags:
       - payments
       requestBody:
@@ -690,40 +1136,185 @@ paths:
               schema:
                 $ref: '#/components/schemas/CheckoutSessionResponse'
           description: ''
-  /api/payments/stripe/webhook/:
+  /api/payments/stripe/credits/packages/:
+    get:
+      operationId: payments_stripe_credits_packages_retrieve
+      description: Retorna os pacotes de créditos disponíveis.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableCreditPackagesResponse'
+          description: ''
+  /api/payments/stripe/credits/purchase/:
     post:
-      operationId: payments_stripe_webhook_create
+      operationId: payments_stripe_credits_purchase_create
       description: |-
-        Webhook em /api/payments/stripe/webhook/
-        Eventos considerados:
-          - checkout.session.completed
-          - customer.subscription.created
-          - customer.subscription.updated
-          - customer.subscription.deleted
-          - invoice.payment_succeeded
-          - invoice.payment_failed
+        Cria um PaymentIntent para compra de créditos.
+        O valor em EUR será convertido para o price_id correspondente.
       tags:
       - payments
       requestBody:
         content:
           application/json:
             schema:
-              type: string
-              format: binary
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
           application/x-www-form-urlencoded:
             schema:
-              type: string
-              format: binary
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
           multipart/form-data:
             schema:
-              type: string
-              format: binary
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
+        required: true
       security:
       - jwtAuth: []
-      - {}
       responses:
         '200':
-          description: Event processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditPurchaseResponse'
+          description: ''
+  /api/payments/stripe/history/:
+    get:
+      operationId: payments_stripe_history_retrieve
+      description: Retorna histórico de pagamentos do usuário.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentHistory'
+          description: ''
+  /api/payments/stripe/overview/:
+    get:
+      operationId: payments_stripe_overview_retrieve
+      description: Retorna visão geral completa do billing do usuário.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingOverview'
+          description: ''
+  /api/payments/stripe/plans/:
+    get:
+      operationId: payments_stripe_plans_list
+      description: Retorna lista de planos disponíveis com informações de upgrade.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AvailablePlans'
+          description: ''
+  /api/payments/stripe/subscription/action/:
+    post:
+      operationId: payments_stripe_subscription_action_create
+      description: Executa ações na assinatura (cancelar ou reativar).
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SubscriptionActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SubscriptionActionRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+          description: ''
+  /api/payments/stripe/subscription/current/:
+    get:
+      operationId: payments_stripe_subscription_current_retrieve
+      description: Retorna informações da assinatura atual do usuário.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentSubscription'
+          description: ''
+  /api/payments/stripe/v2/checkout/:
+    post:
+      operationId: payments_stripe_v2_checkout_create
+      description: Cria uma sessão de checkout usando o novo SubscriptionService.
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionRequestRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+          description: ''
+  /api/payments/stripe/v2/portal/:
+    post:
+      operationId: payments_stripe_v2_portal_create
+      description: Cria uma sessão do portal de billing usando o novo SubscriptionService.
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSessionResponse'
+          description: ''
   /api/professionals/:
     get:
       operationId: professionals_list
@@ -996,6 +1587,191 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/reports/advanced/:
+    get:
+      operationId: reports_advanced_retrieve
+      description: |-
+        Endpoint para relatórios avançados.
+        Disponível apenas para planos Pro e Enterprise.
+      summary: Relatórios Avançados - Disponível apenas para planos Pro e Enterprise
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
+      - in: query
+        name: interval
+        schema:
+          type: string
+          enum:
+          - day
+          - month
+          - week
+        description: Agrupamento por período.
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Limite de itens (padrão e máx. definidos em settings.REPORTS_PAGINATION).
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Deslocamento para paginação.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  top_services:
+                    type: object
+                  revenue:
+                    type: object
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/advanced/export/:
+    get:
+      operationId: reports_advanced_export_retrieve
+      description: |-
+        GET /api/reports/advanced/export/?from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month
+
+        Gera CSV com relatórios avançados combinados:
+          - Seção Top Services (serviço, agendamentos, receita, preço médio)
+          - Seção Revenue Series (período, agendamentos, receita, ticket médio)
+      summary: Exportar Relatórios Avançados (CSV)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
+      - in: query
+        name: interval
+        schema:
+          type: string
+          enum:
+          - day
+          - month
+          - week
+        description: Agrupamento por período.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/basic/:
+    get:
+      operationId: reports_basic_retrieve
+      description: |-
+        Endpoint para relatórios básicos.
+        Disponível para todos os planos que têm acesso a relatórios.
+      summary: Relatórios Básicos - Disponível para todos os planos
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                  overview:
+                    type: object
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/reports/basic/export/:
+    get:
+      operationId: reports_basic_export_retrieve
+      description: |-
+        GET /api/reports/basic/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
+        Gera um CSV com relatórios básicos (summary + overview)
+      summary: Exportar Relatórios Básicos (CSV)
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
+      tags:
+      - Reports
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/reports/overview/:
     get:
       operationId: reports_overview_retrieve
@@ -1006,13 +1782,14 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: to
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1059,13 +1836,14 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: to
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1095,7 +1873,8 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: interval
         schema:
@@ -1120,7 +1899,7 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1148,6 +1927,8 @@ paths:
                           format: date-time
                         revenue:
                           type: number
+                        appointment_count:
+                          type: integer
                 description: 'Cabeçalhos de paginação: X-Total-Count, X-Limit, X-Offset,
                   Link'
           description: ''
@@ -1174,7 +1955,8 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: interval
         schema:
@@ -1189,7 +1971,7 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1255,7 +2037,8 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: limit
         schema:
@@ -1271,7 +2054,7 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1325,13 +2108,14 @@ paths:
         schema:
           type: string
           format: date-time
-        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa `now-30d`.
+        description: Data/hora inicial (ISO-8601, UTC). Se ausente, usa período padrão
+          de 30 dias antes da data final.
       - in: query
         name: to
         schema:
           type: string
           format: date-time
-        description: Data/hora final (ISO-8601, UTC). Se ausente, usa `now`.
+        description: Data/hora final (ISO-8601, UTC). Se ausente, usa data/hora atual.
       tags:
       - Reports
       security:
@@ -1551,6 +2335,194 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/salon/customers/:
+    get:
+      operationId: salon_customers_list
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+    post:
+      operationId: salon_customers_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+  /api/salon/customers/{id}/:
+    get:
+      operationId: salon_customers_retrieve
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salon customer.
+        required: true
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+    put:
+      operationId: salon_customers_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salon customer.
+        required: true
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+    patch:
+      operationId: salon_customers_partial_update
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salon customer.
+        required: true
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+    delete:
+      operationId: salon_customers_destroy
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salon customer.
+        required: true
+      tags:
+      - salon
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/salon/customers/{id}/invite/:
+    post:
+      operationId: salon_customers_invite_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salon customer.
+        required: true
+      tags:
+      - salon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SalonCustomerRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
           description: ''
   /api/schema/:
     get:
@@ -2003,6 +2975,90 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/users/credits/balance/:
+    get:
+      operationId: users_credits_balance_retrieve
+      description: Obtém saldo atual e estatísticas de créditos de comunicação
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditBalance'
+          description: ''
+  /api/users/credits/consume/:
+    post:
+      operationId: users_credits_consume_create
+      description: Consome créditos de comunicação
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsumeCreditsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Créditos consumidos com sucesso
+        '400':
+          description: Saldo insuficiente ou dados inválidos
+  /api/users/credits/history/:
+    get:
+      operationId: users_credits_history_list
+      description: Lista histórico de transações de créditos de comunicação
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommLedger'
+          description: ''
+  /api/users/credits/purchase/:
+    post:
+      operationId: users_credits_purchase_create
+      description: Compra créditos de comunicação
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreditsRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Créditos adicionados com sucesso
+        '400':
+          description: Dados inválidos
+        '403':
+          description: Compra de créditos não permitida
   /api/users/me/features/:
     get:
       operationId: users_me_features_retrieve
@@ -2065,6 +3121,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserFeatureFlagsUpdate'
           description: ''
+  /api/users/me/profile/:
+    get:
+      operationId: users_me_profile_retrieve
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: users_me_profile_partial_update
+      description: Atualiza preferência de tema do usuário
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                theme_preference:
+                  type: string
+                  enum:
+                  - light
+                  - dark
+                  - system
+                  description: Preferência de tema do usuário
+              required:
+              - theme_preference
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSelf'
+          description: ''
   /api/users/me/tenant/:
     get:
       operationId: users_me_tenant_retrieve
@@ -2074,11 +3169,31 @@ paths:
       - jwtAuth: []
       responses:
         '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TenantSelfService'
-          description: ''
+          description: No response body
+  /api/users/password/reset/:
+    post:
+      operationId: users_password_reset_create
+      description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Always ok
+  /api/users/password/reset/confirm/:
+    post:
+      operationId: users_password_reset_confirm_create
+      description: Confirma o reset de senha com uid+token e define nova senha.
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: password_updated
   /api/users/register/:
     post:
       operationId: users_register_create
@@ -2106,6 +3221,54 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserRegistration'
           description: ''
+  /api/users/staff/:
+    get:
+      operationId: users_staff_retrieve
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: users_staff_create
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: users_staff_partial_update
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: users_staff_destroy
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/users/staff/accept/:
+    post:
+      operationId: users_staff_accept_create
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
   /api/users/tenant/meta/:
     get:
       operationId: users_tenant_meta_retrieve
@@ -2167,6 +3330,8 @@ paths:
             schema:
               $ref: '#/components/schemas/EmailTokenObtainPairRequest'
         required: true
+      security:
+      - {}
       responses:
         '200':
           content:
@@ -2203,14 +3368,6 @@ paths:
           description: ''
 components:
   schemas:
-    ActionEnum:
-      enum:
-      - cancel_all
-      - edit_upcoming
-      type: string
-      description: |-
-        * `cancel_all` - cancel_all
-        * `edit_upcoming` - edit_upcoming
     Appointment:
       type: object
       properties:
@@ -2220,6 +3377,9 @@ components:
         client:
           type: integer
           readOnly: true
+        customer:
+          type: integer
+          nullable: true
         service:
           type: integer
         professional:
@@ -2272,6 +3432,10 @@ components:
           type: string
           format: email
           readOnly: true
+        customer:
+          allOf:
+          - $ref: '#/components/schemas/SalonCustomerMini'
+          readOnly: true
         service:
           allOf:
           - $ref: '#/components/schemas/ServiceMini'
@@ -2288,6 +3452,7 @@ components:
       - client_email
       - client_username
       - created_at
+      - customer
       - id
       - notes
       - professional
@@ -2297,6 +3462,9 @@ components:
     AppointmentRequest:
       type: object
       properties:
+        customer:
+          type: integer
+          nullable: true
         service:
           type: integer
         professional:
@@ -2401,6 +3569,14 @@ components:
       - message
       - series_id
       - success
+    AppointmentSeriesUpdateActionEnum:
+      enum:
+      - cancel_all
+      - edit_upcoming
+      type: string
+      description: |-
+        * `cancel_all` - cancel_all
+        * `edit_upcoming` - edit_upcoming
     AppointmentSeriesUpdateResponse:
       type: object
       properties:
@@ -2425,6 +3601,90 @@ components:
       - message
       - series_id
       - success
+    AvailableCreditPackagesResponse:
+      type: object
+      properties:
+        packages:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Lista de pacotes de créditos disponíveis
+      required:
+      - packages
+    AvailablePlans:
+      type: object
+      description: Serializer para planos disponíveis.
+      properties:
+        plan_code:
+          type: string
+          description: Código do plano
+        name:
+          type: string
+          description: Nome do plano
+        price_monthly:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Preço mensal em euros
+        features:
+          type: array
+          items:
+            type: string
+          description: Lista de funcionalidades do plano
+        credits_included:
+          type: integer
+          description: Créditos de comunicação inclusos
+        is_current:
+          type: boolean
+          description: Se é o plano atual do usuário
+        can_upgrade:
+          type: boolean
+          description: Se pode fazer upgrade para este plano
+      required:
+      - can_upgrade
+      - credits_included
+      - features
+      - is_current
+      - name
+      - plan_code
+      - price_monthly
+    BillingOverview:
+      type: object
+      description: Serializer para visão geral do billing.
+      properties:
+        current_subscription:
+          allOf:
+          - $ref: '#/components/schemas/CurrentSubscription'
+          nullable: true
+        available_plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailablePlans'
+        credit_balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Saldo atual de créditos
+        can_purchase_credits:
+          type: boolean
+          description: Se pode comprar créditos extras
+        has_auto_renewal:
+          type: boolean
+          description: Se tem renovação automática de créditos
+        next_billing_amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          nullable: true
+          description: Próximo valor a ser cobrado
+      required:
+      - available_plans
+      - can_purchase_credits
+      - credit_balance
+      - current_subscription
+      - has_auto_renewal
+      - next_billing_amount
     BulkAppointmentRequest:
       type: object
       description: |-
@@ -2449,6 +3709,9 @@ components:
           type: integer
         professional_id:
           type: integer
+        customer_id:
+          type: integer
+          nullable: true
         client_name:
           type: string
           minLength: 1
@@ -2524,6 +3787,16 @@ components:
           maxLength: 500
       required:
       - slot_id
+    CategoryEnum:
+      enum:
+      - notification_failure
+      - security_incident
+      - system
+      type: string
+      description: |-
+        * `notification_failure` - Notification Failure
+        * `security_incident` - Security Incident
+        * `system` - System
     ChannelEnum:
       enum:
       - in_app
@@ -2547,16 +3820,245 @@ components:
           description: |-
             Plano desejado
 
-            * `monthly` - monthly
-            * `yearly` - yearly
+            * `basic` - basic
+            * `standard` - standard
+            * `pro` - pro
+            * `enterprise` - enterprise
     CheckoutSessionResponse:
       type: object
       properties:
         checkout_url:
           type: string
           format: uri
+        session_id:
+          type: string
+          description: ID da sessão de checkout
       required:
       - checkout_url
+      - session_id
+    CommLedger:
+      type: object
+      description: Serializer para histórico de transações de crédito.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        transaction_type:
+          allOf:
+          - $ref: '#/components/schemas/TransactionTypeEnum'
+          readOnly: true
+          description: |-
+            Tipo de transação
+
+            * `purchase` - Compra
+            * `consumption` - Consumo
+            * `expiration` - Expiração
+            * `refund` - Reembolso
+            * `bonus` - Bônus
+        amount_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+          description: Valor da transação em euros
+        balance_before:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+          description: Saldo antes da transação
+        balance_after:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+          description: Saldo após a transação
+        status:
+          allOf:
+          - $ref: '#/components/schemas/CommLedgerStatusEnum'
+          readOnly: true
+          description: |-
+            Status da transação
+
+            * `pending` - Pendente
+            * `completed` - Concluído
+            * `failed` - Falhou
+            * `cancelled` - Cancelado
+        description:
+          type: string
+          readOnly: true
+          description: Descrição detalhada da transação
+        reference_id:
+          type: string
+          readOnly: true
+          nullable: true
+          description: 'ID de referência externa (ex: Stripe PaymentIntent)'
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Data de expiração do crédito (para compras)
+        created_by_username:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount_eur
+      - balance_after
+      - balance_before
+      - created_at
+      - created_by_username
+      - description
+      - expires_at
+      - id
+      - reference_id
+      - status
+      - transaction_type
+      - updated_at
+    CommLedgerStatusEnum:
+      enum:
+      - pending
+      - completed
+      - failed
+      - cancelled
+      type: string
+      description: |-
+        * `pending` - Pendente
+        * `completed` - Concluído
+        * `failed` - Falhou
+        * `cancelled` - Cancelado
+    ConsumeCreditsRequest:
+      type: object
+      description: Serializer para consumir créditos.
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Quantidade de créditos a consumir em EUR
+        description:
+          type: string
+          minLength: 1
+          description: 'Descrição da transação (ex: ''SMS para +351912345678'')'
+          maxLength: 255
+        reference_id:
+          type: string
+          description: 'ID de referência externa (ex: message_id)'
+          maxLength: 100
+      required:
+      - amount
+      - description
+    CreditBalance:
+      type: object
+      description: Serializer para saldo de créditos do tenant.
+      properties:
+        current_balance:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        total_purchased:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        total_consumed:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        total_bonus:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+        can_purchase_extra:
+          type: boolean
+          readOnly: true
+        has_auto_renewal:
+          type: boolean
+          readOnly: true
+      required:
+      - can_purchase_extra
+      - current_balance
+      - has_auto_renewal
+      - total_bonus
+      - total_consumed
+      - total_purchased
+    CreditPurchaseRequestRequest:
+      type: object
+      properties:
+        amount_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Valor em euros para compra de créditos (mínimo €5, máximo €100)
+      required:
+      - amount_eur
+    CreditPurchaseResponse:
+      type: object
+      properties:
+        client_secret:
+          type: string
+          description: Client secret do PaymentIntent
+        payment_intent_id:
+          type: string
+          description: ID do PaymentIntent
+        amount_eur:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+      required:
+      - amount_eur
+      - client_secret
+      - payment_intent_id
+    CurrentSubscription:
+      type: object
+      description: Serializer para assinatura atual.
+      properties:
+        plan_code:
+          type: string
+          description: Código do plano atual
+        plan_name:
+          type: string
+          description: Nome do plano atual
+        status:
+          type: string
+          description: Status da assinatura
+        current_period_end:
+          type: string
+          format: date-time
+          description: Fim do período atual
+        cancel_at_period_end:
+          type: boolean
+          description: Se será cancelada no fim do período
+        next_billing_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Próxima data de cobrança
+        price_monthly:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Preço mensal
+      required:
+      - cancel_at_period_end
+      - current_period_end
+      - next_billing_date
+      - plan_code
+      - plan_name
+      - price_monthly
+      - status
     DeviceTypeEnum:
       enum:
       - web
@@ -2568,17 +4070,11 @@ components:
     EmailTokenObtainPair:
       type: object
       properties:
-        refresh:
+        email:
           type: string
-        access:
-          type: string
-        tenant:
-          allOf:
-          - $ref: '#/components/schemas/TenantSelfService'
-          nullable: true
+          format: email
       required:
-      - refresh
-      - access
+      - email
     EmailTokenObtainPairRequest:
       type: object
       properties:
@@ -2593,53 +4089,6 @@ components:
       required:
       - email
       - password
-    TenantSelfService:
-      type: object
-      description: Bloco com dados mínimos do tenant para bootstrap.
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        name:
-          type: string
-          readOnly: true
-        slug:
-          type: string
-          readOnly: true
-        plan:
-          type: object
-          readOnly: true
-          properties:
-            tier:
-              type: string
-            addons_enabled:
-              type: array
-              items:
-                type: string
-        timezone:
-          type: string
-        currency:
-          type: string
-        feature_flags:
-          type: object
-        branding:
-          type: object
-          properties:
-            logo_url:
-              type: string
-              format: uri
-              nullable: true
-            primary_color:
-              type: string
-            secondary_color:
-              type: string
-      required:
-      - id
-      - name
-      - slug
-      - plan
-      - feature_flags
-      - branding
     Notification:
       type: object
       description: |-
@@ -2952,9 +4401,187 @@ components:
         * `appointment_completed` - Agendamento Concluído
         * `payment_received` - Pagamento Recebido
         * `system` - Notificação do Sistema
+    OpsAlert:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          allOf:
+          - $ref: '#/components/schemas/CategoryEnum'
+          readOnly: true
+        severity:
+          allOf:
+          - $ref: '#/components/schemas/SeverityEnum'
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        metadata:
+          readOnly: true
+        tenant:
+          type: integer
+          readOnly: true
+          nullable: true
+        tenant_name:
+          type: string
+          readOnly: true
+        notification_log:
+          type: integer
+          readOnly: true
+          nullable: true
+        resolved:
+          type: boolean
+          readOnly: true
+        resolved_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        resolved_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - category
+      - created_at
+      - id
+      - message
+      - metadata
+      - notification_log
+      - resolved
+      - resolved_at
+      - resolved_by
+      - severity
+      - tenant
+      - tenant_name
+      - updated_at
+    OpsTenant:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+          description: Nome do salão/organização
+        slug:
+          type: string
+          readOnly: true
+          description: Identificador único (URL-friendly)
+          pattern: ^[-a-zA-Z0-9_]+$
+        plan_tier:
+          allOf:
+          - $ref: '#/components/schemas/PlanTierEnum'
+          readOnly: true
+          description: |-
+            Nível do plano contratado
+
+            * `basic` - Basic
+            * `standard` - Standard
+            * `pro` - Pro
+            * `enterprise` - Enterprise
+        is_active:
+          type: boolean
+          readOnly: true
+        timezone:
+          type: string
+          readOnly: true
+          description: Timezone do salão
+        currency:
+          type: string
+          readOnly: true
+          description: Moeda padrão (ISO 4217)
+        addons_enabled:
+          readOnly: true
+          description: 'Lista de addons habilitados (ex: [''rn_admin'', ''rn_client''])'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        feature_flags:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        user_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          readOnly: true
+        notification_consumption:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        history:
+          type: object
+          additionalProperties:
+            type: string
+            nullable: true
+          readOnly: true
+        owner:
+          type: object
+          additionalProperties:
+            nullable: true
+          readOnly: true
+      required:
+      - addons_enabled
+      - created_at
+      - currency
+      - feature_flags
+      - history
+      - id
+      - is_active
+      - name
+      - notification_consumption
+      - owner
+      - plan_tier
+      - slug
+      - timezone
+      - updated_at
+      - user_counts
+    PaginatedOpsTenantList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpsTenant'
     PatchedAppointmentRequest:
       type: object
       properties:
+        customer:
+          type: integer
+          nullable: true
         service:
           type: integer
         professional:
@@ -2971,7 +4598,7 @@ components:
       description: Serializer para operações de atualização em séries de agendamentos.
       properties:
         action:
-          $ref: '#/components/schemas/ActionEnum'
+          $ref: '#/components/schemas/AppointmentSeriesUpdateActionEnum'
         start_from:
           type: string
           format: date-time
@@ -3000,6 +4627,30 @@ components:
           maxLength: 100
         bio:
           type: string
+        is_active:
+          type: boolean
+        staff_member:
+          type: integer
+    PatchedSalonCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 254
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 32
+        notes:
+          type: string
+        marketing_opt_in:
+          type: boolean
         is_active:
           type: boolean
     PatchedScheduleSlotRequest:
@@ -3059,6 +4710,8 @@ components:
           minLength: 1
           description: Cor secundária (hex) para branding
           maxLength: 7
+        auto_invite_enabled:
+          type: boolean
     PatchedUserFeatureFlagsUpdateRequest:
       type: object
       description: 'Para PATCH: permite editar apenas os módulos opcionais.'
@@ -3073,24 +4726,102 @@ components:
           type: boolean
         i18n_enabled:
           type: boolean
+    PaymentHistory:
+      type: object
+      description: Serializer para histórico de pagamentos.
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentHistoryItem'
+          description: Lista de transações
+        total_spent:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Total gasto
+        subscription_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Total em assinaturas
+        credits_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Total em créditos
+      required:
+      - credits_total
+      - subscription_total
+      - total_spent
+      - transactions
+    PaymentHistoryItem:
+      type: object
+      description: Serializer para item do histórico de pagamentos.
+      properties:
+        id:
+          type: string
+          description: ID da transação
+        date:
+          type: string
+          format: date-time
+          description: Data da transação
+        type:
+          allOf:
+          - $ref: '#/components/schemas/TypeEnum'
+          description: |-
+            Tipo de transação
+
+            * `subscription` - subscription
+            * `credit_purchase` - credit_purchase
+        description:
+          type: string
+          description: Descrição da transação
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Valor em euros
+        status:
+          type: string
+          description: Status da transação
+        invoice_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL da fatura
+      required:
+      - amount
+      - date
+      - description
+      - id
+      - invoice_url
+      - status
+      - type
     PlanEnum:
       enum:
-      - monthly
-      - yearly
+      - basic
+      - standard
+      - pro
+      - enterprise
       type: string
       description: |-
-        * `monthly` - monthly
-        * `yearly` - yearly
+        * `basic` - basic
+        * `standard` - standard
+        * `pro` - pro
+        * `enterprise` - enterprise
     PlanTierEnum:
       enum:
       - basic
       - standard
       - pro
+      - enterprise
       type: string
       description: |-
         * `basic` - Basic
         * `standard` - Standard
         * `pro` - Pro
+        * `enterprise` - Enterprise
     PortalSessionResponse:
       type: object
       properties:
@@ -3115,6 +4846,8 @@ components:
           type: string
         is_active:
           type: boolean
+        staff_member:
+          type: integer
       required:
       - id
       - name
@@ -3144,6 +4877,101 @@ components:
           maxLength: 100
         bio:
           type: string
+        is_active:
+          type: boolean
+        staff_member:
+          type: integer
+      required:
+      - name
+    PurchaseCreditsRequest:
+      type: object
+      description: Serializer para compra de créditos (futuro uso com Stripe).
+      properties:
+        amount:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          description: Quantidade de créditos a comprar em EUR (mínimo 5.00)
+      required:
+      - amount
+    SalonCustomer:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 254
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 32
+        notes:
+          type: string
+        marketing_opt_in:
+          type: boolean
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - name
+      - updated_at
+    SalonCustomerMini:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 254
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 32
+      required:
+      - id
+      - name
+    SalonCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 254
+        phone_number:
+          type: string
+          nullable: true
+          maxLength: 32
+        notes:
+          type: string
+        marketing_opt_in:
+          type: boolean
         is_active:
           type: boolean
       required:
@@ -3289,6 +5117,16 @@ components:
       - duration_minutes
       - name
       - price_eur
+    SeverityEnum:
+      enum:
+      - info
+      - warning
+      - critical
+      type: string
+      description: |-
+        * `info` - Info
+        * `warning` - Warning
+        * `critical` - Critical
     Status2d6Enum:
       enum:
       - scheduled
@@ -3301,6 +5139,32 @@ components:
         * `cancelled` - Cancelled
         * `completed` - Completed
         * `paid` - Paid
+    SubscriptionActionActionEnum:
+      enum:
+      - cancel
+      - reactivate
+      type: string
+      description: |-
+        * `cancel` - cancel
+        * `reactivate` - reactivate
+    SubscriptionActionRequest:
+      type: object
+      description: Serializer para ações de assinatura (cancelar, reativar).
+      properties:
+        action:
+          allOf:
+          - $ref: '#/components/schemas/SubscriptionActionActionEnum'
+          description: |-
+            Ação a ser executada na assinatura
+
+            * `cancel` - cancel
+            * `reactivate` - reactivate
+        cancel_at_period_end:
+          type: boolean
+          default: true
+          description: Se deve cancelar no fim do período (apenas para cancel)
+      required:
+      - action
     TenantMeta:
       type: object
       description: |-
@@ -3347,12 +5211,17 @@ components:
             * `basic` - Basic
             * `standard` - Standard
             * `pro` - Pro
+            * `enterprise` - Enterprise
         feature_flags:
           type: object
           additionalProperties: {}
           description: Retorna feature flags calculadas baseadas no plano
           readOnly: true
+        auto_invite_enabled:
+          type: boolean
+          readOnly: true
       required:
+      - auto_invite_enabled
       - currency
       - feature_flags
       - logo_url
@@ -3360,6 +5229,47 @@ components:
       - plan_tier
       - primary_color
       - secondary_color
+      - slug
+      - timezone
+    TenantSelfService:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+          description: Nome do salão/organização
+        slug:
+          type: string
+          readOnly: true
+          description: Identificador único (URL-friendly)
+          pattern: ^[-a-zA-Z0-9_]+$
+        plan:
+          type: string
+          readOnly: true
+        timezone:
+          type: string
+          readOnly: true
+          description: Timezone do salão
+        currency:
+          type: string
+          readOnly: true
+          description: Moeda padrão (ISO 4217)
+        feature_flags:
+          type: string
+          readOnly: true
+        branding:
+          type: string
+          readOnly: true
+      required:
+      - branding
+      - currency
+      - feature_flags
+      - id
+      - name
+      - plan
       - slug
       - timezone
     TokenRefresh:
@@ -3379,6 +5289,28 @@ components:
           minLength: 1
       required:
       - refresh
+    TransactionTypeEnum:
+      enum:
+      - purchase
+      - consumption
+      - expiration
+      - refund
+      - bonus
+      type: string
+      description: |-
+        * `purchase` - Compra
+        * `consumption` - Consumo
+        * `expiration` - Expiração
+        * `refund` - Reembolso
+        * `bonus` - Bônus
+    TypeEnum:
+      enum:
+      - subscription
+      - credit_purchase
+      type: string
+      description: |-
+        * `subscription` - subscription
+        * `credit_purchase` - credit_purchase
     UserFeatureFlags:
       type: object
       properties:
@@ -3524,10 +5456,11 @@ components:
         tenant:
           allOf:
           - $ref: '#/components/schemas/TenantSelfService'
+          readOnly: true
       required:
       - id
-      - username
       - tenant
+      - username
     UserRegistrationRequest:
       type: object
       properties:
@@ -3557,6 +5490,35 @@ components:
           maxLength: 20
       required:
       - password
+      - username
+    UserSelf:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        theme_preference:
+          type: string
+          readOnly: true
+      required:
+      - email
+      - first_name
+      - id
+      - last_name
+      - theme_preference
       - username
   securitySchemes:
     jwtAuth:

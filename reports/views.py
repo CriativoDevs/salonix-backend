@@ -1062,3 +1062,173 @@ class AdvancedReportsView(APIView):
             "top_services": top_services_response.data if hasattr(top_services_response, 'data') else top_services_response.content,
             "revenue": revenue_response.data if hasattr(revenue_response, 'data') else revenue_response.content,
         })
+
+
+class ExportAdvancedReportsCSVView(_BaseReports):
+    """
+    GET /api/reports/advanced/export/?from=YYYY-MM-DD&to=YYYY-MM-DD&interval=day|week|month
+
+    Gera CSV com relatórios avançados combinados:
+      - Seção Top Services (serviço, agendamentos, receita, preço médio)
+      - Seção Revenue Series (período, agendamentos, receita, ticket médio)
+    """
+
+    permission_classes = [IsAuthenticated, RequiresAdvancedReports]
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    @cache_drf_response(
+        prefix="reports:advanced:csv",
+        ttl=settings.REPORTS_CACHE_TTL.get("advanced_csv", 300),  # 5 min default
+        vary_on_params=["from", "to", "interval"],
+        vary_on_user=True,
+        view_label="advanced",
+        format_label="csv",
+    )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Exportar Relatórios Avançados (CSV)",
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
+        responses={200: RESP_CSV_OVERVIEW, 403: OpenApiTypes.OBJECT},
+    )
+    @observe_request(endpoint="/api/reports/advanced/export/")
+    def get(self, request) -> HttpResponse:
+        """Exporta relatórios avançados em CSV"""
+        
+        try:
+            start, end = _date_range(request)
+            interval = request.query_params.get("interval", "day")
+            
+            date_gte = {f"{DATE_FIELD}__gte": start}
+            date_lte = {f"{DATE_FIELD}__lte": end}
+
+            # === TOP SERVICES DATA ===
+            top_services_qs = Appointment.objects.filter(
+                **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+            ).values("service_id", "service__name")
+
+            if APPT_PRICE_FIELD:
+                top_services_qs = top_services_qs.annotate(
+                    qty=Count("id"), 
+                    revenue=Sum(APPT_PRICE_FIELD)
+                )
+            else:
+                top_services_qs = top_services_qs.annotate(
+                    qty=Count("id"), 
+                    revenue=_price_sum()
+                )
+
+            top_services_qs = top_services_qs.order_by("-qty", "-revenue", "service__name")
+
+            # === REVENUE SERIES DATA ===
+            from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
+            
+            trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
+                interval, TruncDay
+            )
+
+            revenue_qs = (
+                Appointment.objects.filter(
+                    **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+                )
+                .annotate(bucket=trunc(DATE_FIELD))
+                .values("bucket")
+                .annotate(
+                    appointment_count=Count("id"),
+                    revenue=_price_sum()
+                )
+                .order_by("bucket")
+            )
+
+            # === GENERATE CSV ===
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+
+            # Importar utilitários de formatação
+            from reports.utils.csv_formatter import (
+                write_timely_one_header,
+                format_currency,
+                format_date_pt,
+                translate_column_names
+            )
+
+            # Cabeçalho bonito com branding TimelyOne
+            write_timely_one_header(writer, "Relatórios Avançados", start, end)
+
+            # === SEÇÃO TOP SERVICES ===
+            writer.writerow(["🏆 TOP SERVIÇOS"])
+            writer.writerow([])
+            
+            # Cabeçalhos traduzidos para top services
+            top_services_headers = translate_column_names({
+                "service_name": "Serviço",
+                "qty": "Agendamentos", 
+                "revenue": "Receita",
+                "avg_price": "Preço Médio"
+            })
+            writer.writerow(list(top_services_headers.values()))
+
+            # Dados dos top services
+            for row in top_services_qs.iterator(chunk_size=1000):
+                qty = row["qty"] or 0
+                revenue = row["revenue"] or 0
+                avg_price = (revenue / qty) if qty > 0 else 0
+                
+                writer.writerow([
+                    row["service__name"],
+                    qty,
+                    format_currency(revenue),
+                    format_currency(avg_price)
+                ])
+
+            # Espaçamento entre seções
+            writer.writerow([])
+            writer.writerow([])
+
+            # === SEÇÃO REVENUE SERIES ===
+            writer.writerow([f"📊 RECEITA POR {interval.upper()}"])
+            writer.writerow([])
+            
+            # Cabeçalhos traduzidos para revenue series
+            revenue_headers = translate_column_names({
+                "period": "Período",
+                "appointments": "Agendamentos",
+                "revenue": "Receita", 
+                "avg_ticket": "Ticket Médio"
+            })
+            writer.writerow(list(revenue_headers.values()))
+
+            # Dados da revenue series
+            for row in revenue_qs.iterator(chunk_size=1000):
+                appointment_count = row["appointment_count"] or 0
+                revenue = row["revenue"] or 0
+                avg_ticket = (revenue / appointment_count) if appointment_count > 0 else 0
+                
+                dt = row["bucket"]
+                writer.writerow([
+                    format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
+                    appointment_count,
+                    format_currency(revenue),
+                    format_currency(avg_ticket)
+                ])
+
+            # Preparar resposta
+            csv_content = buffer.getvalue()
+            buffer.close()
+
+            response = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
+            filename = f"relatorios_avancados_{interval}_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}.csv"
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            response["X-Content-Type-Options"] = "nosniff"
+            response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response["Pragma"] = "no-cache"
+            
+            logger.info(f"Advanced reports CSV export completed successfully. Period: {start.date()} to {end.date()}, Interval: {interval}")
+            return response
+
+        except Exception as e:
+            logger.error(f"Error generating advanced reports CSV: {e}", exc_info=True)
+            return Response(
+                {"error": "Erro ao gerar CSV dos relatórios avançados."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
