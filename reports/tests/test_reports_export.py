@@ -33,11 +33,11 @@ def test_export_overview_csv_ok_without_data():
     assert r["Content-Type"].startswith("text/csv")
     # conteúdo básico
     body = r.content.decode("utf-8")
-    assert "Overview report" in body
-    assert "appointments_total" in body
+    assert "TimelyOne" in body  # Novo cabeçalho
+    assert "Agendamentos Totais" in body  # Coluna traduzida
     assert (
-        "period_start,revenue" in body.replace(" ", "").lower()
-        or "period_start,revenue" in body
+        "data,receita" in body.replace(" ", "").lower()
+        or "Data,Receita" in body
     )
 
 

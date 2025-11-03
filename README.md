@@ -245,6 +245,39 @@ make seed        # roda o management command seed_demo
 ./scripts/seed.sh
 ```
 
+### 🚀 Seed em massa (para testes de performance)
+
+Para gerar grandes volumes de dados de teste:
+
+```bash
+make seed-mass   # gera dados padrão (1000 agendamentos)
+```
+
+Ou com parâmetros customizados:
+
+```bash
+make seed-mass APPOINTMENTS=10000 CUSTOMERS=2000 PROFESSIONALS=50 SERVICES=100
+```
+
+**Parâmetros disponíveis:**
+- `APPOINTMENTS`: número de agendamentos (padrão: 1000)
+- `CUSTOMERS`: número de clientes (padrão: 200)
+- `PROFESSIONALS`: número de profissionais (padrão: 10)
+- `SERVICES`: número de serviços (padrão: 20)
+- `DAYS_BACK`: dias no passado para gerar dados (padrão: 365)
+- `BATCH_SIZE`: tamanho do lote para inserções (padrão: 1000)
+
+**Exemplo de uso para teste de performance:**
+```bash
+# Gerar 50k agendamentos para teste de stress
+make seed-mass APPOINTMENTS=50000 CUSTOMERS=10000 PROFESSIONALS=100 SERVICES=200
+
+# Testar exportação CSV com dados grandes
+curl 'http://localhost:8000/api/appointments/export_csv/' -H 'Authorization: Bearer <token>'
+```
+
+> ⚠️ **Atenção**: O comando seed-mass pode demorar vários minutos para grandes volumes. Use com moderação em desenvolvimento.
+
 ---
 
 ### 🔥 Smoke de cache dos relatórios
