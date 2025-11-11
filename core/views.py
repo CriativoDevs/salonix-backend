@@ -164,7 +164,17 @@ class PublicServiceListView(TenantIsolatedMixin, ListAPIView):
                 from users.models import Tenant
 
                 tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
-                return Service.objects.filter(tenant=tenant)
+                qs = Service.objects.filter(tenant=tenant)
+
+                # Suporte a ordenação explícita via querystring
+                ordering = self.request.GET.get("ordering")
+                if ordering in {"name", "-name", "price_eur", "-price_eur"}:
+                    qs = qs.order_by(ordering)
+                elif ordering in {"created_at", "-created_at"}:
+                    # Service não possui created_at; usar id como proxy de criação
+                    qs = qs.order_by("id" if ordering == "created_at" else "-id")
+
+                return qs
             except Tenant.DoesNotExist:
                 pass
         return Service.objects.none()
