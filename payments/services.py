@@ -474,10 +474,14 @@ class BillingService:
         credit_balance = user.tenant.comm_credit_eur if user.tenant else Decimal('0.00')
         
         # Verificar se pode comprar créditos extras
-        can_purchase_credits = user.tenant.can_purchase_extra_credits if user.tenant else False
+        can_purchase_credits = (
+            user.tenant.can_purchase_extra_credits() if user.tenant else False
+        )
         
-        # Verificar renovação automática de créditos
-        has_auto_renewal = user.tenant.auto_renew_credits if user.tenant else False
+        # Verificar renovação automática de créditos (usar regra correta do Tenant)
+        has_auto_renewal = (
+            user.tenant.has_auto_credit_renewal() if user.tenant else False
+        )
         
         # Próximo valor de cobrança
         next_billing_amount = None
