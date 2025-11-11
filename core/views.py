@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter
 
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -36,6 +36,7 @@ from core.serializers import (
     ScheduleSlotSerializer,
 )
 from core.mixins import TenantIsolatedMixin
+from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -1658,8 +1659,38 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             qs = qs.order_by(
                 "slot__start_time" if ordering == "slot_time" else "-slot__start_time"
             )
+        elif ordering in {"start_time", "-start_time"}:
+            qs = qs.order_by(
+                "slot__start_time" if ordering == "start_time" else "-slot__start_time"
+            )
 
         return qs
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name="limit", required=False, type=int, description="Quantidade por página (default=20, max=100)"),
+            OpenApiParameter(name="offset", required=False, type=int, description="Deslocamento de registros (default=0)"),
+            OpenApiParameter(name="ordering", required=False, type=str, description="Ordenação: start_time, -start_time, created_at, -created_at, slot_time, -slot_time"),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=AppointmentSerializer(many=True),
+                description="Lista paginada. Headers de resposta: X-Total-Count, X-Limit, X-Offset, Link (RFC 5988)."
+            )
+        },
+    )
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+
+        # paginação limit/offset
+        limit, offset = get_limit_offset(request, default=20, max_limit=100)
+        total = qs.count()
+        sliced = qs[offset : offset + limit]
+
+        serializer = self.get_serializer(sliced, many=True)
+        resp = Response(serializer.data, status=drf_status.HTTP_200_OK)
+        set_pagination_headers(resp, request, total_count=total, limit=limit, offset=offset)
+        return resp
 
     def perform_create(self, serializer):
         tenant = getattr(self.request.user, "tenant", None)
