@@ -2,7 +2,7 @@
 
 ## 🎯 **Visão Geral**
 
-Revisão das regras de negócio e do código aponta que o backend já cobre **o núcleo de multi-tenant, agendamentos, relatórios e branding**. As peças que transformam o MVP em produto “prod ready” — principalmente **comunicações reais (SMS/WhatsApp), validações específicas de telefonia e enforcement granular de planos/flags** — ainda não saíram do papel. Consideramos o MVP **~80% completo**: o fluxo operacional existe, mas faltam os canais externos reais e algumas proteções de negócio.
+Revisão das regras de negócio e do código aponta que o backend já cobre **o núcleo de multi-tenant, agendamentos, relatórios e branding**. As peças que transformam o MVP em produto “prod ready” — principalmente **comunicações reais (SMS/WhatsApp), validações específicas de telefonia e enforcement granular de planos/flags** — ainda não saíram do papel. Consideramos o MVP **~85% completo**: o fluxo operacional existe, mas faltam os canais externos reais e algumas proteções de negócio.
 
 ## ✅ **Funcionalidades MVP IMPLEMENTADAS (19 tarefas concluídas)**
 
@@ -70,7 +70,7 @@ Revisão das regras de negócio e do código aponta que o backend já cobre **o 
 
 ### **📈 Progresso Visual**
 ```
-🎯 MVP BACKEND: ████████████████░░░░ 80%
+🎯 MVP BACKEND: ██████████████████░░ 85%
 
 ✅ Infraestrutura: ████████████████████ 100%
 ✅ Agendamentos:   ████████████████████ 100%
@@ -78,7 +78,7 @@ Revisão das regras de negócio e do código aponta que o backend já cobre **o 
 ✅ White-label:    ████████████████████ 100%
 🟡 Notificações:   ████████░░░░░░░░░░ 50%
 ✅ Qualidade:      ████████████████████ 100%
-🔴 Comunicação:    █████░░░░░░░░░░░░░ 25%
+🔴 Comunicação:    ██████░░░░░░░░░░░░ 35%
 ```
 
 ### **📋 Análise das Tarefas JSON**

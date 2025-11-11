@@ -244,6 +244,24 @@ POST /api/notifications/register_device/  # Registrar device
 POST /api/notifications/test/             # Testar canal
 ```
 
+### **💳 Créditos de Comunicação**
+```
+GET  /api/credits/summary/        # Resumo do crédito atual (€) por tenant
+POST /api/credits/add/            # Gerar PaymentIntent (Stripe) para crédito avulso
+GET  /api/credits/history/        # Histórico de créditos/consumo
+```
+
+> Flags expostas em `/api/plans` e no bootstrap do tenant:
+> `comm_credit_eur`, `comm_extra_allowed`, `comm_auto_renew`.
+
+### **📡 Realtime (Badge de Crédito)**
+```
+SSE  /realtime/credit             # Stream unidirecional com atualizações de crédito
+WS   /realtime/credit             # Alternativa bidirecional (opcional)
+```
+
+> Recomendação: **SSE** para badge unidirecional simples; **WS** quando houver ações interativas.
+
 ### **⚙️ Admin**
 ```
 GET /admin/                     # Django Admin customizado
@@ -483,6 +501,8 @@ Production   → PostgreSQL + Redis + Load Balancer
 - [ ] Métricas de clientes (BE-154)
 - [ ] Sistema de auditoria
 - [ ] Integração com calendários externos
+ - [ ] Paywall efetivo com flags de plano
+ - [ ] Preferência de tema persistida por tenant
 
 ### **Infraestrutura**
 - [ ] Kubernetes deployment

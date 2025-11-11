@@ -6,7 +6,7 @@ Este documento define a estratégia de desenvolvimento em fases para o Salonix M
 
 ## 🎯 **Status Atual do MVP**
 
-### **✅ MVP Backend: 95% Completo**
+### **✅ MVP Backend: 85% Completo**
 - ✅ **Infraestrutura**: Multi-tenant, autenticação JWT, cache Redis
 - ✅ **Core**: Sistema de agendamentos completo
 - ✅ **Relatórios**: Analytics profissionais com cache
@@ -14,9 +14,11 @@ Este documento define a estratégia de desenvolvimento em fases para o Salonix M
 - ✅ **Notificações**: 5 canais estruturados
 - ✅ **Qualidade**: 243 testes, tratamento de erros padronizado
 
-### **🚀 Próximas Implementações (5% restante)**
+### **🚀 Próximas Implementações (15% restante)**
 - 📅 **BE-MULTI-APPOINTMENTS**: Agendamentos em múltiplos dias
 - 📊 **BE-CLIENT-METRICS**: Métricas de clientes ativos/inativos
+ - 🔔 **BE-128/129**: Comunicação real (SMS Twilio PT / WhatsApp Meta)
+ - ☎️ **BE-130**: Validação de números portugueses
 
 ### **📱 Comunicação Real (Para PRODUÇÃO)**
 - 🟡 SMS via Twilio Portugal (BE-145)
@@ -241,5 +243,5 @@ Este documento define a estratégia de desenvolvimento em fases para o Salonix M
 ---
 
 *Documento criado: 4 Setembro 2025*  
-*Última atualização: 4 Setembro 2025*  
-*Status: ✅ Aprovado*
+*Última atualização: 11 Outubro 2025*  
+*Status: 🔄 Em revisão (alinhado ao MVP_STATUS_ATUAL)*
