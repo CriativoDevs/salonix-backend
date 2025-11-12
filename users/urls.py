@@ -17,6 +17,7 @@ from .views import (
     CreditHistoryView,
     ConsumeCreditsView,
     PurchaseCreditsView,
+    RealtimeCreditsSSEView,
 )
 
 urlpatterns = [
@@ -40,4 +41,6 @@ urlpatterns = [
     path("credits/history/", CreditHistoryView.as_view(), name="credit_history"),
     path("credits/consume/", ConsumeCreditsView.as_view(), name="consume_credits"),
     path("credits/purchase/", PurchaseCreditsView.as_view(), name="purchase_credits"),
+    # Realtime SSE
+    path("realtime/credits/", RealtimeCreditsSSEView.as_view(), name="realtime_credits"),
 ]

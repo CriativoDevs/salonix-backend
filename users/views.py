@@ -12,6 +12,9 @@ from rest_framework.exceptions import ValidationError, AuthenticationFailed, Per
 from drf_spectacular.utils import extend_schema
 
 from rest_framework.exceptions import NotFound
+from django.http import StreamingHttpResponse
+import json
+import time
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
@@ -45,6 +48,7 @@ from .observability import (
     USERS_AUTH_EVENTS_TOTAL,
     USERS_THROTTLED_TOTAL,
     USERS_PASSWORD_RESET_EVENTS_TOTAL,
+    USERS_SSE_EVENTS_TOTAL,
 )
 from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -744,3 +748,104 @@ class PurchaseCreditsView(APIView):
             'transaction_id': transaction.id,
             'new_balance': credit_service.get_credit_balance()
         })
+
+
+class RealtimeCreditsSSEView(APIView):
+    """Stream de eventos de créditos via SSE (text/event-stream) por tenant.
+
+    - Autenticação obrigatória
+    - Isolamento por tenant
+    - Heartbeat periódico
+    - Emite eventos quando há novas transações no ledger ou mudança de saldo
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description=(
+            "Stream SSE com atualizações de saldo/ledger por tenant. "
+            "Content-Type: text/event-stream. Eventos: heartbeat, credit_update."
+        ),
+        responses={200: OpenApiResponse(description="text/event-stream")},
+    )
+    def get(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if not tenant:
+            raise AuthenticationFailed("tenant_required")
+
+        credit_service = CreditService(tenant)
+        last_ledger_id = None
+
+        def sse_event(event: str, data: dict | str, eid: str | None = None) -> str:
+            payload = data if isinstance(data, str) else json.dumps(data)
+            lines = []
+            if eid:
+                lines.append(f"id: {eid}")
+            lines.append(f"event: {event}")
+            lines.append(f"data: {payload}")
+            return "\n".join(lines) + "\n\n"
+
+        def event_stream():
+            nonlocal last_ledger_id
+            # Primeira emissão: estado inicial
+            try:
+                balance = credit_service.get_credit_balance()
+                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                yield sse_event(
+                    "credit_update",
+                    {"balance": float(balance), "timestamp": int(time.time())},
+                )
+            except Exception:
+                # Não interrompe o stream por erro inicial
+                USERS_SSE_EVENTS_TOTAL.labels(event="error", result="emitted").inc()
+                USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted").inc()
+                yield sse_event("heartbeat", "init")
+
+            # Loop principal: heartbeat + detecção de novos eventos
+            try:
+                while True:
+                    # Heartbeat a cada 15s
+                    USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted").inc()
+                    yield sse_event("heartbeat", "ping")
+
+                    # Detecta novas transações no ledger
+                    try:
+                        qs = CommLedger.objects.filter(tenant=tenant).order_by("id")
+                        if last_ledger_id is not None:
+                            qs = qs.filter(id__gt=last_ledger_id)
+                        new_items = list(qs[:50])  # limita burst
+                        if new_items:
+                            last_ledger_id = new_items[-1].id
+                            balance = credit_service.get_credit_balance()
+                            for item in new_items:
+                                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                                yield sse_event(
+                                    "credit_update",
+                                    {
+                                        "balance": float(balance),
+                                        "ledger": {
+                                            "id": item.id,
+                                            "type": item.transaction_type,
+                                            "amount": float(item.amount_eur),
+                                            "description": item.description,
+                                            "created_at": int(item.created_at.timestamp()),
+                                        },
+                                    },
+                                    eid=str(item.id),
+                                )
+                                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                    except Exception:
+                        # Em caso de erro transitório, mantém o stream vivo
+                        USERS_SSE_EVENTS_TOTAL.labels(event="error", result="emitted").inc()
+                        USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted").inc()
+                        yield sse_event("heartbeat", "error")
+
+                    time.sleep(15)
+            except GeneratorExit:
+                USERS_SSE_EVENTS_TOTAL.labels(event="disconnect", result="emitted").inc()
+                raise
+
+        response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response

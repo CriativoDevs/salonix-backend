@@ -318,6 +318,21 @@ paths:
           description: Dados inválidos
         '403':
           description: Compra de créditos não permitida
+  /api/auth/realtime/credits/:
+    get:
+      operationId: auth_realtime_credits_retrieve
+      description: Stream SSE com atualizações de saldo/ledger por tenant
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          description: SSE stream de eventos de crédito
   /api/auth/me/features/:
     get:
       operationId: auth_me_features_retrieve

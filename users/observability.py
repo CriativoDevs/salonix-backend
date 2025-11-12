@@ -25,3 +25,10 @@ USERS_PASSWORD_RESET_EVENTS_TOTAL = _get_or_create_counter(
     "Total de eventos do fluxo de recuperação de senha",
     ("event", "result"),
 )
+
+# SSE de créditos (events: heartbeat, credit_update, disconnect, error)
+USERS_SSE_EVENTS_TOTAL = _get_or_create_counter(
+    "users_sse_events_total",
+    "Total de eventos SSE de créditos",
+    ("event", "result"),
+)

@@ -644,6 +644,42 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 
 ## 🚀 **Próximas Implementações**
 
+### **📡 Realtime Créditos (BE-CRED-03)**
+**Status**: 🚧 Implementado (aguardando validação)
+
+**Endpoint (SSE)**
+- `GET /api/auth/realtime/credits/` — `Content-Type: text/event-stream`
+- Autorização: `Authorization: Bearer <JWT>` (IsAuthenticated)
+- Isolamento: por `tenant` (dados não vazam entre tenants)
+
+**Eventos**
+- `event: heartbeat` — `data: "ping"` (a cada 15s)
+- `event: credit_update` — `id: <ledger_id>`
+  - `data: { balance: number, ledger: { id, type, amount, description, created_at } }`
+
+**Reconexão**
+- Cliente deve usar `EventSource` (reconexão automática). Exemplo:
+  ```js
+  const es = new EventSource('/api/auth/realtime/credits/');
+  es.addEventListener('credit_update', (e) => {
+    const payload = JSON.parse(e.data);
+    // atualizar badge de saldo
+  });
+  es.addEventListener('heartbeat', () => {/* opcional */});
+  ```
+
+**Fallback de Polling**
+- `GET /api/auth/credits/balance/` — saldo atual
+- `GET /api/auth/credits/history/` — histórico de transações
+- Sugestão: polling a cada 15–30s; usar ETags/If-None-Match se viável
+
+**Auditoria/Observabilidade**
+- Heartbeat mantém o stream ativo; erros transitórios geram `heartbeat:error`
+- SSE sem cache (`Cache-Control: no-cache`, `X-Accel-Buffering: no`)
+
+**Arquivos**
+- `users/views.py` — `RealtimeCreditsSSEView`
+- `users/urls.py` — rota `realtime/credits/`
 ### **📊 Métricas de Clientes (BE-154)**
 **Status**: ⏳ Planejado  
 **Descrição**: Analytics de clientes ativos/inativos, LTV, churn
