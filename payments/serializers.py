@@ -115,3 +115,13 @@ class SubscriptionActionSerializer(serializers.Serializer):
         default=True,
         help_text="Se deve cancelar no fim do período (apenas para cancel)"
     )
+
+
+class StripeSettingsUpdateRequestSerializer(serializers.Serializer):
+    """Payload para atualizar configurações de billing (Stripe)."""
+    auto_renewal = serializers.BooleanField(help_text="Ativa/desativa renovação automática de créditos de comunicação")
+
+
+class StripeSettingsResponseSerializer(serializers.Serializer):
+    """Resposta simplificada para configurações de billing (Stripe)."""
+    auto_renewal = serializers.BooleanField(help_text="Estado atual da renovação automática de créditos de comunicação")

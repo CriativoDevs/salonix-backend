@@ -1210,6 +1210,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/BillingOverview'
           description: ''
+  /api/payments/stripe/settings/:
+    patch:
+      operationId: payments_stripe_settings_update
+      description: Atualiza configuração de renovação automática de créditos do tenant (OWNER).
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StripeSettingsResponse'
+          description: ''
   /api/payments/stripe/plans/:
     get:
       operationId: payments_stripe_plans_list
@@ -3685,6 +3712,24 @@ components:
       - current_subscription
       - has_auto_renewal
       - next_billing_amount
+    StripeSettingsUpdateRequest:
+      type: object
+      description: Payload para atualizar configurações de billing (Stripe).
+      properties:
+        auto_renewal:
+          type: boolean
+          description: Ativa/desativa renovação automática de créditos de comunicação
+      required:
+      - auto_renewal
+    StripeSettingsResponse:
+      type: object
+      description: Resposta simplificada para configurações de billing (Stripe).
+      properties:
+        auto_renewal:
+          type: boolean
+          description: Estado atual da renovação automática de créditos de comunicação
+      required:
+      - auto_renewal
     BulkAppointmentRequest:
       type: object
       description: |-
