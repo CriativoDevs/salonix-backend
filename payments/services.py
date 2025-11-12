@@ -473,7 +473,7 @@ class BillingService:
         # Obter saldo de créditos
         credit_balance = user.tenant.comm_credit_eur if user.tenant else Decimal('0.00')
         
-        # Verificar se pode comprar créditos extras
+        # Verificar se pode comprar créditos extras (método => bool)
         can_purchase_credits = (
             user.tenant.can_purchase_extra_credits() if user.tenant else False
         )
