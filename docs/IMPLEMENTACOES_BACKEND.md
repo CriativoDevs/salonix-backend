@@ -198,6 +198,40 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 
 ### **📅 3. Sistema de Agendamentos**
 
+### **💳 Payments: Settings de Stripe (auto-renewal)**
+
+**Status**: ✅ Implementado
+
+**Endpoint**:
+- `PATCH /api/payments/stripe/settings/`
+
+**Contrato**:
+- Request: `{ "auto_renewal": boolean }`
+- Response: `{ "auto_renewal": boolean }`
+
+**Permissão**:
+- Apenas OWNER autenticado com `user.tenant` válido.
+
+**Efeitos**:
+- Persiste `tenant.comm_auto_renew` e reflete em `billing/overview` via `has_auto_renewal`.
+
+**Auditoria**:
+- Log info `payments.settings.update` com `actor_id`, `tenant_id`, `field`, `old_value`, `new_value`.
+- Log error `payments.settings.update_error` com `actor_id`, `tenant_id`, `error` em falhas.
+
+**Métricas (Prometheus)**:
+- `payments_settings_updated_total{result}` com labels: `success`, `invalid`, `forbidden`, `error`.
+  - `forbidden`: sem tenant ou não-OWNER
+  - `invalid`: payload inválido
+  - `success`: persistência OK
+  - `error`: exceção ao salvar
+
+**Referências**:
+- Código: `payments/views.py::StripeSettingsView`
+- Observabilidade: `payments/observability.py`
+- Serializers: `StripeSettingsUpdateRequestSerializer`, `StripeSettingsResponseSerializer`
+
+
 #### **Modelos Core**
 **Status**: ✅ Implementado  
 **Arquivos**:

@@ -13,6 +13,7 @@ from .views import (
     BillingOverviewView,
     ImprovedCheckoutSessionView,
     ImprovedPortalSessionView,
+    StripeSettingsView,
 )
 from .webhooks import StripeWebhookView
 
@@ -71,6 +72,11 @@ urlpatterns = [
         "overview/",
         BillingOverviewView.as_view(),
         name="billing_overview",
+    ),
+    path(
+        "settings/",
+        StripeSettingsView.as_view(),
+        name="stripe_settings",
     ),
     
     # URLs melhoradas (v2)

@@ -29,7 +29,10 @@ from .serializers import (
     PaymentHistorySerializer,
     BillingOverviewSerializer,
     SubscriptionActionSerializer,
+    StripeSettingsUpdateRequestSerializer,
+    StripeSettingsResponseSerializer,
 )
+from .observability import PAYMENTS_SETTINGS_UPDATED_TOTAL
 
 
 class CreateCheckoutSession(APIView):
@@ -604,3 +607,69 @@ class ImprovedPortalSessionView(APIView):
 
 
 logger = logging.getLogger(__name__)
+
+
+class StripeSettingsView(APIView):
+    """Atualiza configurações de billing (Stripe) do tenant (OWNER-only)."""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=StripeSettingsUpdateRequestSerializer,
+        responses={200: StripeSettingsResponseSerializer},
+    )
+    def patch(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+
+        if not tenant:
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
+            return Response({"detail": "Usuário sem tenant"}, status=403)
+
+        # OWNER-only
+        try:
+            attr = getattr(user, "is_owner", False)
+            is_owner = attr() if callable(attr) else bool(attr)
+        except Exception:
+            is_owner = False
+
+        if not is_owner:
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
+            return Response({"detail": "Permissão negada"}, status=403)
+
+        serializer = StripeSettingsUpdateRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="invalid").inc()
+            return Response(serializer.errors, status=400)
+
+        auto_renewal = serializer.validated_data["auto_renewal"]
+        old_value = bool(getattr(tenant, "comm_auto_renew", False))
+
+        try:
+            setattr(tenant, "comm_auto_renew", auto_renewal)
+            tenant.save(update_fields=["comm_auto_renew", "updated_at"])
+
+            logger.info(
+                "payments.settings.update",
+                extra={
+                    "actor_id": user.id,
+                    "tenant_id": tenant.id,
+                    "field": "comm_auto_renew",
+                    "old_value": old_value,
+                    "new_value": auto_renewal,
+                },
+            )
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="success").inc()
+
+            response = {"auto_renewal": bool(getattr(tenant, "comm_auto_renew", False))}
+            return Response(response, status=200)
+        except Exception as e:
+            logger.error(
+                "payments.settings.update_error",
+                extra={
+                    "actor_id": user.id,
+                    "tenant_id": getattr(tenant, "id", None),
+                    "error": str(e),
+                },
+            )
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="error").inc()
+            return Response({"detail": "Erro ao atualizar settings"}, status=500)

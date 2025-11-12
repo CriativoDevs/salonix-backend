@@ -1,4 +1,5 @@
 import pytest
+from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
@@ -17,6 +18,8 @@ class TestAuthEndpoints:
         self.token_url = reverse("token_obtain_pair")
         self.me_tenant_url = reverse("me_tenant")
         self.me_profile_url = reverse("me_profile")
+        # Evita interferência de throttling entre testes consecutivos
+        cache.clear()
 
     def test_successful_registration(self):
         payload = {

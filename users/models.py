@@ -194,12 +194,8 @@ class Tenant(models.Model):
         return self.comm_extra_allowed
     
     def has_auto_credit_renewal(self):
-        """Verifica se o tenant tem renovação automática de crédito (Standard+)."""
-        return self.comm_auto_renew or self.plan_tier in [
-            self.PLAN_STANDARD,
-            self.PLAN_PRO,
-            self.PLAN_ENTERPRISE,
-        ]
+        """Indica renovação automática de créditos; depende somente de comm_auto_renew."""
+        return self.comm_auto_renew
 
     def can_use_native_apps(self):
         """Verifica se pode usar apps nativos (Pro + addons)"""
