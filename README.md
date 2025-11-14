@@ -1,297 +1,411 @@
 # Salonix Backend
 
-Backend do **Salonix**, sistema de agendamento para salões, desenvolvido em **Django REST Framework**.
+Backend for Salonix, a scheduling platform for salons, built with Django REST Framework.
 
-Este repositório cobre a API que suporta o frontend web (React) e o mobile (Expo/React Native).
-
----
-
-## 🚀 Tecnologias principais
-
-- [Python 3.11+](https://www.python.org/)
-- [Django 5.x](https://www.djangoproject.com/)
-- [Django REST Framework](https://www.django-rest-framework.org/)
-- [drf-spectacular](https://drf-spectacular.readthedocs.io/) (OpenAPI 3)
-- [pytest](https://docs.pytest.org/)
-- [SQLite / PostgreSQL](https://www.postgresql.org/) (dependendo do ambiente)
-- Integração com Stripe para assinaturas
+This repository exposes the backend API consumed by the web frontend (React) and the mobile app (Expo/React Native).
 
 ---
 
-## 📂 Estrutura do projeto
+## 🚀 Tech Stack
+
+- Python 3.11+
+- Django 5.x
+- Django REST Framework
+- drf-spectacular (OpenAPI 3)
+- pytest
+- SQLite / PostgreSQL (depending on environment)
+- Stripe integration for subscriptions
+
+---
+
+## 📂 Project Structure
 ```
 salonix-backend/
-│
-├── core/              # Agendamentos, serviços, salões
-├── payments/          # Assinaturas (Stripe)
-├── reports/           # Relatórios e exportações
-├── users/             # Autenticação, usuários, feature flags
-│
-├── salonix_backend/   # Configurações Django
-├── scripts/           # Ferramentas auxiliares (smoke tests, seeds)
-├── pytest.ini         # Configuração de testes
+├── core/              # Appointments, services, schedules, series
+├── users/             # Auth, tenants, staff, feature flags, SSE
+├── payments/          # Stripe subscriptions, checkout, webhooks
+├── reports/           # Reports, caching, exports
+├── notifications/     # Notification devices, services, signals
+├── ops/               # Ops admin APIs, metrics, permissions
+├── salonix_backend/   # Django settings, middleware, admin, urls
+├── docs/              # Backend docs and runbooks
+├── scripts/           # Seeds and smoke scripts
+├── tests/             # Cross-app tests
+├── static/            # Admin assets and DRF spectacular assets
+├── requirements.txt
+├── api-schema.yaml
+├── manage.py
 └── README.md
 ```
 
 ---
 
-## ⚙️ Configuração
+## ⚙️ Setup
 
-1. Clone o repositório:
-
+1. Clone the repo:
    ```bash
    git clone https://github.com/<org>/salonix-backend.git
    cd salonix-backend
    ```
-
-2. Crie o virtualenv:
+2. Create virtualenv:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    ```
-
-3. Instale dependências:
+3. Install deps:
    ```bash
    pip install -r requirements.txt
    ```
-
-4.	Configure variáveis de ambiente (.env ou settings.ini):
-    ```bash
-    DJANGO_ENV=dev
-    SECRET_KEY=...
-    DEBUG=True
-    DATABASE_URL=sqlite:///db.sqlite3
-    STRIPE_SECRET_KEY=...
-    STRIPE_WEBHOOK_SECRET=...
-    # Throttling (produção; em dev/test já vem alto por padrão)
-    USERS_AUTH_THROTTLE_LOGIN=10/min
-    USERS_AUTH_THROTTLE_REGISTER=5/min
-    USERS_TENANT_META_PUBLIC=60/min
-    # Captcha (self-service)
-    CAPTCHA_ENABLED=false
-    CAPTCHA_PROVIDER=turnstile  # ou hcaptcha
-    CAPTCHA_SECRET=
-    CAPTCHA_BYPASS_TOKEN=       # ex.: dev-bypass (enviar em X-Captcha-Token)
-    ```
-
-5. Rode migrações:
+4. Environment variables (`.env` or `settings.ini`):
+   ```bash
+   DJANGO_ENV=dev
+   SECRET_KEY=...
+   DEBUG=True
+   DATABASE_URL=sqlite:///db.sqlite3
+   STRIPE_SECRET_KEY=...
+   STRIPE_WEBHOOK_SECRET=...
+   USERS_AUTH_THROTTLE_LOGIN=10/min
+   USERS_AUTH_THROTTLE_REGISTER=5/min
+   USERS_TENANT_META_PUBLIC=60/min
+   CAPTCHA_ENABLED=false
+   CAPTCHA_PROVIDER=turnstile  # or hcaptcha
+   CAPTCHA_SECRET=
+   CAPTCHA_BYPASS_TOKEN=
+   ```
+5. Migrations:
    ```bash
    python manage.py migrate
    ```
-
-6. Crie um superusuário:
-    ```bash
-    python manage.py createsuperuser
-    ```
-
----
-## 🧪 Testes
-
-- Rodar toda a suíte de testes:
-    ```bash
-    pytest
-    ```
-- Rodar apenas os testes de relatórios:
-    ```bash
-    pytest reports/tests/
-    ```
----
-## 🔑 Recuperação de Senha (BE-240)
-
-- Endpoints:
-  - POST `/api/users/password/reset/` – solicita reset; resposta neutra `{"status":"ok"}`.
-  - POST `/api/users/password/reset/confirm/` – confirma com `uid` + `token` + `new_password`.
-- Segurança:
-  - Throttle `users_password_reset` (configurável por env; alto em dev/test).
-  - Captcha aplicado na solicitação (usa `CAPTCHA_*`).
-- E-mail:
-  - Envia link de reset usando `reset_url` informado pelo cliente: `{reset_url}?uid={uid}&token={token}`.
-- Métricas:
-  - `users_password_reset_events_total{event=request|confirm, result=success|failure}`.
-
-## 🔒 Hardening Self-service (BE-212)
-
-- Endpoints protegidos:
-  - POST `/api/users/register/` e `/api/users/token/` com throttling por IP/usuário e captcha opcional.
-  - GET `/api/users/tenant/meta/` com throttling público.
-- Envs relevantes:
-  - `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`.
-  - `CAPTCHA_ENABLED`, `CAPTCHA_PROVIDER=turnstile|hcaptcha`, `CAPTCHA_SECRET`, `CAPTCHA_BYPASS_TOKEN`.
-- Dev/Test:
-  - Defaults de throttling são altos para não interferir; use `override_settings` para testar 429.
-  - Para testar captcha sem rede, defina `CAPTCHA_BYPASS_TOKEN` e envie `X-Captcha-Token`.
+6. Superuser:
+   ```bash
+   python manage.py createsuperuser
+   ```
 
 ---
 
-## 🔍 Smoke tests
+## 🧪 Tests
 
-1. Em um terminal, suba o backend (`make run` ou `python manage.py runserver`).
-2. Em outro terminal execute:
-    ```bash
-    make smoke        # wrapper que chama ./scripts/smoke_reports.sh
-    ```
+- Run full suite:
+  ```bash
+  pytest
+  ```
+- Run only reports tests:
+  ```bash
+  pytest reports/tests/
+  ```
 
-- Credenciais seedadas:
-    - `pro_smoke@demo.local / Smoke@123`
-    - `client_smoke@demo.local / Smoke@123`
-    - Defina `SMOKE_USER_PASSWORD=...` antes de `make seed` para alterar a senha padrão usada pelos smokes.
+---
 
-### O script faz o quê?
+## 🔒 Self-service Hardening (BE-212)
 
-- autentica como usuário de smoke (`pro_smoke`);
-- chama `/api/reports/overview/`, `/top-services/`, `/revenue/` e exports CSV com backoff;
-- valida throttling e métricas Prometheus.
+- Protected endpoints: `POST /api/users/register/`, `POST /api/users/token/` (throttle + optional captcha) and `GET /api/users/tenant/meta/` (public throttle).
+- Env vars: `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`, `CAPTCHA_*`.
+- Dev/Test: throttling defaults are high; use `override_settings` to test 429; captcha bypass via `X-Captcha-Token`.
 
-> ⚠️ Certifique-se de ter rodado `make seed` para popular dados de teste antes de executar o smoke.
+## 🔑 Password Recovery (BE-240)
+
+- `POST /api/users/password/reset/` (neutral response `{"status":"ok"}`) and `POST /api/users/password/reset/confirm/` (uid + token + new_password).
+- Throttle `users_password_reset`; captcha on request.
+- Metric: `users_password_reset_events_total{event,result}`.
+
+## 🔍 Smoke Tests
+
+1. Terminal A: start backend (`make run` or `python manage.py runserver`).
+2. Terminal B:
+   ```bash
+   make smoke  # wrapper for ./scripts/smoke_reports.sh
+   ```
+
+Seeded credentials:
+- `pro_smoke@demo.local / Smoke@123`
+- `client_smoke@demo.local / Smoke@123`
+- Set `SMOKE_USER_PASSWORD=...` before `make seed` to override default.
+
+What does the script do?
+- Authenticates as `pro_smoke`.
+- Calls `/api/reports/overview/`, `/top-services/`, `/revenue/` and exports CSV with backoff.
+- Validates throttling and Prometheus metrics.
+
+Note: run `make seed` to populate demo data before smoke.
 
 ---
 
 ## 💳 Stripe / Billing
 
-- Configure os preços mensais dos planos via `.env`:
-    - `STRIPE_PRICE_BASIC_MONTHLY_ID`
-    - `STRIPE_PRICE_STANDARD_MONTHLY_ID`
-    - `STRIPE_PRICE_PRO_MONTHLY_ID`
-    - `STRIPE_PRICE_ENTERPRISE_MONTHLY_ID`
-- (Opcional) `STRIPE_TRIAL_DAYS` controla o período trial aplicado no checkout (default: 14 dias).
-- URLs de retorno (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`) podem apontar para o FE.
-- Para testar billing manualmente, chame `/api/payments/stripe/create-checkout-session/` com `plan="basic|standard|pro|enterprise"` e confirme os redirecionamentos do Stripe.
-
-⸻
-
-## 📖 Documentação da API
-
-A API segue OpenAPI 3, gerado pelo drf-spectacular.
-- Esquema cru: /api/schema/
-- Swagger UI: /api/docs/swagger/
-- ReDoc: /api/docs/redoc/
-
-⸻
-
-## 🗂️ Feature flags
-
-O acesso a relatórios e recursos avançados é controlado via UserFeatureFlags.
-Campos principais:
-- is_pro: usuário em plano pago
-- reports_enabled: habilitação de relatórios
+- Configure monthly plan prices via `.env`:
+  - `STRIPE_PRICE_BASIC_MONTHLY_ID`
+  - `STRIPE_PRICE_STANDARD_MONTHLY_ID`
+  - `STRIPE_PRICE_PRO_MONTHLY_ID`
+  - `STRIPE_PRICE_ENTERPRISE_MONTHLY_ID`
+- Optional: `STRIPE_TRIAL_DAYS` controls trial (default: 14 days).
+- Return URLs (`STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`) should point to FE.
+- Manual test: call `/api/payments/stripe/create-checkout-session/` with `plan="basic|standard|pro|enterprise"` and confirm Stripe redirects.
 
 ---
 
-## 🧑‍💻 Contribuição
+## 📖 API Documentation
 
-Fluxo padrão:
-1.	Crie uma branch a partir da issue do GitHub:
-    ```bash
-    git checkout -b BE-XX-nome-da-tarefa
-    ```
-2.	Implemente e garanta que tests + smoke passem.
-3.	Abra um Pull Request vinculando à issue.
-4.	Após review/merge, feche a issue correspondente.
+- Raw schema: `/api/schema/`
+- Swagger UI: `/api/docs/swagger/`
+- ReDoc: `/api/docs/redoc/`
+
+---
+
+## 📡 Credits SSE
+
+- Endpoint: `GET /api/users/realtime/credits/` (`Content-Type: text/event-stream`)
+- Auth: `Authorization: Bearer <JWT>` (IsAuthenticated)
+- Events: `heartbeat` (periodic ping) and `credit_update` (payload with `balance` and `ledger`).
+- Observability: `USERS_SSE_EVENTS_TOTAL{event,result}`; logs include `X-Request-ID`.
+
+Example (`curl`):
+```bash
+curl -N \
+  -H "Accept: text/event-stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: sse-docs-demo-001" \
+  http://localhost:8000/api/users/realtime/credits/
+```
+
+Example (`EventSource`):
+```js
+const es = new EventSource('/api/users/realtime/credits/');
+es.addEventListener('credit_update', (e) => {
+  const payload = JSON.parse(e.data);
+  // update UI with payload.balance and payload.ledger
+});
+es.addEventListener('heartbeat', () => {
+  // optional: show active connection
+});
+```
+
+Notes:
+- SSE headers: `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
+- On error, `USERS_SSE_EVENTS_TOTAL{event="error", result}` captures outcomes.
+
+---
+
+## 🗂️ Feature Flags
+
+- Access to advanced features is controlled via `UserFeatureFlags`.
+- Key fields: `is_pro`, `reports_enabled`.
+
+---
+
+## 🧑‍💻 Contributing
+
+1. Create a branch from the GitHub issue:
+   ```bash
+   git checkout -b BE-XX-task-name
+   ```
+2. Implement and ensure tests + smoke pass.
+3. Open a Pull Request linking the issue.
+4. After review/merge, close the related issue.
 
 ---
 
 ## 📦 Deployment
 
-Ambientes:
 - dev: local, SQLite
-- uat: staging em PythonAnywhere (SQLite)
-- prod: PostgreSQL (hospedagem TBD)
+- uat: staging (PythonAnywhere, SQLite)
+- prod: PostgreSQL (hosting TBD)
 
 ---
 
 ## 🏷️ MVP Focus
 
-O projeto está em fase de MVP, priorizando:
-- Autenticação JWT
-- Agendamentos (CRUD + fluxo)
-- Relatórios básicos (overview, top services, revenue)
-- Exportações CSV
-- Integração Stripe (assinaturas)
+- JWT auth
+- Appointments (CRUD + flow)
+- Basic reports (overview, top services, revenue)
+- CSV exports
+- Stripe integration (subscriptions)
 
-Melhorias maiores (ex.: cache avançado, observabilidade full, IA, etc.) serão consideradas após entrega do MVP.
-
----
-
-# README.md (patch mínimo para Smoke)
-
-Sugestão de ajuste na sua seção “🔍 Smoke tests” para usar o Make:
-
- ## 🔍 Smoke tests
-```diff
-
--- Para validar endpoints críticos de relatórios, use:
--    ```bash
--    ./scripts/smoke_reports.sh
--    ```
-+- Para validar endpoints críticos de relatórios:
-+    ```bash
-+    make smoke
-+    ```
-+
-+Ou diretamente pelo script:
-+```bash
-+./scripts/smoke_reports.sh
-```
+Major improvements (advanced cache, full observability, AI, etc.) are planned post-MVP.
 
 ---
 
-## 🌱 Seed (dados de demonstração)
+## 🌱 Seed (demo data)
 
-Cria usuários, profissionais, serviços, slots e alguns agendamentos (idempotente):
-
+Creates users, professionals, services, slots and some appointments (idempotent):
 ```bash
-make seed        # roda o management command seed_demo
-# ou
+make seed
+# or
 ./scripts/seed.sh
 ```
 
-### 🚀 Seed em massa (para testes de performance)
+### 🚀 Mass seed (performance tests)
 
-Para gerar grandes volumes de dados de teste:
-
-```bash
-make seed-mass   # gera dados padrão (1000 agendamentos)
-```
-
-Ou com parâmetros customizados:
-
-```bash
-make seed-mass APPOINTMENTS=10000 CUSTOMERS=2000 PROFESSIONALS=50 SERVICES=100
-```
-
-**Parâmetros disponíveis:**
-- `APPOINTMENTS`: número de agendamentos (padrão: 1000)
-- `CUSTOMERS`: número de clientes (padrão: 200)
-- `PROFESSIONALS`: número de profissionais (padrão: 10)
-- `SERVICES`: número de serviços (padrão: 20)
-- `DAYS_BACK`: dias no passado para gerar dados (padrão: 365)
-- `BATCH_SIZE`: tamanho do lote para inserções (padrão: 1000)
-
-**Exemplo de uso para teste de performance:**
-```bash
-# Gerar 50k agendamentos para teste de stress
-make seed-mass APPOINTMENTS=50000 CUSTOMERS=10000 PROFESSIONALS=100 SERVICES=200
-
-# Testar exportação CSV com dados grandes
-curl 'http://localhost:8000/api/appointments/export_csv/' -H 'Authorization: Bearer <token>'
-```
-
-> ⚠️ **Atenção**: O comando seed-mass pode demorar vários minutos para grandes volumes. Use com moderação em desenvolvimento.
+For large test data volumes:
 
 ---
 
-### 🔥 Smoke de cache dos relatórios
+## 🇧🇷 README em Português
 
-Este script cria **1 appointment** como `client_smoke` e verifica se o endpoint
-`/api/reports/top-services/` muda **antes vs. depois**, provando que os
-*sinais* invalidam o cache dos relatórios corretamente.
+### 🚀 Tecnologias principais
 
-Pré-requisitos:
-- `make run` ativo em `http://localhost:8000`
-- `make seed` já executado (para dados de demonstração)
-- `curl` e `jq` instalados
+- Python 3.11+
+- Django 5.x
+- Django REST Framework
+- drf-spectacular (OpenAPI 3)
+- pytest
+- SQLite / PostgreSQL (dependendo do ambiente)
+- Integração com Stripe para assinaturas
 
-Rodar:
+### 📂 Estrutura do projeto
+```
+salonix-backend/
+├── core/              # Agendamentos, serviços, horários, séries
+├── users/             # Autenticação, tenants, staff, feature flags, SSE
+├── payments/          # Assinaturas Stripe, checkout, webhooks
+├── reports/           # Relatórios, cache, exportações
+├── notifications/     # Notificações, devices, serviços, signals
+├── ops/               # APIs Ops, métricas, permissões
+├── salonix_backend/   # Configurações Django, middleware, admin, urls
+├── docs/              # Documentação backend e runbooks
+├── scripts/           # Seeds e scripts de smoke
+├── tests/             # Testes cross-app
+├── static/            # Assets do admin e DRF
+├── requirements.txt
+├── api-schema.yaml
+├── manage.py
+└── README.md
+```
+
+### ⚙️ Configuração
+
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/<org>/salonix-backend.git
+   cd salonix-backend
+   ```
+2. Crie o virtualenv:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+3. Instale dependências:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Variáveis de ambiente (`.env` ou `settings.ini`):
+   ```bash
+   DJANGO_ENV=dev
+   SECRET_KEY=...
+   DEBUG=True
+   DATABASE_URL=sqlite:///db.sqlite3
+   STRIPE_SECRET_KEY=...
+   STRIPE_WEBHOOK_SECRET=...
+   USERS_AUTH_THROTTLE_LOGIN=10/min
+   USERS_AUTH_THROTTLE_REGISTER=5/min
+   USERS_TENANT_META_PUBLIC=60/min
+   CAPTCHA_ENABLED=false
+   CAPTCHA_PROVIDER=turnstile  # ou hcaptcha
+   CAPTCHA_SECRET=
+   CAPTCHA_BYPASS_TOKEN=
+   ```
+5. Migrações:
+   ```bash
+   python manage.py migrate
+   ```
+6. Superusuário:
+   ```bash
+   python manage.py createsuperuser
+   ```
+
+### 🧪 Testes
+
+- Rodar a suíte completa:
+  ```bash
+  pytest
+  ```
+- Rodar apenas relatórios:
+  ```bash
+  pytest reports/tests/
+  ```
+
+### 🔒 Hardening Self-service (BE-212)
+
+- Endpoints protegidos: `POST /api/users/register/`, `POST /api/users/token/` (throttle + captcha opcional) e `GET /api/users/tenant/meta/` (throttle público).
+- Envs: `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`, `CAPTCHA_*`.
+- Dev/Test: throttling alto por padrão; use `override_settings` para testar 429; bypass captcha via `X-Captcha-Token`.
+
+### 🔑 Recuperação de Senha (BE-240)
+
+- `POST /api/users/password/reset/` (resposta neutra `{"status":"ok"}`) e `POST /api/users/password/reset/confirm/` (uid + token + new_password).
+- Throttle `users_password_reset`; captcha no request.
+- Métrica: `users_password_reset_events_total{event,result}`.
+
+### 🔍 Smoke tests
+
+1. Suba o backend (`make run` ou `python manage.py runserver`).
+2. Execute:
+   ```bash
+   make smoke
+   ```
+
+Credenciais seed:
+- `pro_smoke@demo.local / Smoke@123`
+- `client_smoke@demo.local / Smoke@123`
+- `SMOKE_USER_PASSWORD=...` antes de `make seed` altera a senha padrão.
+
+O script:
+- Autentica como `pro_smoke`.
+- Chama relatórios (`overview`, `top-services`, `revenue`) e exporta CSV.
+- Valida throttling e métricas Prometheus.
+
+### 💳 Stripe / Billing
+
+- `.env`: `STRIPE_PRICE_*_MONTHLY_ID` e `STRIPE_TRIAL_DAYS` (opcional).
+- URLs de retorno: `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`, `STRIPE_PORTAL_RETURN_URL`.
+- Teste manual: `POST /api/payments/stripe/create-checkout-session/` com `plan`.
+
+### 📖 Documentação da API
+
+- `/api/schema/`, `/api/docs/swagger/`, `/api/docs/redoc/`.
+
+### 📡 SSE de Créditos
+
+- `GET /api/users/realtime/credits/` (`text/event-stream`), `Authorization: Bearer <JWT>`.
+- Eventos: `heartbeat` e `credit_update` com `balance` e `ledger`.
+- Observabilidade: `USERS_SSE_EVENTS_TOTAL{event,result}` e logs com `X-Request-ID`.
+
+Exemplo `curl`:
 ```bash
-make smoke-cache
+curl -N \
+  -H "Accept: text/event-stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: sse-docs-demo-001" \
+  http://localhost:8000/api/users/realtime/credits/
+```
+
+### 🗂️ Feature flags
+
+- `UserFeatureFlags`: `is_pro`, `reports_enabled`.
+
+### 🧑‍💻 Contribuição
+
+1. Crie branch da issue:
+   ```bash
+   git checkout -b BE-XX-nome-da-tarefa
+   ```
+2. Garanta tests + smoke.
+3. Abra PR vinculando à issue.
+4. Após review/merge, feche a issue.
+
+### 📦 Deployment
+
+- dev: local (SQLite)
+- uat: staging (PythonAnywhere, SQLite)
+- prod: PostgreSQL (TBD)
+
+### 🏷️ MVP Focus
+
+- JWT, Agendamentos, Relatórios básicos, CSV, Stripe.
+
+### 🌱 Seed (dados de demonstração)
+
+```bash
+make seed
+# ou
+./scripts/seed.sh
 ```

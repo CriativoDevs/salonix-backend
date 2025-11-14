@@ -1,4 +1,21 @@
-# 🛡️ Sistema de Validação de Dados - Salonix Backend
+# 🛡️ Data Validation System — Salonix Backend (EN/PT)
+
+## 🇬🇧 English
+
+### Overview
+Salonix provides a reusable validation and sanitisation framework across serializers and domain logic. It enforces consistent formats, applies business rules, and prevents cross‑tenant access.
+
+### Highlights
+- Validators: phone, postal code, NIF, price, duration, business hours, future time, workdays.
+- Sanitisation helpers: `sanitize_text_input`, `sanitize_phone_number`, `sanitize_postal_code`.
+- Business validation: `validate_appointment_data`, `validate_service_data`, `validate_professional_data`.
+- Integrity: tenant ownership guards and duplicate prevention.
+
+### Usage
+- Call validators directly or rely on serializer integration; errors return domain‑specific messages.
+- See examples below in Portuguese sections; function names and code snippets are language‑agnostic.
+
+---
 
 ## 📋 **Visão Geral**
 

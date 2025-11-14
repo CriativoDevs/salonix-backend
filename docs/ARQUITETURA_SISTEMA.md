@@ -1,4 +1,54 @@
-# 🏗️ Arquitetura do Sistema - Salonix Backend
+# 🏗️ System Architecture — Salonix Backend (EN/PT)
+
+## 🇬🇧 English
+
+### Overview
+This document describes the backend architecture, including multi‑tenancy, security, performance, observability, and main components. It is suitable for technical and non‑technical readers.
+
+### Core Principles
+- Multi‑tenancy first: strict data isolation, tenant present in all core models, automatic tenant detection.
+- Performance & scalability: Redis cache, optimised queries, pagination, DB indexes.
+- Security by design: JWT auth, rigorous validation, sanitised logs, granular permissions.
+- Observability: structured logs with context, Prometheus metrics, request correlation.
+
+### Tech Stack
+- Django + DRF, PostgreSQL, Redis.
+- OpenAPI via drf‑spectacular.
+- Metrics and structured logging.
+
+### Key Endpoints (examples)
+- Auth: `POST /api/users/token/`, `POST /api/users/token/refresh/`, `POST /api/users/register/`.
+- Tenant bootstrap/meta: `GET /api/users/me/tenant/`, `GET/PATCH /api/tenant/meta/`.
+- Reports: `GET /api/reports/**` (supports `?format=csv`).
+- Notifications: `POST /api/notifications/register_device/`, `POST /api/notifications/test/`.
+- Credits (summary/history/purchase): `/api/credits/**`.
+- Realtime credits SSE: `GET /api/users/realtime/credits/`.
+
+### Project Structure
+```
+salonix-backend/
+├── salonix_backend/          # Django core config
+│   ├── settings.py           # Django settings
+│   ├── urls.py               # Root URLs
+│   ├── admin.py              # Custom admin
+│   ├── middleware.py         # Custom middlewares
+│   ├── templates/            # Admin templates
+│   ├── validators.py         # Global validators
+│   └── asgi.py / wsgi.py     # App gateways
+├── users/                    # Users, tenant, staff, auth
+├── core/                     # Services, professionals, appointments
+├── reports/                  # Reporting APIs, cache, throttling
+├── notifications/            # Devices, logs, services
+├── payments/                 # Stripe integration and webhooks
+├── ops/                      # Ops backend (auth, metrics, alerts, support)
+├── docs/                     # Documentation (EN/PT)
+├── tests/                    # Automated tests
+└── static/                   # Admin/DRF assets
+```
+
+---
+
+## 🇧🇷 Português
 
 ## 📋 **Visão Geral**
 
@@ -85,35 +135,16 @@ Request correlation    - X-Request-ID
 
 ```
 salonix-backend/
-├── salonix_backend/          # Configurações principais
-│   ├── settings.py           # Configurações Django
-│   ├── urls.py              # URLs principais
-│   ├── admin.py             # Admin customizado
-│   ├── middleware.py        # Middlewares customizados
-│   ├── error_handling.py    # Sistema de erros
-│   ├── logging_utils.py     # Utilitários de log
-│   └── validators.py        # Validadores globais
-├── users/                   # Gestão de usuários e tenants
-│   ├── models.py           # User, Tenant, UserFeatureFlags
-│   ├── views.py            # APIs de autenticação
-│   ├── serializers.py      # Serializers de user/tenant
-│   └── admin.py            # Admin de usuários
-├── core/                    # Funcionalidades principais
-│   ├── models.py           # Service, Professional, Appointment
-│   ├── views.py            # APIs de agendamento
-│   ├── serializers.py      # Serializers do core
-│   └── admin.py            # Admin do core
-├── reports/                 # Sistema de relatórios
-│   ├── views.py            # APIs de relatórios
-│   ├── serializers.py      # Serializers de relatórios
-│   └── utils.py            # Utilitários de cálculo
-├── notifications/           # Sistema de notificações
-│   ├── models.py           # NotificationDevice, Log
-│   ├── services.py         # Drivers de notificação
-│   └── views.py            # APIs de notificação
-├── payments/               # Integração com Stripe
-├── tests/                  # Testes automatizados
-└── docs/                   # Documentação
+├── salonix_backend/          # Configurações Django, admin, middleware, templates
+├── users/                    # Usuários, tenants, staff, autenticação
+├── core/                     # Serviços, profissionais, agendamentos
+├── reports/                  # Relatórios (cache, throttling, CSV)
+├── notifications/            # Dispositivos, logs, serviços
+├── payments/                 # Integração Stripe e webhooks
+├── ops/                      # Backend Ops (auth, métricas, alertas, suporte)
+├── docs/                     # Documentação (EN/PT)
+├── tests/                    # Testes automatizados
+└── static/                   # Assets do admin/DRF
 ```
 
 ## 🗃️ **Modelo de Dados**
@@ -256,11 +287,10 @@ GET  /api/credits/history/        # Histórico de créditos/consumo
 
 ### **📡 Realtime (Badge de Crédito)**
 ```
-SSE  /realtime/credit             # Stream unidirecional com atualizações de crédito
-WS   /realtime/credit             # Alternativa bidirecional (opcional)
+SSE  /api/users/realtime/credits/   # Stream unidirecional com atualizações de crédito
 ```
 
-> Recomendação: **SSE** para badge unidirecional simples; **WS** quando houver ações interativas.
+> Recomendação: **SSE** para badge unidirecional simples; usar WebSocket apenas se houver ações interativas.
 
 ### **⚙️ Admin**
 ```
