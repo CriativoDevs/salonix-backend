@@ -248,6 +248,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreditBalance'
+              examples:
+                exemplo:
+                  value:
+                    current_balance: '19.90'
+                    total_purchased: '50.00'
+                    total_consumed: '30.10'
+                    total_bonus: '0.00'
+                    can_purchase_extra: true
+                    has_auto_renewal: true
           description: ''
   /api/auth/credits/consume/:
     post:
@@ -260,6 +269,12 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ConsumeCreditsRequest'
+            examples:
+              exemplo:
+                value:
+                  amount: '0.045'
+                  description: 'SMS para +351912345678'
+                  reference_id: 'msg_abc123'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/ConsumeCreditsRequest'
@@ -290,6 +305,21 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CommLedger'
+              examples:
+                exemplo:
+                  value:
+                    - id: 1
+                      transaction_type: purchase
+                      amount_eur: '25.00'
+                      balance_before: '0.00'
+                      balance_after: '25.00'
+                      status: completed
+                      description: 'Recarga de créditos'
+                      reference_id: 'pi_123'
+                      expires_at: '2025-01-01T00:00:00Z'
+                      created_by_username: 'owner@demo.local'
+                      created_at: '2025-01-01T00:00:00Z'
+                      updated_at: '2025-01-01T00:00:00Z'
           description: ''
   /api/auth/credits/purchase/:
     post:
@@ -332,6 +362,14 @@ paths:
             text/event-stream:
               schema:
                 type: string
+              examples:
+                credit_update:
+                  summary: Exemplo de evento SSE de crédito
+                  value: |
+                    event: credit_update
+                    data: {"balance": "19.90", "type": "purchase"}
+
+                    
           description: SSE stream de eventos de crédito
   /api/auth/me/features/:
     get:
@@ -1165,6 +1203,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AvailableCreditPackagesResponse'
+              examples:
+                exemplo:
+                  value:
+                    packages:
+                      - name: '€5'
+                        amount_eur: '5.00'
+                      - name: '€10'
+                        amount_eur: '10.00'
+                      - name: '€25'
+                        amount_eur: '25.00'
+                      - name: '€50'
+                        amount_eur: '50.00'
+                      - name: '€100'
+                        amount_eur: '100.00'
           description: ''
   /api/payments/stripe/credits/purchase/:
     post:
@@ -1179,6 +1231,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreditPurchaseRequestRequest'
+            examples:
+              exemplo:
+                value:
+                  amount_eur: '5.00'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/CreditPurchaseRequestRequest'
@@ -1194,7 +1250,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreditPurchaseResponse'
+              examples:
+                exemplo:
+                  value:
+                    client_secret: 'pi_secret_abc'
+                    payment_intent_id: 'pi_test_abc'
+                    amount_eur: '5.00'
           description: ''
+        '403':
+          description: Compra não permitida (OWNER inativo, tenant inválido ou extras desabilitados)
   /api/payments/stripe/history/:
     get:
       operationId: payments_stripe_history_retrieve
@@ -1575,24 +1639,18 @@ paths:
       tags:
       - Reports • Admin
       requestBody:
+        required: true
         content:
-          type:
+          application/json:
             schema:
               type: object
-              additionalProperties: {}
-              description: Unspecified request body
-          properties:
-            schema:
-              prefixes:
-                type: array
-                items:
-                  type: string
-                description: 'Lista de prefixos a invalidar (ex.: reports:overview:).'
-          required:
-            schema:
-              type: object
-              additionalProperties: {}
-              description: Unspecified request body
+              properties:
+                prefixes:
+                  type: array
+                  items:
+                    type: string
+                  description: 'Lista de prefixos a invalidar (ex.: reports:overview:).'
+              additionalProperties: false
       security:
       - jwtAuth: []
       responses:
