@@ -362,9 +362,38 @@ class CreateCreditPaymentIntentView(APIView):
         Cria um PaymentIntent para compra de créditos.
         O valor em EUR será convertido para o price_id correspondente.
         """
+        # Validar usuário e tenant
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        request_tenant = getattr(request, "tenant", None)
+
+        if tenant is None:
+            return Response(
+                {"detail": "Operação não permitida: usuário sem tenant."},
+                status=403,
+            )
+
+        if request_tenant is not None and request_tenant != tenant:
+            return Response(
+                {"detail": "Operação não permitida: tenant de requisição não corresponde ao usuário."},
+                status=403,
+            )
+
+        # Somente OWNER ativo pode comprar
+        staff_member = getattr(user, "staff_member", None)
+        from users.models import TenantStaffMember
+        if (
+            staff_member is None
+            or staff_member.role != TenantStaffMember.Role.OWNER
+            or staff_member.status != TenantStaffMember.Status.ACTIVE
+        ): 
+            return Response(
+                {"detail": "Operação não permitida: apenas OWNER ativo pode comprar créditos."},
+                status=403,
+            )
+
         # Validar se o tenant pode comprar créditos extras
-        tenant = getattr(request.user, "tenant", None)
-        if not tenant or not tenant.can_purchase_extra_credits():
+        if not tenant.can_purchase_extra_credits():
             return Response(
                 {"detail": "Compra de créditos extras não permitida para este plano"},
                 status=403,

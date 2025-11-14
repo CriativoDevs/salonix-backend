@@ -102,6 +102,16 @@ def test_smoke_compra_emite_credit_update_com_ledger(
     monkeypatch.setattr(payments_webhooks, "stripe", _StripeSDK, raising=True)
 
     client, user = auth_client()
+    # Ajustar para OWNER ativo e permitir compra extra
+    from users.models import TenantStaffMember
+    TenantStaffMember.objects.create(
+        tenant=user.tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+    user.tenant.comm_extra_allowed = True
+    user.tenant.save(update_fields=["comm_extra_allowed"])
 
     # Abre stream SSE
     sse_url = reverse("realtime_credits")
