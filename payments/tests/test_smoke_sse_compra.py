@@ -46,6 +46,29 @@ def test_smoke_compra_emite_credit_update_com_ledger(
     # Garantir secret de webhook definido
     settings.STRIPE_WEBHOOK_SECRET = "whsec_test_smoke"
 
+    # Configurar price IDs de créditos para o ambiente de teste (CI não usa .env)
+    settings.STRIPE_PRICE_CREDITS_5_ID = "price_credits_5_test"
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+    settings.STRIPE_PRICE_CREDITS_25_ID = "price_credits_25_test"
+    settings.STRIPE_PRICE_CREDITS_50_ID = "price_credits_50_test"
+    settings.STRIPE_PRICE_CREDITS_100_ID = "price_credits_100_test"
+
+    # Ajustar o mapa estático de PRICE_TO_CREDITS para refletir os price IDs de teste
+    from decimal import Decimal
+    from payments.services import CreditPurchaseService
+    monkeypatch.setattr(
+        CreditPurchaseService,
+        "PRICE_TO_CREDITS",
+        {
+            settings.STRIPE_PRICE_CREDITS_5_ID: Decimal("5.00"),
+            settings.STRIPE_PRICE_CREDITS_10_ID: Decimal("10.00"),
+            settings.STRIPE_PRICE_CREDITS_25_ID: Decimal("25.00"),
+            settings.STRIPE_PRICE_CREDITS_50_ID: Decimal("50.00"),
+            settings.STRIPE_PRICE_CREDITS_100_ID: Decimal("100.00"),
+        },
+        raising=True,
+    )
+
     # Patching do Stripe SDK (PaymentIntent/Customer) e Webhook
     import payments.services as payments_services
     import payments.stripe_utils as stripe_utils
