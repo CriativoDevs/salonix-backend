@@ -33,7 +33,7 @@ O seed data cria os seguintes tenants com diferentes configurações de crédito
 ### 3. Pro Salon Demo
 - **Créditos iniciais**: 25.00€
 - **Auto-renovação**: Habilitada
-- **Domínio customizado**: pro-salon-demo.local
+- **Domínio customizado**: pro-salon.example.com
 - **Histórico**: Múltiplas transações de consumo
 - **Saldo final**: ~19.90€
 
@@ -80,6 +80,14 @@ Com este seed data, é possível testar:
 5. **Histórico completo de transações**
 6. **Diferentes volumes de consumo**
 
+## Políticas por Plano (Seeds)
+
+- **`comm_auto_renew`**: habilitado para Standard e Pro (Standard+).
+- **`custom_domain_enabled`**: apenas para Pro (Pro+).
+- **`comm_extra_allowed`**: habilitado em todos os planos.
+
+As configurações dos tenants no seed (`seed_demo.py`) refletem estas políticas.
+
 ## Credenciais de Acesso
 
 - **Admin**: admin@demo.local / admin
@@ -99,7 +107,6 @@ export SMOKE_USER_PASSWORD="MinhaNovaSenh@123"
 
 - `core/management/commands/seed_demo.py` - Comando principal de seed
 - `seed.sh` - Script de execução
-- `core/management/commands/test_seed_demo.py` - Testes do seed
 
 ## Notas Importantes
 

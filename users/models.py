@@ -184,10 +184,10 @@ class Tenant(models.Model):
     
     def can_use_custom_domain(self):
         """Verifica se o tenant pode usar domínio personalizado (Pro+)."""
-        return self.custom_domain_enabled or self.plan_tier in [
-            self.PLAN_PRO, 
-            self.PLAN_ENTERPRISE
-        ]
+        return (
+            self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
+            and bool(self.custom_domain_enabled)
+        )
     
     def can_purchase_extra_credits(self):
         """Verifica se o tenant pode comprar créditos avulsos."""
@@ -254,7 +254,7 @@ class Tenant(models.Model):
             },
             "branding": {
                 "white_label_enabled": self.can_use_white_label(),
-                "custom_domain_enabled": self.can_use_white_label(),
+                "custom_domain_enabled": self.can_use_custom_domain(),
             },
         }
 
