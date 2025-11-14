@@ -774,7 +774,18 @@ class RealtimeCreditsSSEView(APIView):
             raise AuthenticationFailed("tenant_required")
 
         credit_service = CreditService(tenant)
+        # Suporte a reconexão: lê Last-Event-ID do header
         last_ledger_id = None
+        try:
+            # DRF fornece request.headers; Django usa META com prefixo HTTP_
+            hdr = request.headers.get("Last-Event-ID") if hasattr(request, "headers") else None
+            if not hdr:
+                hdr = request.META.get("HTTP_LAST_EVENT_ID")
+            if hdr:
+                last_ledger_id = int(hdr)
+        except Exception:
+            # Ignora header inválido e segue sem filtro inicial
+            last_ledger_id = None
 
         def sse_event(event: str, data: dict | str, eid: str | None = None) -> str:
             payload = data if isinstance(data, str) else json.dumps(data)

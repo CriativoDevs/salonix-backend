@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from .models import CreditPayment, StripeWebhookEvent, PaymentCustomer, Subscription
 from users.models import Tenant
+from users.services import CreditService
 from . import stripe_utils
 
 logger = logging.getLogger(__name__)
@@ -161,14 +162,20 @@ class StripeWebhookView(View):
             # Aplicar créditos se ainda não foram aplicados
             if not credit_payment.credits_applied:
                 tenant = credit_payment.tenant
-                
-                # Adicionar créditos ao tenant
-                tenant.comm_credit_eur += credit_payment.credits_purchased
-                tenant.save()
+
+                # Usar CreditService para registrar ledger e atualizar saldo
+                cs = CreditService(tenant)
+                cs.add_credits(
+                    amount=credit_payment.credits_purchased,
+                    transaction_type='purchase',
+                    description='Compra de créditos via Stripe',
+                    reference_id=payment_intent['id'],
+                    created_by=credit_payment.user,
+                )
 
                 # Marcar créditos como aplicados
                 credit_payment.credits_applied = True
-                
+
                 logger.info(
                     f"Applied {credit_payment.credits_purchased} credits to tenant {tenant.name} "
                     f"(Payment: {payment_intent['id']})"

@@ -1,4 +1,62 @@
-# 🛡️ Tutorial Django Admin - Salonix
+# 🛡️ Django Admin Tutorial — Salonix (EN/PT)
+
+## 🇬🇧 English
+
+### Overview
+This tutorial explains how to use Salonix’s customized Django Admin to manage tenants, users, staff, and system settings.
+
+### Accessing Django Admin
+- Start server: `python manage.py runserver 0.0.0.0:8000`.
+- Admin URL: `http://0.0.0.0:8000/admin/`.
+- Use the admin credentials provided by your team (default values in dev may be `admin` / `admin123`, only for local use).
+
+### Create a New Tenant
+1. In Admin, go to `Tenants` → `Add Tenant`.
+2. Fill basic info: Name, Slug (auto), Description.
+3. Choose a Plan and enable relevant Features (Reports, SMS, WhatsApp, PWA, Push).
+4. Optional branding: upload Logo (PNG/JPG, ≤2MB, 300×300), set Primary/Secondary colors.
+5. Save — the tenant becomes Active.
+
+### Create/Invite Staff Members
+1. Go to `Users` → `Tenant staff members` → `Add`.
+2. Select Tenant and User (or create via green “+”).
+3. Set Role: `manager` or `collaborator`. Set Status: `Invited` (generates token) or `Active` (for seeds).
+4. Save and copy the Invite token (resend action available once email is integrated).
+5. When the collaborator accepts the invite (`POST /api/users/staff/accept/`), Status switches to Active and a linked `Professional` is created automatically (see `Core → Professionals`).
+6. To revoke, set Status to `Disabled` — linked professionals become inactive but history remains.
+
+Tip: when migrating legacy data, ensure all `Professional` records are linked to a staff member (via admin or migration).
+
+### Configure White‑label
+- Edit the tenant → Branding.
+- Upload logo (transparent PNG preferred) and set color scheme.
+- Validate via `/api/tenant/meta/` to see logo URL, colors, plan tier, and features.
+
+### Feature Flags
+- Plans toggle feature availability (Basic/Standard/Pro/Enterprise).
+- Manually enable/disable features in the tenant’s Feature Flags section and Save.
+
+### Monitoring & Metrics (Admin Dashboard)
+- Active users today, active tenants, today’s appointments, estimated revenue.
+- Top tenants by users, monthly appointments, plan value, activity score.
+- Recent activity: new tenants, new users, recent appointments, config changes.
+- Alerts: inactive tenants, users without tenant, sync failures, configuration issues.
+
+### Bulk Actions
+- Tenants: Activate/Deactivate, Upgrade plan.
+- Users: Activate/Deactivate, Send welcome email.
+
+### Search & Filters
+- Tenants: by name, owner email, slug. Filters: plan, status, created date, features.
+- Users: by username, email, tenant name, phone.
+
+### Troubleshooting
+- Can’t log in: check user Active, tenant association, tenant Active.
+- Features not working: check Feature Flags and Plan.
+
+---
+
+## 🇧🇷 Português
 
 ## 📋 **Visão Geral**
 

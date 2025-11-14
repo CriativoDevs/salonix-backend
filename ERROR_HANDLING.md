@@ -1,3 +1,30 @@
+# 🇬🇧 Error Handling System — Salonix Backend (EN)
+
+## Overview
+Salonix provides a standardized error handling system with:
+
+- Consistent error codes (E001–E499)
+- Structured logging with sensitive data sanitization
+- JSON response format and custom DRF exception handler
+- Error metrics for observability
+
+## Implemented (BE-94)
+- Error codes and custom exceptions (`SalonixError`, `BusinessError`, `TenantError`)
+- `custom_exception_handler`, structured `log_error`, `sanitize_data`
+- Utilities and decorators for gradual migration, with 18 passing tests
+
+## Usage
+- Import from `salonix_backend/error_handling.py`
+- Raise domain errors and use `handle_business_errors` decorator
+- Exception handler configured in `settings.py` under `REST_FRAMEWORK`
+
+## Links
+- Architecture: `docs/ARQUITETURA_SISTEMA.md`
+- Validation System: `docs/VALIDATION_SYSTEM.md`
+- Observability overview: `docs/OBSERVABILITY.md`
+
+---
+
 # 🛡️ Sistema de Tratamento de Erros - Salonix Backend
 
 ## 📋 **Visão Geral**

@@ -1,4 +1,20 @@
-# 🏢 Django Admin - Salonix
+# 🏢 Django Admin — Salonix (EN/PT)
+
+## 🇬🇧 English
+
+### Overview
+Salonix ships a customised Django Admin for multi‑tenant operations: dashboards, top tenants, recent activity, alerts, tenant management with feature flags, bulk actions and granular permissions.
+
+### Quick Start
+- Configure: `python manage.py setup_admin --create-superuser`.
+- Login: `/admin/` (change default credentials immediately in dev).
+- Key sections: Tenants (`/admin/users/tenant/`), Users (`/admin/users/customuser/`).
+
+### Security & Observability
+- Tenant isolation enforced; only Ops accounts can be superusers.
+- Structured logging, CSP/XSS headers, audit trails.
+
+---
 
 ## Visão Geral
 

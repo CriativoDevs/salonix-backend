@@ -1,3 +1,42 @@
+# 🇬🇧 Salonix MVP Status – English (October 2025)
+
+## Overview
+Salonix Backend is approximately ~85% complete for MVP. Core multi-tenant scheduling, reporting, branding, observability, validation, and admin are in place. Remaining MVP work focuses on real communications (SMS/WhatsApp), Portuguese phone validation, and plan/paywall enforcement with persisted theme preferences.
+
+## Delivered (19 tasks)
+- Infrastructure: Django/DRF, JWT auth (`/api/users/token/`), mandatory multi-tenancy, feature flags, Redis cache, `.env` config, custom Django Admin.
+- Scheduling: services, professionals, slots, appointments; CRUD; advanced statuses; business validations; tenant isolation; recurring series with bulk edit/cancel.
+- Reporting: endpoints + CSV, smart cache invalidation, throttling, Prometheus metrics, plan-gated access.
+- White-label: tenant meta (`/api/tenant/meta`), logo upload, color palette, feature flags.
+- Notifications: event hooks, Prometheus metrics, structured logging; real SMS/WhatsApp drivers pending.
+- Calendar: standard `.ics` downloads compatible with Google/Apple/Outlook.
+- Quality: error handling, data validation, structured logs, 270+ tests green.
+
+## Remaining MVP Items
+- BE-128: Real SMS via Twilio.
+- BE-129: Real WhatsApp via Meta.
+- BE-130: Portuguese phone number validation.
+- Plan/paywall enforcement and persisted theme preference.
+
+## Key Links
+- Documentation index: `./README.md`
+- Architecture: `./ARQUITETURA_SISTEMA.md`
+- Django Admin: `./ADMIN_DJANGO.md`
+- Ops Runbook: `./OPS_RUNBOOK.md`
+- Validation System: `./VALIDATION_SYSTEM.md`
+- Backend Implementations: `./IMPLEMENTACOES_BACKEND.md`
+- Stripe Payments: `./PAGAMENTOS_STRIPE.md`
+
+## Stats
+- 270+ tests across 17 files and 48 classes.
+- Progress bars indicate backend ≈85% complete; communications pending.
+
+## Next Steps
+- Implement real communications (Twilio SMS, Meta WhatsApp).
+- Enforce plans/paywall and persist theme preferences.
+
+---
+
 # 📊 Status Atual do MVP Salonix (Outubro 2025)
 
 ## 🎯 **Visão Geral**

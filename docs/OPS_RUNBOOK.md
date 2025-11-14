@@ -1,4 +1,12 @@
-# 📚 OPS Console Runbook
+# 📚 OPS Console Runbook (EN/PT)
+
+## 🇬🇧 English
+
+This guide helps support/operations teams use the Salonix Ops backend: scoped auth, metrics overview, alerts lifecycle, support services (resend notifications, clear lockouts), audit log, and daily checklist.
+
+---
+
+## 🇧🇷 Português
 
 Este documento orienta a equipe de suporte/operations no uso do backend Ops do Salonix.
 

@@ -1,4 +1,20 @@
-# 🏗️ Implementações do Backend - Salonix
+# 🏗️ Backend Implementations — Salonix (EN/PT)
+
+## 🇬🇧 English
+
+### Overview
+This document tracks implemented backend features with references to code, endpoints and tests. Major areas include multi‑tenancy, auth, plans/billing, Ops console, reports/cache, staff management, validation, notifications, payments and realtime credits (SSE).
+
+### Quick Pointers
+- Multi‑tenancy & auth: `users/*`, endpoints under `/api/users/**`.
+- Plans & Stripe: `payments/*`, endpoints under `/api/payments/**`, see `docs/PAGAMENTOS_STRIPE.md`.
+- Ops console: `ops/*` (`/api/ops/**`), runbook in `docs/OPS_RUNBOOK.md`.
+- Reports & cache: `reports/*` with Redis caching and throttling.
+- Staff by tenant: `users/TenantStaffMember` with invite/accept endpoints and permissions enforced in `core/*`.
+- Validation system: `salonix_backend/validators.py` and `docs/VALIDATION_SYSTEM.md`.
+- Realtime credits (SSE): `GET /api/users/realtime/credits/` — see section below.
+
+---
 
 ## 📋 **Visão Geral**
 
@@ -645,37 +661,35 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ## 🚀 **Próximas Implementações**
 
 ### **📡 Realtime Créditos (BE-CRED-03)**
-**Status**: 🚧 Implementado (aguardando validação)
+**Status**: ✅ Implementado
 
 **Endpoint (SSE)**
-- `GET /api/auth/realtime/credits/` — `Content-Type: text/event-stream`
+- `GET /api/users/realtime/credits/` — `Content-Type: text/event-stream`
 - Autorização: `Authorization: Bearer <JWT>` (IsAuthenticated)
 - Isolamento: por `tenant` (dados não vazam entre tenants)
 
 **Eventos**
-- `event: heartbeat` — `data: "ping"` (a cada 15s)
+- `event: heartbeat` — `data: "ping"` (periódico)
 - `event: credit_update` — `id: <ledger_id>`
   - `data: { balance: number, ledger: { id, type, amount, description, created_at } }`
 
 **Reconexão**
-- Cliente deve usar `EventSource` (reconexão automática). Exemplo:
+- Clientes devem usar `EventSource` (reconexão automática). Exemplo:
   ```js
-  const es = new EventSource('/api/auth/realtime/credits/');
+  const es = new EventSource('/api/users/realtime/credits/');
   es.addEventListener('credit_update', (e) => {
     const payload = JSON.parse(e.data);
     // atualizar badge de saldo
   });
-  es.addEventListener('heartbeat', () => {/* opcional */});
+  es.addEventListener('heartbeat', () => {
+    // manter UI viva
+  });
   ```
 
-**Fallback de Polling**
-- `GET /api/auth/credits/balance/` — saldo atual
-- `GET /api/auth/credits/history/` — histórico de transações
-- Sugestão: polling a cada 15–30s; usar ETags/If-None-Match se viável
-
-**Auditoria/Observabilidade**
-- Heartbeat mantém o stream ativo; erros transitórios geram `heartbeat:error`
-- SSE sem cache (`Cache-Control: no-cache`, `X-Accel-Buffering: no`)
+**Observabilidade**
+- Métrica Prometheus: `USERS_SSE_EVENTS_TOTAL{event, result}` com rótulos `heartbeat|credit_update|error` e `success|failure`.
+- Logs estruturados com `X-Request-ID`, `user_id` e `tenant_id` via `RequestLoggingMiddleware`.
+- Headers de SSE sem cache: `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
 
 **Arquivos**
 - `users/views.py` — `RealtimeCreditsSSEView`
