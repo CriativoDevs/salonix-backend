@@ -17,7 +17,9 @@ Salonix integrates with Stripe for subscriptions (plans) and one‑off credit pu
 ### Endpoints
 - Create checkout: `POST /api/payments/checkout/` (body includes `plan_code`).
 - Webhooks: `POST /api/payments/webhooks/stripe/` (events: `checkout.session.completed`, `customer.subscription.*`).
-- Credits: `POST /api/credits/add/` creates PaymentIntent for top‑up; history in `GET /api/credits/history/`.
+- Credits (Stripe): `POST /api/payments/stripe/credits/purchase/` creates PaymentIntent; packages in `GET /api/payments/stripe/credits/packages/`.
+- Credits (balance/ledger): `GET /api/auth/credits/balance/`, `GET /api/auth/credits/history/`, `POST /api/auth/credits/consume/`.
+- Realtime (SSE): `GET /api/auth/realtime/credits/` (`text/event-stream`).
 
 ### Behaviour
 - Checkout creates Stripe session with metadata (`plan_code`, `user_id`, `client_reference_id`) and optional trial days.
@@ -48,7 +50,9 @@ O Salonix integra com Stripe para assinaturas (planos) e compra avulsa de crédi
 ### Endpoints
 - Criar checkout: `POST /api/payments/checkout/` (corpo inclui `plan_code`).
 - Webhooks: `POST /api/payments/webhooks/stripe/` (eventos: `checkout.session.completed`, `customer.subscription.*`).
-- Créditos: `POST /api/credits/add/` cria PaymentIntent para recarga; histórico em `GET /api/credits/history/`.
+- Créditos (Stripe): `POST /api/payments/stripe/credits/purchase/` cria PaymentIntent; pacotes em `GET /api/payments/stripe/credits/packages/`.
+- Créditos (saldo/ledger): `GET /api/auth/credits/balance/`, `GET /api/auth/credits/history/`, `POST /api/auth/credits/consume/`.
+- Realtime (SSE): `GET /api/auth/realtime/credits/` (`text/event-stream`).
 
 ### Comportamento
 - Checkout cria sessão Stripe com metadata (`plan_code`, `user_id`, `client_reference_id`) e trial opcional.
@@ -59,3 +63,22 @@ O Salonix integra com Stripe para assinaturas (planos) e compra avulsa de crédi
 - Stripe CLI: `stripe listen --forward-to localhost:8000/api/payments/webhooks/stripe/`.
 - Disparar eventos de teste: `stripe trigger checkout.session.completed`.
 - Configure os preços no `.env` com IDs de teste/live.
+
+### Limites e Custos (créditos)
+
+- Conforme `BUSINESS_OVERVIEW.md`: créditos avulsos disponíveis desde o Basic; custo de SMS ≈ €0,045 (PT); WhatsApp conforme categoria.
+- Excedentes: custo + 20% (mínimo €3/mês). Créditos avulsos expiram em 60 dias.
+- Políticas e seeds: ver `SEED_DATA_CREDITS.md`.
+
+### Autorização de Compra de Créditos
+
+- Somente `OWNER` ativo do tenant pode comprar créditos avulsos.
+- `request.tenant` deve corresponder a `user.tenant` e `tenant.comm_extra_allowed` precisa estar habilitado.
+- Em violações, a API retorna `403`.
+
+### SSE de Créditos
+
+- Endpoint `GET /api/auth/realtime/credits/` retorna stream `text/event-stream` com eventos de atualização de saldo/ledger isolados por tenant autenticado.
+- Exemplo de evento:
+  - `event: credit_update` seguido de `data: {"balance": "19.90", "type": "purchase"}` e uma linha em branco.
+  - Heartbeat periódico para manter conexão.
