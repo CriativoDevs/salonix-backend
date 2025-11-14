@@ -33,6 +33,7 @@ from .serializers import (
     StripeSettingsResponseSerializer,
 )
 from .observability import PAYMENTS_SETTINGS_UPDATED_TOTAL
+from users.models import Tenant
 
 
 class CreateCheckoutSession(APIView):
@@ -361,6 +362,14 @@ class CreateCreditPaymentIntentView(APIView):
         Cria um PaymentIntent para compra de créditos.
         O valor em EUR será convertido para o price_id correspondente.
         """
+        # Validar se o tenant pode comprar créditos extras
+        tenant = getattr(request.user, "tenant", None)
+        if not tenant or not tenant.can_purchase_extra_credits():
+            return Response(
+                {"detail": "Compra de créditos extras não permitida para este plano"},
+                status=403,
+            )
+
         serializer = CreditPurchaseRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -643,6 +652,18 @@ class StripeSettingsView(APIView):
 
         auto_renewal = serializer.validated_data["auto_renewal"]
         old_value = bool(getattr(tenant, "comm_auto_renew", False))
+
+        # Validar plano para habilitar auto-renovação (Standard+)
+        if auto_renewal and tenant.plan_tier not in (
+            Tenant.PLAN_STANDARD,
+            Tenant.PLAN_PRO,
+            Tenant.PLAN_ENTERPRISE,
+        ):
+            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
+            return Response(
+                {"detail": "Renovação automática disponível apenas em planos Standard+"},
+                status=403,
+            )
 
         try:
             setattr(tenant, "comm_auto_renew", auto_renewal)

@@ -326,7 +326,7 @@ class TenantCreditMethodsTestCase(TestCase):
         self.assertFalse(self.tenant_basic.can_use_custom_domain())
         self.assertTrue(self.tenant_pro.can_use_custom_domain())
         
-        # Testa com custom_domain_enabled=True mesmo em plano básico
+        # Mesmo com custom_domain_enabled=True, plano básico não deve permitir
         self.tenant_basic.custom_domain_enabled = True
         self.tenant_basic.save()
-        self.assertTrue(self.tenant_basic.can_use_custom_domain())
+        self.assertFalse(self.tenant_basic.can_use_custom_domain())
