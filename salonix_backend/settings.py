@@ -127,7 +127,17 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS: configurável por ambiente (dev/uat/prod)
+# Em dev mantemos permissivo; em staging/prod usar lista explícita
+CORS_ALLOW_ALL_ORIGINS = str(env_get("CORS_ALLOW_ALL_ORIGINS", "true")).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+origins_raw = str(env_get("CORS_ALLOWED_ORIGINS", "")).strip()
+if origins_raw:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in origins_raw.split(",") if o.strip()]
 try:
     from corsheaders.defaults import default_headers
 
