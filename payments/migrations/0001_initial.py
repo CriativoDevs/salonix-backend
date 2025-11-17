@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -15,28 +14,78 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='PaymentCustomer',
+            name="PaymentCustomer",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('stripe_customer_id', models.CharField(max_length=255, unique=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='payment_customer', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("stripe_customer_id", models.CharField(max_length=255, unique=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="payment_customer",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='Subscription',
+            name="Subscription",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('stripe_subscription_id', models.CharField(max_length=255, unique=True)),
-                ('status', models.CharField(choices=[('incomplete', 'incomplete'), ('trialing', 'trialing'), ('active', 'active'), ('past_due', 'past_due'), ('canceled', 'canceled'), ('unpaid', 'unpaid')], max_length=32)),
-                ('price_id', models.CharField(blank=True, max_length=255, null=True)),
-                ('current_period_end', models.DateTimeField(blank=True, null=True)),
-                ('cancel_at_period_end', models.BooleanField(default=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='subscriptions', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "stripe_subscription_id",
+                    models.CharField(max_length=255, unique=True),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("incomplete", "incomplete"),
+                            ("trialing", "trialing"),
+                            ("active", "active"),
+                            ("past_due", "past_due"),
+                            ("canceled", "canceled"),
+                            ("unpaid", "unpaid"),
+                        ],
+                        max_length=32,
+                    ),
+                ),
+                ("price_id", models.CharField(blank=True, max_length=255, null=True)),
+                ("current_period_end", models.DateTimeField(blank=True, null=True)),
+                ("cancel_at_period_end", models.BooleanField(default=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subscriptions",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'indexes': [models.Index(fields=['user', 'status'], name='payments_su_user_id_058311_idx')],
+                "indexes": [
+                    models.Index(
+                        fields=["user", "status"], name="payments_su_user_id_058311_idx"
+                    )
+                ],
             },
         ),
     ]

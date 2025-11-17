@@ -5,7 +5,7 @@ Utilitário para geração de arquivos .ics (iCalendar) para agendamentos.
 import hashlib
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.utils import timezone
-from typing import Dict, Any, cast
+from typing import cast
 
 from core.models import Appointment
 

@@ -5,15 +5,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0004_add_tenant_fk_to_user'),
+        ("users", "0004_add_tenant_fk_to_user"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='customuser',
-            name='tenant',
-            field=models.ForeignKey(help_text='Tenant/salão ao qual o usuário pertence', on_delete=django.db.models.deletion.CASCADE, related_name='users', to='users.tenant'),
+            model_name="customuser",
+            name="tenant",
+            field=models.ForeignKey(
+                help_text="Tenant/salão ao qual o usuário pertence",
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="users",
+                to="users.tenant",
+            ),
         ),
     ]

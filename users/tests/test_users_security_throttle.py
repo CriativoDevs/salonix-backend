@@ -40,7 +40,9 @@ def test_login_is_throttled():
     client = APIClient()
     token_url = reverse("token_obtain_pair")
 
-    User.objects.create_user(username="u1", email="u1@example.com", password="p@ss12345")
+    User.objects.create_user(
+        username="u1", email="u1@example.com", password="p@ss12345"
+    )
     payload = {"email": "u1@example.com", "password": "p@ss12345"}
 
     r1 = client.post(token_url, data=payload)
@@ -98,7 +100,9 @@ def test_register_is_throttled():
 def test_login_with_captcha_bypass_succeeds():
     client = APIClient()
     token_url = reverse("token_obtain_pair")
-    User.objects.create_user(username="u1", email="u1@example.com", password="p@ss12345")
+    User.objects.create_user(
+        username="u1", email="u1@example.com", password="p@ss12345"
+    )
     payload = {"email": "u1@example.com", "password": "p@ss12345"}
     # enviar header de bypass
     r = client.post(token_url, data=payload, HTTP_X_CAPTCHA_TOKEN="dev-bypass")
@@ -110,8 +114,13 @@ def test_login_with_captcha_bypass_succeeds():
 def test_login_with_invalid_captcha_fails():
     client = APIClient()
     token_url = reverse("token_obtain_pair")
-    User.objects.create_user(username="u2", email="u2@example.com", password="p@ss12345")
-    payload = {"email": "u2@example.com", "password": "p@ss12345", "captcha_token": "invalid"}
+    User.objects.create_user(
+        username="u2", email="u2@example.com", password="p@ss12345"
+    )
+    payload = {
+        "email": "u2@example.com",
+        "password": "p@ss12345",
+        "captcha_token": "invalid",
+    }
     r = client.post(token_url, data=payload)
     assert r.status_code == status.HTTP_400_BAD_REQUEST
-

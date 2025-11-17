@@ -7,9 +7,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework.exceptions import ValidationError, AuthenticationFailed, PermissionDenied
+from rest_framework.exceptions import (
+    ValidationError,
+    AuthenticationFailed,
+    PermissionDenied,
+)
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 
 from rest_framework.exceptions import NotFound
 from django.http import StreamingHttpResponse
@@ -50,10 +54,8 @@ from .observability import (
     USERS_PASSWORD_RESET_EVENTS_TOTAL,
     USERS_SSE_EVENTS_TOTAL,
 )
-from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -315,36 +317,39 @@ class MeProfileView(APIView):
                     "theme_preference": {
                         "type": "string",
                         "enum": ["light", "dark", "system"],
-                        "description": "Preferência de tema do usuário"
+                        "description": "Preferência de tema do usuário",
                     }
                 },
-                "required": ["theme_preference"]
+                "required": ["theme_preference"],
             }
         },
-        responses={200: UserSelfSerializer}
+        responses={200: UserSelfSerializer},
     )
     def patch(self, request):
         user = request.user
-        theme_preference = request.data.get('theme_preference')
-        
+        theme_preference = request.data.get("theme_preference")
+
         if not theme_preference:
             return Response(
-                {"detail": "theme_preference é obrigatório"}, 
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "theme_preference é obrigatório"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         # Validar se o valor é válido
         from .models import CustomUser
+
         valid_choices = [choice[0] for choice in CustomUser.ThemePreference.choices]
         if theme_preference not in valid_choices:
             return Response(
-                {"detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"}, 
-                status=status.HTTP_400_BAD_REQUEST
+                {
+                    "detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         user.theme_preference = theme_preference
-        user.save(update_fields=['theme_preference'])
-        
+        user.save(update_fields=["theme_preference"])
+
         serializer = UserSelfSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -363,7 +368,9 @@ class TenantStaffView(APIView):
         ):
             raise PermissionDenied("Permissão negada.")
 
-        staff_qs = TenantStaffMember.objects.filter(tenant=tenant).select_related("user")
+        staff_qs = TenantStaffMember.objects.filter(tenant=tenant).select_related(
+            "user"
+        )
         serializer = TenantStaffMemberSerializer(staff_qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -372,7 +379,9 @@ class TenantStaffView(APIView):
         if tenant is None:
             raise NotFound("Tenant não encontrado para o usuário autenticado.")
 
-        serializer = StaffInviteSerializer(data=request.data, context={"request": request})
+        serializer = StaffInviteSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         staff_member = serializer.save()
         response_data = TenantStaffMemberSerializer(staff_member).data
@@ -457,9 +466,6 @@ class UsersPasswordResetThrottle(ScopedRateThrottle):
     scope = "users_password_reset"
 
 
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse
-
-
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [UsersPasswordResetThrottle]
@@ -480,19 +486,29 @@ class PasswordResetRequestView(APIView):
         try:
             enforce_captcha_or_raise(request)
         except ValidationError:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="failure").inc()
-            return Response({"detail": "captcha_invalid"}, status=status.HTTP_400_BAD_REQUEST)
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="failure"
+            ).inc()
+            return Response(
+                {"detail": "captcha_invalid"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         email = str(request.data.get("email", "")).strip().lower()
         if not email:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="failure").inc()
-            return Response({"detail": "email_required"}, status=status.HTTP_400_BAD_REQUEST)
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="failure"
+            ).inc()
+            return Response(
+                {"detail": "email_required"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         User = get_user_model()
         try:
             user = User.objects.get(email=email, is_active=True)
         except User.DoesNotExist:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="success"
+            ).inc()
             # resposta neutra para não vazar existência
             return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
@@ -500,13 +516,19 @@ class PasswordResetRequestView(APIView):
         token = token_gen.make_token(user)
         uid = str(user.pk)
 
-        reset_url = request.data.get("reset_url") or settings.STRIPE_CANCEL_URL  # placeholder front URL
+        reset_url = (
+            request.data.get("reset_url") or settings.STRIPE_CANCEL_URL
+        )  # placeholder front URL
         # Montar link: {reset_url}?uid={uid}&token={token}
         link = f"{reset_url}?uid={uid}&token={token}"
 
         try:
             from django.core.mail import EmailMultiAlternatives
-            fail_silently = not (getattr(settings, "DEBUG", False) or getattr(settings, "ENV", "dev") == "dev")
+
+            fail_silently = not (
+                getattr(settings, "DEBUG", False)
+                or getattr(settings, "ENV", "dev") == "dev"
+            )
 
             subject = "Recuperação de senha • TimelyOne"
             from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
@@ -541,7 +563,10 @@ class PasswordResetRequestView(APIView):
         except Exception as exc:
             # Mesmo com falha no envio, mantemos resposta neutra
             # Em dev, logar exceção para facilitar depuração SMTP
-            if getattr(settings, "DEBUG", False) or getattr(settings, "ENV", "dev") == "dev":
+            if (
+                getattr(settings, "DEBUG", False)
+                or getattr(settings, "ENV", "dev") == "dev"
+            ):
                 security_logger.exception(
                     "Falha ao enviar email de reset (dev)",
                     extra={
@@ -551,7 +576,9 @@ class PasswordResetRequestView(APIView):
                         "request_id": getattr(request, "request_id", None),
                     },
                 )
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="success"
+            ).inc()
             return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
         # Logar o link de reset em ambiente de desenvolvimento para facilitar testes
@@ -571,7 +598,9 @@ class PasswordResetRequestView(APIView):
                 },
             )
 
-        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="request", result="success").inc()
+        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+            event="request", result="success"
+        ).inc()
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
 
@@ -594,69 +623,85 @@ class PasswordResetConfirmView(APIView):
         token = request.data.get("token")
         new_password = request.data.get("new_password")
         if not uid or not token or not new_password:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
-            return Response({"detail": "missing_fields"}, status=status.HTTP_400_BAD_REQUEST)
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="confirm", result="failure"
+            ).inc()
+            return Response(
+                {"detail": "missing_fields"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         User = get_user_model()
         try:
             user = User.objects.get(pk=uid, is_active=True)
         except User.DoesNotExist:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="confirm", result="failure"
+            ).inc()
             raise AuthenticationFailed("invalid_token")
 
         token_gen = PasswordResetTokenGenerator()
         if not token_gen.check_token(user, token):
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="confirm", result="failure"
+            ).inc()
             raise AuthenticationFailed("invalid_token")
 
         if len(str(new_password)) < 8:
-            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="failure").inc()
-            return Response({"detail": "weak_password"}, status=status.HTTP_400_BAD_REQUEST)
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="confirm", result="failure"
+            ).inc()
+            return Response(
+                {"detail": "weak_password"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
-        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(event="confirm", result="success").inc()
+        USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+            event="confirm", result="success"
+        ).inc()
         return Response({"status": "password_updated"}, status=status.HTTP_200_OK)
 
 
 class CreditBalanceView(APIView):
     """Visualiza saldo e estatísticas de créditos de comunicação."""
+
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
         description="Obtém saldo atual e estatísticas de créditos de comunicação",
-        responses={200: CreditBalanceSerializer}
+        responses={200: CreditBalanceSerializer},
     )
     def get(self, request):
         tenant = request.user.tenant
         credit_service = CreditService(tenant)
-        
+
         balance = credit_service.get_credit_balance()
         stats = credit_service.get_credit_stats()
-        
+
         data = {
-            'current_balance': balance,
-            'can_purchase_extra': tenant.can_purchase_extra_credits(),
-            'has_auto_renewal': tenant.has_auto_credit_renewal(),
-            **stats
+            "current_balance": balance,
+            "can_purchase_extra": tenant.can_purchase_extra_credits(),
+            "has_auto_renewal": tenant.has_auto_credit_renewal(),
+            **stats,
         }
-        
+
         serializer = CreditBalanceSerializer(data)
         return Response(serializer.data)
 
 
 class CreditHistoryView(APIView):
     """Lista histórico de transações de créditos."""
+
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
         description="Lista histórico de transações de créditos de comunicação",
-        responses={200: CommLedgerSerializer(many=True)}
+        responses={200: CommLedgerSerializer(many=True)},
     )
     def get(self, request):
         tenant = request.user.tenant
         credit_service = CreditService(tenant)
-        
+
         history = credit_service.get_credit_history()
         serializer = CommLedgerSerializer(history, many=True)
         return Response(serializer.data)
@@ -664,6 +709,7 @@ class CreditHistoryView(APIView):
 
 class ConsumeCreditsView(APIView):
     """Consome créditos de comunicação."""
+
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -671,41 +717,41 @@ class ConsumeCreditsView(APIView):
         request=ConsumeCreditsSerializer,
         responses={
             200: OpenApiResponse(description="Créditos consumidos com sucesso"),
-            400: OpenApiResponse(description="Saldo insuficiente ou dados inválidos")
-        }
+            400: OpenApiResponse(description="Saldo insuficiente ou dados inválidos"),
+        },
     )
     def post(self, request):
         serializer = ConsumeCreditsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         tenant = request.user.tenant
         credit_service = CreditService(tenant)
-        
-        amount = serializer.validated_data['amount']
-        description = serializer.validated_data.get('description', 'Consumo de crédito')
-        reference_id = serializer.validated_data.get('reference_id')
-        
+
+        amount = serializer.validated_data["amount"]
+        description = serializer.validated_data.get("description", "Consumo de crédito")
+        reference_id = serializer.validated_data.get("reference_id")
+
         try:
             transaction = credit_service.consume_credits(
                 amount=amount,
                 description=description,
                 reference_id=reference_id,
-                created_by=request.user
+                created_by=request.user,
             )
-            return Response({
-                'status': 'success',
-                'transaction_id': transaction.id,
-                'new_balance': credit_service.get_credit_balance()
-            })
-        except ValueError as e:
             return Response(
-                {'detail': str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
+                {
+                    "status": "success",
+                    "transaction_id": transaction.id,
+                    "new_balance": credit_service.get_credit_balance(),
+                }
             )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PurchaseCreditsView(APIView):
     """Compra créditos de comunicação."""
+
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -714,40 +760,42 @@ class PurchaseCreditsView(APIView):
         responses={
             200: OpenApiResponse(description="Créditos adicionados com sucesso"),
             400: OpenApiResponse(description="Dados inválidos"),
-            403: OpenApiResponse(description="Compra de créditos não permitida")
-        }
+            403: OpenApiResponse(description="Compra de créditos não permitida"),
+        },
     )
     def post(self, request):
         tenant = request.user.tenant
-        
+
         if not tenant.can_purchase_extra_credits():
             return Response(
-                {'detail': 'Compra de créditos extras não permitida para este plano'},
-                status=status.HTTP_403_FORBIDDEN
+                {"detail": "Compra de créditos extras não permitida para este plano"},
+                status=status.HTTP_403_FORBIDDEN,
             )
-        
+
         serializer = PurchaseCreditsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         credit_service = CreditService(tenant)
-        
-        amount = serializer.validated_data['amount']
+
+        amount = serializer.validated_data["amount"]
         description = f"Compra de {amount}€ em créditos"
-        reference_id = serializer.validated_data.get('reference_id')
-        
+        reference_id = serializer.validated_data.get("reference_id")
+
         transaction = credit_service.add_credits(
             amount=amount,
-            transaction_type='purchase',
+            transaction_type="purchase",
             description=description,
             reference_id=reference_id,
-            created_by=request.user
+            created_by=request.user,
         )
-        
-        return Response({
-            'status': 'success',
-            'transaction_id': transaction.id,
-            'new_balance': credit_service.get_credit_balance()
-        })
+
+        return Response(
+            {
+                "status": "success",
+                "transaction_id": transaction.id,
+                "new_balance": credit_service.get_credit_balance(),
+            }
+        )
 
 
 class RealtimeCreditsSSEView(APIView):
@@ -758,6 +806,7 @@ class RealtimeCreditsSSEView(APIView):
     - Heartbeat periódico
     - Emite eventos quando há novas transações no ledger ou mudança de saldo
     """
+
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -778,7 +827,11 @@ class RealtimeCreditsSSEView(APIView):
         last_ledger_id = None
         try:
             # DRF fornece request.headers; Django usa META com prefixo HTTP_
-            hdr = request.headers.get("Last-Event-ID") if hasattr(request, "headers") else None
+            hdr = (
+                request.headers.get("Last-Event-ID")
+                if hasattr(request, "headers")
+                else None
+            )
             if not hdr:
                 hdr = request.META.get("HTTP_LAST_EVENT_ID")
             if hdr:
@@ -801,7 +854,9 @@ class RealtimeCreditsSSEView(APIView):
             # Primeira emissão: estado inicial
             try:
                 balance = credit_service.get_credit_balance()
-                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                USERS_SSE_EVENTS_TOTAL.labels(
+                    event="credit_update", result="emitted"
+                ).inc()
                 yield sse_event(
                     "credit_update",
                     {"balance": float(balance), "timestamp": int(time.time())},
@@ -816,7 +871,9 @@ class RealtimeCreditsSSEView(APIView):
             try:
                 while True:
                     # Heartbeat a cada 15s
-                    USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted").inc()
+                    USERS_SSE_EVENTS_TOTAL.labels(
+                        event="heartbeat", result="emitted"
+                    ).inc()
                     yield sse_event("heartbeat", "ping")
 
                     # Detecta novas transações no ledger
@@ -829,7 +886,9 @@ class RealtimeCreditsSSEView(APIView):
                             last_ledger_id = new_items[-1].id
                             balance = credit_service.get_credit_balance()
                             for item in new_items:
-                                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                                USERS_SSE_EVENTS_TOTAL.labels(
+                                    event="credit_update", result="emitted"
+                                ).inc()
                                 yield sse_event(
                                     "credit_update",
                                     {
@@ -839,24 +898,36 @@ class RealtimeCreditsSSEView(APIView):
                                             "type": item.transaction_type,
                                             "amount": float(item.amount_eur),
                                             "description": item.description,
-                                            "created_at": int(item.created_at.timestamp()),
+                                            "created_at": int(
+                                                item.created_at.timestamp()
+                                            ),
                                         },
                                     },
                                     eid=str(item.id),
                                 )
-                                USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted").inc()
+                                USERS_SSE_EVENTS_TOTAL.labels(
+                                    event="credit_update", result="emitted"
+                                ).inc()
                     except Exception:
                         # Em caso de erro transitório, mantém o stream vivo
-                        USERS_SSE_EVENTS_TOTAL.labels(event="error", result="emitted").inc()
-                        USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted").inc()
+                        USERS_SSE_EVENTS_TOTAL.labels(
+                            event="error", result="emitted"
+                        ).inc()
+                        USERS_SSE_EVENTS_TOTAL.labels(
+                            event="heartbeat", result="emitted"
+                        ).inc()
                         yield sse_event("heartbeat", "error")
 
                     time.sleep(15)
             except GeneratorExit:
-                USERS_SSE_EVENTS_TOTAL.labels(event="disconnect", result="emitted").inc()
+                USERS_SSE_EVENTS_TOTAL.labels(
+                    event="disconnect", result="emitted"
+                ).inc()
                 raise
 
-        response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+        response = StreamingHttpResponse(
+            event_stream(), content_type="text/event-stream"
+        )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
         return response

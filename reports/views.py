@@ -91,7 +91,12 @@ APPT_PRICE_FIELD, SERVICE_PRICE_LOOKUP = _pick_price_source()
 
 def _price_sum():
     from typing import cast
-    return Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else Sum(F(cast(str, SERVICE_PRICE_LOOKUP)))
+
+    return (
+        Sum(APPT_PRICE_FIELD)
+        if APPT_PRICE_FIELD
+        else Sum(F(cast(str, SERVICE_PRICE_LOOKUP)))
+    )
 
 
 def _parse_iso_dt(s: str):
@@ -110,7 +115,7 @@ def _date_range(request):
     from_str = request.query_params.get("from")
     now = timezone.now()
     end = _parse_iso_dt(to_str) or now
-    
+
     # Se from não foi fornecido, usa período padrão de 30 dias
     # Considera diferentes tamanhos de mês (28, 29, 30, 31 dias)
     if from_str is None:
@@ -118,7 +123,7 @@ def _date_range(request):
         start = end - timedelta(days=30)
     else:
         start = _parse_iso_dt(from_str)
-    
+
     return start, end
 
 
@@ -235,33 +240,39 @@ class ReportsSummaryView(APIView):
                 {"detail": "Módulo de relatórios desativado."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        
+
         # Processar parâmetros de data
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
-        
+
         # Filtrar appointments por período
-        appointments_qs = Appointment.objects.filter(**date_gte, **date_lte, status__in=COMPLETED_STATUSES)
-        
+        appointments_qs = Appointment.objects.filter(
+            **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+        )
+
         # Calcular total de appointments
         appointments_total = appointments_qs.count()
-        
+
         # Calcular receita estimada
         if APPT_PRICE_FIELD:
-            revenue_estimated = appointments_qs.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0.0
+            revenue_estimated = (
+                appointments_qs.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0.0
+            )
         else:
-            revenue_estimated = appointments_qs.aggregate(total=_price_sum())["total"] or 0.0
-        
+            revenue_estimated = (
+                appointments_qs.aggregate(total=_price_sum())["total"] or 0.0
+            )
+
         # Determinar range baseado nos parâmetros
         from_param = request.query_params.get("from")
         to_param = request.query_params.get("to")
-        
+
         if not from_param and not to_param:
             range_label = "last_30_days"
         else:
             range_label = f"custom_{start.date()}_{end.date()}"
-        
+
         data = {
             "range": range_label,
             "generated_at": timezone.now(),
@@ -337,7 +348,6 @@ class OverviewReportView(_BaseReports):
     )
     @observe_request(endpoint="/api/reports/overview/")
     def get(self, request):
-
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
@@ -383,7 +393,6 @@ class TopServicesReportView(_BaseReports):
     )
     @observe_request(endpoint="/api/reports/top-services/")
     def get(self, request):
-
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
@@ -447,7 +456,6 @@ class RevenueReportView(_BaseReports):
     )
     @observe_request(endpoint="/api/reports/revenue/")
     def get(self, request):
-
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
         from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
@@ -468,7 +476,9 @@ class RevenueReportView(_BaseReports):
         )
 
         if APPT_PRICE_FIELD:
-            base = base.annotate(revenue=Sum(APPT_PRICE_FIELD), appointment_count=Count("id"))
+            base = base.annotate(
+                revenue=Sum(APPT_PRICE_FIELD), appointment_count=Count("id")
+            )
         else:
             base = base.annotate(revenue=_price_sum(), appointment_count=Count("id"))
 
@@ -477,7 +487,14 @@ class RevenueReportView(_BaseReports):
         # mantemos ordem crescente por período; paginamos sobre ela
         qs = base.order_by("bucket")[offset : offset + limit]
 
-        data = [{"period_start": r["bucket"], "revenue": r["revenue"] or 0, "appointment_count": r["appointment_count"] or 0} for r in qs]
+        data = [
+            {
+                "period_start": r["bucket"],
+                "revenue": r["revenue"] or 0,
+                "appointment_count": r["appointment_count"] or 0,
+            }
+            for r in qs
+        ]
         resp = Response({"interval": interval, "series": data})
         return _set_pagination_headers(
             resp, total=total, limit=limit, offset=offset, request=request
@@ -530,7 +547,7 @@ class ExportOverviewCSVView(_BaseReports):
                 logger.error(f"Error querying data for overview export: {e}")
                 return Response(
                     {"error": "Erro ao consultar dados. Tente novamente."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
             # Série diária
@@ -545,7 +562,7 @@ class ExportOverviewCSVView(_BaseReports):
                 logger.error(f"Error creating daily series query: {e}")
                 return Response(
                     {"error": "Erro ao processar série diária."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
             try:
@@ -557,7 +574,6 @@ class ExportOverviewCSVView(_BaseReports):
                     write_timely_one_header,
                     format_currency,
                     format_date_pt,
-                    translate_column_names
                 )
 
                 # Cabeçalho bonito com branding TimelyOne
@@ -566,13 +582,22 @@ class ExportOverviewCSVView(_BaseReports):
                 # Bloco de resumo com nomes traduzidos
                 writer.writerow(["📈 RESUMO EXECUTIVO"])
                 writer.writerow([])
-                writer.writerow(["Agendamentos Totais", "Agendamentos Concluídos", "Receita Total", "Ticket Médio"])
-                writer.writerow([
-                    int(total_count or 0),
-                    int(done_count or 0),
-                    format_currency(float(revenue_total or 0)),
-                    format_currency(float(avg_ticket or 0))
-                ])
+                writer.writerow(
+                    [
+                        "Agendamentos Totais",
+                        "Agendamentos Concluídos",
+                        "Receita Total",
+                        "Ticket Médio",
+                    ]
+                )
+                writer.writerow(
+                    [
+                        int(total_count or 0),
+                        int(done_count or 0),
+                        format_currency(float(revenue_total or 0)),
+                        format_currency(float(avg_ticket or 0)),
+                    ]
+                )
 
                 # Série diária com formatação melhorada
                 writer.writerow([])
@@ -605,25 +630,31 @@ class ExportOverviewCSVView(_BaseReports):
                 logger.error(f"Error generating CSV content: {e}")
                 return Response(
                     {"error": "Erro ao gerar arquivo CSV."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-            filename = f"overview_{start.date().isoformat()}_{end.date().isoformat()}.csv"
-            resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
+            filename = (
+                f"overview_{start.date().isoformat()}_{end.date().isoformat()}.csv"
+            )
+            resp = HttpResponse(
+                csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8"
+            )
             resp["Content-Disposition"] = f'attachment; filename="{filename}"'
             # cabeçalhos defensivos (opcional)
             resp["X-Content-Type-Options"] = "nosniff"
             resp["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             resp["Pragma"] = "no-cache"
-            
-            logger.info(f"Overview CSV export completed successfully. Period: {start.date()} to {end.date()}")
+
+            logger.info(
+                f"Overview CSV export completed successfully. Period: {start.date()} to {end.date()}"
+            )
             return resp
 
         except Exception as e:
             logger.error(f"Unexpected error in overview CSV export: {e}", exc_info=True)
             return Response(
                 {"error": "Erro interno do servidor. Tente novamente mais tarde."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -656,7 +687,6 @@ class ExportTopServicesCSVView(_BaseReports):
         responses={200: RESP_CSV_TOP_SERVICES, 403: OpenApiTypes.OBJECT},
     )
     def get(self, request) -> HttpResponse:
-
         start, end = _date_range(request)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
@@ -679,20 +709,22 @@ class ExportTopServicesCSVView(_BaseReports):
         from reports.utils.csv_formatter import (
             write_timely_one_header,
             format_currency,
-            translate_column_names
+            translate_column_names,
         )
 
         # Cabeçalho bonito com branding TimelyOne
         write_timely_one_header(w, "Relatório Top Serviços", start, end)
 
         # Cabeçalhos traduzidos
-        headers = translate_column_names({
-            "service_id": "ID do Serviço",
-            "service_name": "Nome do Serviço", 
-            "qty": "Quantidade",
-            "revenue": "Receita"
-        })
-        
+        headers = translate_column_names(
+            {
+                "service_id": "ID do Serviço",
+                "service_name": "Nome do Serviço",
+                "qty": "Quantidade",
+                "revenue": "Receita",
+            }
+        )
+
         w.writerow(["🏆 TOP SERVIÇOS"])
         w.writerow([])
         w.writerow(list(headers.values()))
@@ -713,7 +745,9 @@ class ExportTopServicesCSVView(_BaseReports):
         filename = (
             f"top_services_{start.date().isoformat()}_{end.date().isoformat()}.csv"
         )
-        resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(
+            csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8"
+        )
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
 
@@ -745,7 +779,6 @@ class ExportRevenueCSVView(_BaseReports):
         responses={200: RESP_CSV_REVENUE, 403: OpenApiTypes.OBJECT},
     )
     def get(self, request) -> HttpResponse:
-
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
         from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
@@ -780,18 +813,19 @@ class ExportRevenueCSVView(_BaseReports):
             write_timely_one_header,
             format_currency,
             format_date_pt,
-            translate_column_names
+            translate_column_names,
         )
 
         # Cabeçalho bonito com branding TimelyOne
-        write_timely_one_header(w, f"Relatório de Receita ({interval.title()})", start, end)
+        write_timely_one_header(
+            w, f"Relatório de Receita ({interval.title()})", start, end
+        )
 
         # Cabeçalhos traduzidos
-        headers = translate_column_names({
-            "period_start": "Período",
-            "revenue": "Receita"
-        })
-        
+        headers = translate_column_names(
+            {"period_start": "Período", "revenue": "Receita"}
+        )
+
         w.writerow([f"📊 RECEITA POR {interval.upper()}"])
         w.writerow([])
         w.writerow(list(headers.values()))
@@ -810,19 +844,22 @@ class ExportRevenueCSVView(_BaseReports):
         buffer.close()
 
         filename = f"revenue_{interval}_{start.date().isoformat()}_{end.date().isoformat()}.csv"
-        resp = HttpResponse(csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8")
+        resp = HttpResponse(
+            csv_content.encode("utf-8"), content_type="text/csv; charset=utf-8"
+        )
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
 
 
 # === Novas classes de permissão para relatórios básicos e avançados ===
 
+
 class RequiresBasicReports(BasePermission):
     """
     Permission que permite acesso a relatórios básicos.
     Todos os planos (Basic, Standard, Pro, Enterprise) têm acesso.
     """
-    
+
     def has_permission(self, request, view):
         if not hasattr(request, "user") or not request.user.is_authenticated:
             return False
@@ -839,7 +876,7 @@ class RequiresAdvancedReports(BasePermission):
     Permission que permite acesso a relatórios avançados.
     Apenas planos Pro e Enterprise têm acesso.
     """
-    
+
     def has_permission(self, request, view):
         if not hasattr(request, "user") or not request.user.is_authenticated:
             return False
@@ -848,16 +885,17 @@ class RequiresAdvancedReports(BasePermission):
             return False
 
         tenant = request.user.tenant
-        
+
         # Verifica se tem acesso a relatórios E se é Pro ou Enterprise
         if not tenant.can_use_reports():
             return False
-            
+
         # Pro e Enterprise têm acesso a relatórios avançados
-        return tenant.plan_tier in ['pro', 'enterprise']
+        return tenant.plan_tier in ["pro", "enterprise"]
 
 
 # === Views para relatórios básicos e avançados ===
+
 
 @extend_schema(
     tags=["Reports"],
@@ -878,6 +916,7 @@ class BasicReportsView(APIView):
     Endpoint para relatórios básicos.
     Disponível para todos os planos que têm acesso a relatórios.
     """
+
     permission_classes = [IsAuthenticated, RequiresBasicReports]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
@@ -885,20 +924,30 @@ class BasicReportsView(APIView):
     @observe_request(endpoint="/api/reports/basic/")
     def get(self, request):
         """Retorna relatórios básicos: summary e overview"""
-        
+
         # Reutiliza a lógica das views existentes
         summary_view = ReportsSummaryView()
         summary_view.request = request
         summary_response = summary_view.get(request)
-        
+
         overview_view = OverviewReportView()
         overview_view.request = request
         overview_response = overview_view.get(request)
-        
-        return Response({
-            "summary": summary_response.data if hasattr(summary_response, 'data') else summary_response.content,
-            "overview": overview_response.data if hasattr(overview_response, 'data') else overview_response.content,
-        })
+
+        return Response(
+            {
+                "summary": (
+                    summary_response.data
+                    if hasattr(summary_response, "data")
+                    else summary_response.content
+                ),
+                "overview": (
+                    overview_response.data
+                    if hasattr(overview_response, "data")
+                    else overview_response.content
+                ),
+            }
+        )
 
 
 class ExportBasicReportsCSVView(_BaseReports):
@@ -906,7 +955,7 @@ class ExportBasicReportsCSVView(_BaseReports):
     GET /api/reports/basic/export/?from=YYYY-MM-DD&to=YYYY-MM-DD
     Gera um CSV com relatórios básicos (summary + overview)
     """
-    
+
     permission_classes = [IsAuthenticated, RequiresBasicReports]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
@@ -928,7 +977,7 @@ class ExportBasicReportsCSVView(_BaseReports):
     @observe_request(endpoint="/api/reports/basic/export/")
     def get(self, request) -> HttpResponse:
         """Exporta relatórios básicos em CSV"""
-        
+
         try:
             start, end = _date_range(request)
             date_gte = {f"{DATE_FIELD}__gte": start}
@@ -963,7 +1012,7 @@ class ExportBasicReportsCSVView(_BaseReports):
                 write_timely_one_header,
                 format_currency,
                 format_date_pt,
-                translate_column_names
+                translate_column_names,
             )
 
             # Cabeçalho bonito com branding TimelyOne
@@ -972,13 +1021,22 @@ class ExportBasicReportsCSVView(_BaseReports):
             # Bloco de resumo com nomes traduzidos
             writer.writerow(["📈 RESUMO EXECUTIVO"])
             writer.writerow([])
-            writer.writerow(["Agendamentos Totais", "Agendamentos Concluídos", "Receita Total", "Ticket Médio"])
-            writer.writerow([
-                int(total_count or 0),
-                int(done_count or 0),
-                format_currency(revenue),
-                format_currency(avg_ticket)
-            ])
+            writer.writerow(
+                [
+                    "Agendamentos Totais",
+                    "Agendamentos Concluídos",
+                    "Receita Total",
+                    "Ticket Médio",
+                ]
+            )
+            writer.writerow(
+                [
+                    int(total_count or 0),
+                    int(done_count or 0),
+                    format_currency(revenue),
+                    format_currency(avg_ticket),
+                ]
+            )
 
             # Espaçamento
             writer.writerow([])
@@ -987,7 +1045,7 @@ class ExportBasicReportsCSVView(_BaseReports):
             # Série temporal
             writer.writerow(["📊 RECEITA DIÁRIA"])
             writer.writerow([])
-            
+
             # Cabeçalhos traduzidos para série temporal
             headers = ["Data", "Receita"]
             # translate_column_names espera um dict, não uma lista
@@ -998,10 +1056,12 @@ class ExportBasicReportsCSVView(_BaseReports):
 
             # Dados da série
             for row in series_qs:
-                writer.writerow([
-                    format_date_pt(row["bucket"]),
-                    format_currency(row["revenue"] or 0)
-                ])
+                writer.writerow(
+                    [
+                        format_date_pt(row["bucket"]),
+                        format_currency(row["revenue"] or 0),
+                    ]
+                )
 
             # Preparar resposta
             csv_content = buffer.getvalue()
@@ -1010,14 +1070,14 @@ class ExportBasicReportsCSVView(_BaseReports):
             response = HttpResponse(csv_content, content_type="text/csv; charset=utf-8")
             filename = f"relatorios_basicos_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}.csv"
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
-            
+
             return response
 
         except Exception as e:
             logger.error(f"Error generating basic reports CSV: {e}")
             return Response(
                 {"error": "Erro ao gerar CSV dos relatórios básicos."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -1041,6 +1101,7 @@ class AdvancedReportsView(APIView):
     Endpoint para relatórios avançados.
     Disponível apenas para planos Pro e Enterprise.
     """
+
     permission_classes = [IsAuthenticated, RequiresAdvancedReports]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
@@ -1048,20 +1109,30 @@ class AdvancedReportsView(APIView):
     @observe_request(endpoint="/api/reports/advanced/")
     def get(self, request):
         """Retorna relatórios avançados: top services e revenue"""
-        
+
         # Reutiliza a lógica das views existentes
         top_services_view = TopServicesReportView()
         top_services_view.request = request
         top_services_response = top_services_view.get(request)
-        
+
         revenue_view = RevenueReportView()
         revenue_view.request = request
         revenue_response = revenue_view.get(request)
-        
-        return Response({
-            "top_services": top_services_response.data if hasattr(top_services_response, 'data') else top_services_response.content,
-            "revenue": revenue_response.data if hasattr(revenue_response, 'data') else revenue_response.content,
-        })
+
+        return Response(
+            {
+                "top_services": (
+                    top_services_response.data
+                    if hasattr(top_services_response, "data")
+                    else top_services_response.content
+                ),
+                "revenue": (
+                    revenue_response.data
+                    if hasattr(revenue_response, "data")
+                    else revenue_response.content
+                ),
+            }
+        )
 
 
 class ExportAdvancedReportsCSVView(_BaseReports):
@@ -1094,11 +1165,11 @@ class ExportAdvancedReportsCSVView(_BaseReports):
     @observe_request(endpoint="/api/reports/advanced/export/")
     def get(self, request) -> HttpResponse:
         """Exporta relatórios avançados em CSV"""
-        
+
         try:
             start, end = _date_range(request)
             interval = request.query_params.get("interval", "day")
-            
+
             date_gte = {f"{DATE_FIELD}__gte": start}
             date_lte = {f"{DATE_FIELD}__lte": end}
 
@@ -1109,20 +1180,20 @@ class ExportAdvancedReportsCSVView(_BaseReports):
 
             if APPT_PRICE_FIELD:
                 top_services_qs = top_services_qs.annotate(
-                    qty=Count("id"), 
-                    revenue=Sum(APPT_PRICE_FIELD)
+                    qty=Count("id"), revenue=Sum(APPT_PRICE_FIELD)
                 )
             else:
                 top_services_qs = top_services_qs.annotate(
-                    qty=Count("id"), 
-                    revenue=_price_sum()
+                    qty=Count("id"), revenue=_price_sum()
                 )
 
-            top_services_qs = top_services_qs.order_by("-qty", "-revenue", "service__name")
+            top_services_qs = top_services_qs.order_by(
+                "-qty", "-revenue", "service__name"
+            )
 
             # === REVENUE SERIES DATA ===
             from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
-            
+
             trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
                 interval, TruncDay
             )
@@ -1133,10 +1204,7 @@ class ExportAdvancedReportsCSVView(_BaseReports):
                 )
                 .annotate(bucket=trunc(DATE_FIELD))
                 .values("bucket")
-                .annotate(
-                    appointment_count=Count("id"),
-                    revenue=_price_sum()
-                )
+                .annotate(appointment_count=Count("id"), revenue=_price_sum())
                 .order_by("bucket")
             )
 
@@ -1149,7 +1217,7 @@ class ExportAdvancedReportsCSVView(_BaseReports):
                 write_timely_one_header,
                 format_currency,
                 format_date_pt,
-                translate_column_names
+                translate_column_names,
             )
 
             # Cabeçalho bonito com branding TimelyOne
@@ -1158,14 +1226,16 @@ class ExportAdvancedReportsCSVView(_BaseReports):
             # === SEÇÃO TOP SERVICES ===
             writer.writerow(["🏆 TOP SERVIÇOS"])
             writer.writerow([])
-            
+
             # Cabeçalhos traduzidos para top services
-            top_services_headers = translate_column_names({
-                "service_name": "Serviço",
-                "qty": "Agendamentos", 
-                "revenue": "Receita",
-                "avg_price": "Preço Médio"
-            })
+            top_services_headers = translate_column_names(
+                {
+                    "service_name": "Serviço",
+                    "qty": "Agendamentos",
+                    "revenue": "Receita",
+                    "avg_price": "Preço Médio",
+                }
+            )
             writer.writerow(list(top_services_headers.values()))
 
             # Dados dos top services
@@ -1173,13 +1243,15 @@ class ExportAdvancedReportsCSVView(_BaseReports):
                 qty = row["qty"] or 0
                 revenue = row["revenue"] or 0
                 avg_price = (revenue / qty) if qty > 0 else 0
-                
-                writer.writerow([
-                    row["service__name"],
-                    qty,
-                    format_currency(revenue),
-                    format_currency(avg_price)
-                ])
+
+                writer.writerow(
+                    [
+                        row["service__name"],
+                        qty,
+                        format_currency(revenue),
+                        format_currency(avg_price),
+                    ]
+                )
 
             # Espaçamento entre seções
             writer.writerow([])
@@ -1188,29 +1260,35 @@ class ExportAdvancedReportsCSVView(_BaseReports):
             # === SEÇÃO REVENUE SERIES ===
             writer.writerow([f"📊 RECEITA POR {interval.upper()}"])
             writer.writerow([])
-            
+
             # Cabeçalhos traduzidos para revenue series
-            revenue_headers = translate_column_names({
-                "period": "Período",
-                "appointments": "Agendamentos",
-                "revenue": "Receita", 
-                "avg_ticket": "Ticket Médio"
-            })
+            revenue_headers = translate_column_names(
+                {
+                    "period": "Período",
+                    "appointments": "Agendamentos",
+                    "revenue": "Receita",
+                    "avg_ticket": "Ticket Médio",
+                }
+            )
             writer.writerow(list(revenue_headers.values()))
 
             # Dados da revenue series
             for row in revenue_qs.iterator(chunk_size=1000):
                 appointment_count = row["appointment_count"] or 0
                 revenue = row["revenue"] or 0
-                avg_ticket = (revenue / appointment_count) if appointment_count > 0 else 0
-                
+                avg_ticket = (
+                    (revenue / appointment_count) if appointment_count > 0 else 0
+                )
+
                 dt = row["bucket"]
-                writer.writerow([
-                    format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
-                    appointment_count,
-                    format_currency(revenue),
-                    format_currency(avg_ticket)
-                ])
+                writer.writerow(
+                    [
+                        format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
+                        appointment_count,
+                        format_currency(revenue),
+                        format_currency(avg_ticket),
+                    ]
+                )
 
             # Preparar resposta
             csv_content = buffer.getvalue()
@@ -1222,13 +1300,15 @@ class ExportAdvancedReportsCSVView(_BaseReports):
             response["X-Content-Type-Options"] = "nosniff"
             response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response["Pragma"] = "no-cache"
-            
-            logger.info(f"Advanced reports CSV export completed successfully. Period: {start.date()} to {end.date()}, Interval: {interval}")
+
+            logger.info(
+                f"Advanced reports CSV export completed successfully. Period: {start.date()} to {end.date()}, Interval: {interval}"
+            )
             return response
 
         except Exception as e:
             logger.error(f"Error generating advanced reports CSV: {e}", exc_info=True)
             return Response(
                 {"error": "Erro ao gerar CSV dos relatórios avançados."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

@@ -4,8 +4,8 @@ from django.db import migrations
 
 
 def create_default_customers(apps, schema_editor):
-    Tenant = apps.get_model('users', 'Tenant')
-    SalonCustomer = apps.get_model('core', 'SalonCustomer')
+    Tenant = apps.get_model("users", "Tenant")
+    SalonCustomer = apps.get_model("core", "SalonCustomer")
 
     for tenant in Tenant.objects.all():
         if not SalonCustomer.objects.filter(tenant=tenant).exists():
@@ -19,18 +19,16 @@ def create_default_customers(apps, schema_editor):
 
 
 def remove_default_customers(apps, schema_editor):
-    SalonCustomer = apps.get_model('core', 'SalonCustomer')
+    SalonCustomer = apps.get_model("core", "SalonCustomer")
     SalonCustomer.objects.filter(
-        name="Cliente do salão",
-        notes__startswith="Placeholder gerado automaticamente"
+        name="Cliente do salão", notes__startswith="Placeholder gerado automaticamente"
     ).delete()
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0013_saloncustomer'),
-        ('users', '0011_customuser_users_customuser_email_ci_unique'),
+        ("core", "0013_saloncustomer"),
+        ("users", "0011_customuser_users_customuser_email_ci_unique"),
     ]
 
     operations = [

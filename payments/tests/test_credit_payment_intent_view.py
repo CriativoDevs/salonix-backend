@@ -1,4 +1,3 @@
-import json
 import pytest
 from decimal import Decimal
 from rest_framework import status
@@ -35,6 +34,7 @@ def _setup_price_ids(monkeypatch, settings):
 
     # Ajustar o mapa estático para refletir os price IDs de teste
     from payments.services import CreditPurchaseService
+
     monkeypatch.setattr(
         CreditPurchaseService,
         "PRICE_TO_CREDITS",
@@ -86,14 +86,20 @@ def _patch_stripe(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_available_credit_packages_authenticated_returns_expected(auth_client, monkeypatch, settings):
+def test_available_credit_packages_authenticated_returns_expected(
+    auth_client, monkeypatch, settings
+):
     _setup_price_ids(monkeypatch, settings)
 
     client, user = auth_client()
 
     resp = client.get("/api/payments/stripe/credits/packages/")
     assert resp.status_code == status.HTTP_200_OK
-    data = resp.data["packages"] if isinstance(resp.data, dict) else resp.data.get("packages")
+    data = (
+        resp.data["packages"]
+        if isinstance(resp.data, dict)
+        else resp.data.get("packages")
+    )
     assert isinstance(data, list)
     assert len(data) == 5
 
@@ -122,11 +128,10 @@ def test_endpoints_require_authentication_returns_401(monkeypatch, settings):
     assert resp_pkg.status_code == status.HTTP_401_UNAUTHORIZED
 
     # Intent
-    resp_pi = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp_pi = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp_pi.status_code == status.HTTP_401_UNAUTHORIZED
-
-
-    
 
 
 @pytest.mark.django_db
@@ -137,6 +142,7 @@ def test_purchase_stripe_error_bubbles_as_400(auth_client, monkeypatch, settings
     client, user = auth_client()
     # Tornar usuário OWNER ativo
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.create(
         tenant=user.tenant,
         user=user,
@@ -159,9 +165,12 @@ def test_purchase_stripe_error_bubbles_as_400(auth_client, monkeypatch, settings
         raising=True,
     )
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
     assert "simulated" in (resp.data.get("detail", "") or "")
+
 
 def test_purchase_forbidden_when_extra_disabled_returns_403_no_pi_created(
     auth_client, monkeypatch, settings
@@ -172,6 +181,7 @@ def test_purchase_forbidden_when_extra_disabled_returns_403_no_pi_created(
     client, user = auth_client()
     # Tornar usuário OWNER ativo
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.create(
         tenant=user.tenant,
         user=user,
@@ -211,6 +221,7 @@ def test_purchase_intent_supported_amounts_success_and_amount_cents(
     client, user = auth_client()
     # Tornar usuário OWNER ativo
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.create(
         tenant=user.tenant,
         user=user,
@@ -240,6 +251,7 @@ def test_purchase_intent_invalid_amount_returns_400(auth_client, monkeypatch, se
     client, user = auth_client()
     # Tornar usuário OWNER ativo
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.create(
         tenant=user.tenant,
         user=user,
@@ -256,12 +268,15 @@ def test_purchase_intent_invalid_amount_returns_400(auth_client, monkeypatch, se
 
 
 @pytest.mark.django_db
-def test_purchase_forbidden_when_role_not_owner_returns_403(auth_client, monkeypatch, settings):
+def test_purchase_forbidden_when_role_not_owner_returns_403(
+    auth_client, monkeypatch, settings
+):
     _setup_price_ids(monkeypatch, settings)
     _patch_stripe(monkeypatch)
 
     client, user = auth_client()
     from users.models import TenantStaffMember
+
     # Criar staff como MANAGER (não OWNER)
     TenantStaffMember.objects.create(
         tenant=user.tenant,
@@ -272,18 +287,23 @@ def test_purchase_forbidden_when_role_not_owner_returns_403(auth_client, monkeyp
     user.tenant.comm_extra_allowed = True
     user.tenant.save(update_fields=["comm_extra_allowed"])
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
     assert "apenas OWNER ativo" in (resp.data.get("detail", "") or "")
 
 
 @pytest.mark.django_db
-def test_purchase_forbidden_when_staff_inactive_returns_403(auth_client, monkeypatch, settings):
+def test_purchase_forbidden_when_staff_inactive_returns_403(
+    auth_client, monkeypatch, settings
+):
     _setup_price_ids(monkeypatch, settings)
     _patch_stripe(monkeypatch)
 
     client, user = auth_client()
     from users.models import TenantStaffMember
+
     # Criar staff OWNER porém INACTIVE (invited)
     TenantStaffMember.objects.create(
         tenant=user.tenant,
@@ -294,18 +314,23 @@ def test_purchase_forbidden_when_staff_inactive_returns_403(auth_client, monkeyp
     user.tenant.comm_extra_allowed = True
     user.tenant.save(update_fields=["comm_extra_allowed"])
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
     assert "apenas OWNER ativo" in (resp.data.get("detail", "") or "")
 
 
 @pytest.mark.django_db
-def test_purchase_success_for_active_owner_returns_200(auth_client, monkeypatch, settings):
+def test_purchase_success_for_active_owner_returns_200(
+    auth_client, monkeypatch, settings
+):
     _setup_price_ids(monkeypatch, settings)
     _patch_stripe(monkeypatch)
 
     client, user = auth_client()
     from users.models import TenantStaffMember
+
     # Criar OWNER ativo
     TenantStaffMember.objects.create(
         tenant=user.tenant,
@@ -316,7 +341,9 @@ def test_purchase_success_for_active_owner_returns_200(auth_client, monkeypatch,
     user.tenant.comm_extra_allowed = True
     user.tenant.save(update_fields=["comm_extra_allowed"])
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_200_OK
     assert resp.data.get("payment_intent_id") == "pi_test_abc"
 
@@ -327,6 +354,7 @@ def test_purchase_forbidden_when_user_has_no_tenant_returns_403(monkeypatch, set
     _patch_stripe(monkeypatch)
 
     from users.models import CustomUser
+
     client = APIClient()
     # Criar usuário explicitamente sem tenant
     user = CustomUser(username="no_tenant_user", email="no_tenant@example.com")
@@ -335,25 +363,32 @@ def test_purchase_forbidden_when_user_has_no_tenant_returns_403(monkeypatch, set
     user.save()
     # Garantir que permaneça sem tenant mesmo após quaisquer patches
     from django.contrib.auth import get_user_model
+
     get_user_model().objects.filter(id=user.id).update(tenant=None)
     user.refresh_from_db()
     # Remover qualquer staff ligado (por segurança)
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.filter(user=user).delete()
     client.force_authenticate(user=user)
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
     assert "usuário sem tenant" in (resp.data.get("detail", "") or "")
 
 
 @pytest.mark.django_db
-def test_purchase_forbidden_when_request_tenant_differs_returns_403(auth_client, monkeypatch, settings):
+def test_purchase_forbidden_when_request_tenant_differs_returns_403(
+    auth_client, monkeypatch, settings
+):
     _setup_price_ids(monkeypatch, settings)
     _patch_stripe(monkeypatch)
 
     client, user = auth_client()
     from users.models import Tenant, TenantStaffMember
+
     # OWNER ativo
     TenantStaffMember.objects.create(
         tenant=user.tenant,
@@ -373,10 +408,13 @@ def test_purchase_forbidden_when_request_tenant_differs_returns_403(auth_client,
         def _mw(request):
             request.tenant = other_tenant
             return get_response(request)
+
         return _mw
 
     monkeypatch.setattr(core_mw, "TenantMiddleware", mock_mw, raising=True)
 
-    resp = client.post("/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json")
+    resp = client.post(
+        "/api/payments/stripe/credits/purchase/", {"amount_eur": 5.0}, format="json"
+    )
     assert resp.status_code == status.HTTP_403_FORBIDDEN
     assert "tenant de requisição não corresponde" in (resp.data.get("detail", "") or "")

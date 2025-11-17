@@ -4,8 +4,8 @@ from django.db import migrations
 
 
 def assign_customers(apps, schema_editor):
-    Appointment = apps.get_model('core', 'Appointment')
-    SalonCustomer = apps.get_model('core', 'SalonCustomer')
+    Appointment = apps.get_model("core", "Appointment")
+    SalonCustomer = apps.get_model("core", "SalonCustomer")
 
     placeholders_cache = {}
 
@@ -36,14 +36,13 @@ def assign_customers(apps, schema_editor):
 
 
 def unassign_customers(apps, schema_editor):
-    Appointment = apps.get_model('core', 'Appointment')
+    Appointment = apps.get_model("core", "Appointment")
     Appointment.objects.update(customer=None)
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0015_appointment_customer'),
+        ("core", "0015_appointment_customer"),
     ]
 
     operations = [

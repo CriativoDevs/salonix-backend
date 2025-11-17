@@ -83,4 +83,6 @@ def test_smoke_sse_reconexao_last_event_id_sem_perda(
                     found_newer = True
                     break
 
-    assert found_newer, f"Reconexão não retornou evento posterior ao {last_id} (id={newer_id})"
+    assert (
+        found_newer
+    ), f"Reconexão não retornou evento posterior ao {last_id} (id={newer_id})"

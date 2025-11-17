@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Callable, Iterable, Optional, Dict, Any, List
+from typing import Callable, Iterable, Optional, Dict, Any
 from django.core.cache import cache
 
 import logging
 import threading
-import time
 
 logger = logging.getLogger("reports")
 

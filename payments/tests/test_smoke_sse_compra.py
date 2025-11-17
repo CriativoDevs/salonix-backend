@@ -56,6 +56,7 @@ def test_smoke_compra_emite_credit_update_com_ledger(
     # Ajustar o mapa estático de PRICE_TO_CREDITS para refletir os price IDs de teste
     from decimal import Decimal
     from payments.services import CreditPurchaseService
+
     monkeypatch.setattr(
         CreditPurchaseService,
         "PRICE_TO_CREDITS",
@@ -80,12 +81,16 @@ def test_smoke_compra_emite_credit_update_com_ledger(
         @staticmethod
         def create(**kwargs):
             _StripePaymentIntent.last_kwargs = kwargs
-            return type("PaymentIntentObj", (), {
-                "client_secret": "pi_secret_test_123",
-                "id": "pi_test_123",
-                "amount": kwargs.get("amount", 0),
-                "currency": kwargs.get("currency", "eur"),
-            })
+            return type(
+                "PaymentIntentObj",
+                (),
+                {
+                    "client_secret": "pi_secret_test_123",
+                    "id": "pi_test_123",
+                    "amount": kwargs.get("amount", 0),
+                    "currency": kwargs.get("currency", "eur"),
+                },
+            )
 
     class _StripeCustomer:
         @staticmethod
@@ -104,6 +109,7 @@ def test_smoke_compra_emite_credit_update_com_ledger(
     client, user = auth_client()
     # Ajustar para OWNER ativo e permitir compra extra
     from users.models import TenantStaffMember
+
     TenantStaffMember.objects.create(
         tenant=user.tenant,
         user=user,
@@ -163,8 +169,8 @@ def test_smoke_compra_emite_credit_update_com_ledger(
         text = _decode(chunk)
         if (
             "event: credit_update" in text
-            and "\"ledger\"" in text
-            and "\"type\": \"purchase\"" in text
+            and '"ledger"' in text
+            and '"type": "purchase"' in text
         ):
             found = True
             break

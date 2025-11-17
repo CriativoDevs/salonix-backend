@@ -4,9 +4,8 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
-from unittest.mock import patch
 
-from .models import Tenant, CommLedger
+from .models import Tenant
 from .services import CreditService
 
 User = get_user_model()
@@ -14,7 +13,7 @@ User = get_user_model()
 
 class CreditServiceTestCase(TestCase):
     """Testes para o serviço de créditos."""
-    
+
     def setUp(self):
         self.tenant = Tenant.objects.create(
             name="Test Tenant",
@@ -22,13 +21,13 @@ class CreditServiceTestCase(TestCase):
             plan_tier="standard",
             comm_credit_eur=Decimal("10.00"),
             comm_extra_allowed=True,
-            comm_auto_renew=True
+            comm_auto_renew=True,
         )
         self.user = User.objects.create_user(
             username="methoduser",
             email="method@example.com",
             password="testpass123",
-            tenant=self.tenant
+            tenant=self.tenant,
         )
         self.credit_service = CreditService(self.tenant)
 
@@ -40,17 +39,15 @@ class CreditServiceTestCase(TestCase):
     def test_consume_credits_success(self):
         """Testa consumo de créditos com sucesso."""
         transaction = self.credit_service.consume_credits(
-            amount=Decimal("5.00"),
-            description="Test consumption",
-            created_by=self.user
+            amount=Decimal("5.00"), description="Test consumption", created_by=self.user
         )
-        
+
         self.assertEqual(transaction.transaction_type, "consumption")
         self.assertEqual(transaction.amount_eur, Decimal("5.00"))
         self.assertEqual(transaction.balance_before, Decimal("10.00"))
         self.assertEqual(transaction.balance_after, Decimal("5.00"))
         self.assertEqual(transaction.status, "completed")
-        
+
         # Verifica se o saldo foi atualizado
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.comm_credit_eur, Decimal("5.00"))
@@ -61,9 +58,9 @@ class CreditServiceTestCase(TestCase):
             self.credit_service.consume_credits(
                 amount=Decimal("15.00"),
                 description="Test consumption",
-                created_by=self.user
+                created_by=self.user,
             )
-        
+
         self.assertIn("Saldo insuficiente", str(context.exception))
 
     def test_add_credits(self):
@@ -72,14 +69,14 @@ class CreditServiceTestCase(TestCase):
             amount=Decimal("5.00"),
             transaction_type="purchase",
             description="Test purchase",
-            created_by=self.user
+            created_by=self.user,
         )
-        
+
         self.assertEqual(transaction.transaction_type, "purchase")
         self.assertEqual(transaction.amount_eur, Decimal("5.00"))
         self.assertEqual(transaction.balance_before, Decimal("10.00"))
         self.assertEqual(transaction.balance_after, Decimal("15.00"))
-        
+
         # Verifica se o saldo foi atualizado
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.comm_credit_eur, Decimal("15.00"))
@@ -93,20 +90,18 @@ class CreditServiceTestCase(TestCase):
         """Testa obtenção do histórico de créditos."""
         # Cria algumas transações
         self.credit_service.consume_credits(
-            amount=Decimal("2.00"),
-            description="Test 1",
-            created_by=self.user
+            amount=Decimal("2.00"), description="Test 1", created_by=self.user
         )
         self.credit_service.add_credits(
             amount=Decimal("5.00"),
             transaction_type="bonus",
             description="Test 2",
-            created_by=self.user
+            created_by=self.user,
         )
-        
+
         history = self.credit_service.get_credit_history()
         self.assertEqual(len(history), 2)
-        
+
         # Verifica ordenação (mais recente primeiro)
         self.assertEqual(history[0].description, "Test 2")
         self.assertEqual(history[1].description, "Test 1")
@@ -118,30 +113,28 @@ class CreditServiceTestCase(TestCase):
             amount=Decimal("10.00"),
             transaction_type="purchase",
             description="Purchase",
-            created_by=self.user
+            created_by=self.user,
         )
         self.credit_service.add_credits(
             amount=Decimal("5.00"),
             transaction_type="bonus",
             description="Bonus",
-            created_by=self.user
+            created_by=self.user,
         )
         self.credit_service.consume_credits(
-            amount=Decimal("3.00"),
-            description="Consumption",
-            created_by=self.user
+            amount=Decimal("3.00"), description="Consumption", created_by=self.user
         )
-        
+
         stats = self.credit_service.get_credit_stats()
-        
-        self.assertEqual(stats['total_purchased'], Decimal("10.00"))
-        self.assertEqual(stats['total_consumed'], Decimal("3.00"))
-        self.assertEqual(stats['total_bonus'], Decimal("5.00"))
+
+        self.assertEqual(stats["total_purchased"], Decimal("10.00"))
+        self.assertEqual(stats["total_consumed"], Decimal("3.00"))
+        self.assertEqual(stats["total_bonus"], Decimal("5.00"))
 
 
 class CreditEndpointsTestCase(APITestCase):
     """Testes para os endpoints de créditos."""
-    
+
     def setUp(self):
         self.tenant = Tenant.objects.create(
             name="Test Tenant",
@@ -149,148 +142,134 @@ class CreditEndpointsTestCase(APITestCase):
             plan_tier="standard",
             comm_credit_eur=Decimal("10.00"),
             comm_extra_allowed=True,
-            comm_auto_renew=True
+            comm_auto_renew=True,
         )
         self.user = User.objects.create_user(
             username="endpointuser",
             email="endpoint@example.com",
             password="testpass123",
-            tenant=self.tenant
+            tenant=self.tenant,
         )
         self.client.force_authenticate(user=self.user)
 
     def test_credit_balance_view(self):
         """Testa endpoint de saldo de créditos."""
-        url = reverse('credit_balance')
+        url = reverse("credit_balance")
         response = self.client.get(url)
-        
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
-        
-        self.assertEqual(data['current_balance'], "10.00")
-        self.assertTrue(data['can_purchase_extra'])
-        self.assertTrue(data['has_auto_renewal'])
-        self.assertIn('total_purchased', data)
-        self.assertIn('total_consumed', data)
-        self.assertIn('total_bonus', data)
+
+        self.assertEqual(data["current_balance"], "10.00")
+        self.assertTrue(data["can_purchase_extra"])
+        self.assertTrue(data["has_auto_renewal"])
+        self.assertIn("total_purchased", data)
+        self.assertIn("total_consumed", data)
+        self.assertIn("total_bonus", data)
 
     def test_credit_history_view(self):
         """Testa endpoint de histórico de créditos."""
         # Cria uma transação
         credit_service = CreditService(self.tenant)
         credit_service.consume_credits(
-            amount=Decimal("2.00"),
-            description="Test consumption",
-            created_by=self.user
+            amount=Decimal("2.00"), description="Test consumption", created_by=self.user
         )
-        
-        url = reverse('credit_history')
+
+        url = reverse("credit_history")
         response = self.client.get(url)
-        
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
-        
+
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['transaction_type'], 'consumption')
-        self.assertEqual(data[0]['amount_eur'], '2.00')
+        self.assertEqual(data[0]["transaction_type"], "consumption")
+        self.assertEqual(data[0]["amount_eur"], "2.00")
 
     def test_consume_credits_view_success(self):
         """Testa endpoint de consumo de créditos com sucesso."""
-        url = reverse('consume_credits')
-        data = {
-            'amount': '5.00',
-            'description': 'Test consumption'
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
+        url = reverse("consume_credits")
+        data = {"amount": "5.00", "description": "Test consumption"}
+
+        response = self.client.post(url, data, format="json")
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_data = response.json()
-        
-        self.assertEqual(response_data['status'], 'success')
-        self.assertEqual(response_data['new_balance'], 5.0)
-        self.assertIn('transaction_id', response_data)
+
+        self.assertEqual(response_data["status"], "success")
+        self.assertEqual(response_data["new_balance"], 5.0)
+        self.assertIn("transaction_id", response_data)
 
     def test_consume_credits_view_insufficient_balance(self):
         """Testa endpoint de consumo com saldo insuficiente."""
-        url = reverse('consume_credits')
-        data = {
-            'amount': '15.00',
-            'description': 'Test consumption'
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
+        url = reverse("consume_credits")
+        data = {"amount": "15.00", "description": "Test consumption"}
+
+        response = self.client.post(url, data, format="json")
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Saldo insuficiente', response.json()['detail'])
+        self.assertIn("Saldo insuficiente", response.json()["detail"])
 
     def test_purchase_credits_view_success(self):
         """Testa endpoint de compra de créditos com sucesso."""
-        url = reverse('purchase_credits')
-        data = {
-            'amount': '10.00'
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
+        url = reverse("purchase_credits")
+        data = {"amount": "10.00"}
+
+        response = self.client.post(url, data, format="json")
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_data = response.json()
-        
-        self.assertEqual(response_data['status'], 'success')
-        self.assertEqual(response_data['new_balance'], 20.0)
-        self.assertIn('transaction_id', response_data)
+
+        self.assertEqual(response_data["status"], "success")
+        self.assertEqual(response_data["new_balance"], 20.0)
+        self.assertIn("transaction_id", response_data)
 
     def test_purchase_credits_view_not_allowed(self):
         """Testa endpoint de compra quando não permitido."""
         # Atualiza tenant para não permitir compras extras
         self.tenant.comm_extra_allowed = False
         self.tenant.save()
-        
-        url = reverse('purchase_credits')
-        data = {
-            'amount': '20.00'
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
+
+        url = reverse("purchase_credits")
+        data = {"amount": "20.00"}
+
+        response = self.client.post(url, data, format="json")
+
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn('não permitida', response.json()['detail'])
+        self.assertIn("não permitida", response.json()["detail"])
 
     def test_purchase_credits_view_invalid_amount(self):
         """Testa endpoint de compra com valor inválido."""
-        url = reverse('purchase_credits')
-        data = {
-            'amount': '3.00'  # Menor que o mínimo de 5€
-        }
-        
-        response = self.client.post(url, data, format='json')
-        
+        url = reverse("purchase_credits")
+        data = {"amount": "3.00"}  # Menor que o mínimo de 5€
+
+        response = self.client.post(url, data, format="json")
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_endpoints_require_authentication(self):
         """Testa que todos os endpoints requerem autenticação."""
         self.client.force_authenticate(user=None)
-        
+
         endpoints = [
-            'credit_balance',
-            'credit_history',
-            'consume_credits',
-            'purchase_credits'
+            "credit_balance",
+            "credit_history",
+            "consume_credits",
+            "purchase_credits",
         ]
-        
+
         for endpoint_name in endpoints:
             url = reverse(endpoint_name)
-            if endpoint_name in ['consume_credits', 'purchase_credits']:
+            if endpoint_name in ["consume_credits", "purchase_credits"]:
                 response = self.client.post(url, {})
             else:
                 response = self.client.get(url)
-            
+
             self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class TenantCreditMethodsTestCase(TestCase):
     """Testes para os novos métodos do modelo Tenant."""
-    
+
     def setUp(self):
         self.tenant_basic = Tenant.objects.create(
             name="Basic Tenant",
@@ -298,9 +277,9 @@ class TenantCreditMethodsTestCase(TestCase):
             plan_tier="basic",
             comm_extra_allowed=False,
             comm_auto_renew=False,
-            custom_domain_enabled=False
+            custom_domain_enabled=False,
         )
-        
+
         self.tenant_pro = Tenant.objects.create(
             name="Pro Tenant",
             slug="pro-tenant",
@@ -308,7 +287,7 @@ class TenantCreditMethodsTestCase(TestCase):
             comm_extra_allowed=True,
             comm_auto_renew=True,
             custom_domain_enabled=True,
-            custom_domain="custom.example.com"
+            custom_domain="custom.example.com",
         )
 
     def test_can_purchase_extra_credits(self):
@@ -325,7 +304,7 @@ class TenantCreditMethodsTestCase(TestCase):
         """Testa método can_use_custom_domain."""
         self.assertFalse(self.tenant_basic.can_use_custom_domain())
         self.assertTrue(self.tenant_pro.can_use_custom_domain())
-        
+
         # Mesmo com custom_domain_enabled=True, plano básico não deve permitir
         self.tenant_basic.custom_domain_enabled = True
         self.tenant_basic.save()

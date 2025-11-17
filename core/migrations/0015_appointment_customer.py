@@ -5,19 +5,26 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0014_seed_default_salon_customer'),
+        ("core", "0014_seed_default_salon_customer"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='appointment',
-            name='customer',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='appointments', to='core.saloncustomer'),
+            model_name="appointment",
+            name="customer",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="appointments",
+                to="core.saloncustomer",
+            ),
         ),
         migrations.AddIndex(
-            model_name='appointment',
-            index=models.Index(fields=['tenant', 'customer'], name='core_appoin_tenant_c_idx'),
+            model_name="appointment",
+            index=models.Index(
+                fields=["tenant", "customer"], name="core_appoin_tenant_c_idx"
+            ),
         ),
     ]

@@ -10,14 +10,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.settings import api_settings
 
-from ops.models import AccountLockout, OpsAlert
+from ops.models import OpsAlert
 from users.models import Tenant
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-def _base_ops_token_claims(refresh: RefreshToken, ops_role: str, user_id: int) -> Dict[str, Any]:
+def _base_ops_token_claims(
+    refresh: RefreshToken, ops_role: str, user_id: int
+) -> Dict[str, Any]:
     refresh["scope"] = ops_role
     refresh["ops_role"] = ops_role
     refresh["tenant_slug"] = None
@@ -56,9 +58,7 @@ class OpsTokenObtainPairSerializer(serializers.Serializer):
             raise AuthenticationFailed("Credenciais inválidas.")
 
         if not user.is_active:
-            raise AuthenticationFailed(
-                "Conta inativa. Entre em contato com o suporte."
-            )
+            raise AuthenticationFailed("Conta inativa. Entre em contato com o suporte.")
 
         if not getattr(user, "is_ops_user", False):
             raise AuthenticationFailed("Acesso restrito ao console Ops.")

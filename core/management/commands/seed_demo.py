@@ -24,6 +24,7 @@ class Command(BaseCommand):
         smoke_password = settings.SMOKE_USER_PASSWORD
 
         from typing import Any, cast
+
         with cast(Any, transaction.atomic()):
             # --- Tenant padrão ---
             default_tenant, tenant_created = Tenant.objects.get_or_create(
@@ -66,7 +67,7 @@ class Command(BaseCommand):
                 default_tenant.save()
 
             # --- Tenants adicionais para demonstrar diferentes planos ---
-            
+
             # Tenant Basic - sem créditos auto-renew
             basic_tenant, basic_created = Tenant.objects.get_or_create(
                 slug="basic-demo",
@@ -183,7 +184,10 @@ class Command(BaseCommand):
                     "activated_at": timezone.now(),
                 },
             )
-            if not owner_staff_created and owner_staff.role != TenantStaffMember.Role.OWNER:
+            if (
+                not owner_staff_created
+                and owner_staff.role != TenantStaffMember.Role.OWNER
+            ):
                 owner_staff.role = TenantStaffMember.Role.OWNER
                 owner_staff.status = TenantStaffMember.Status.ACTIVE
                 owner_staff.activated_at = owner_staff.activated_at or timezone.now()
@@ -203,7 +207,10 @@ class Command(BaseCommand):
                     "activated_at": timezone.now(),
                 },
             )
-            if not pro_staff_created and pro_staff.role != TenantStaffMember.Role.MANAGER:
+            if (
+                not pro_staff_created
+                and pro_staff.role != TenantStaffMember.Role.MANAGER
+            ):
                 pro_staff.role = TenantStaffMember.Role.MANAGER
                 pro_staff.status = TenantStaffMember.Status.ACTIVE
                 pro_staff.activated_at = pro_staff.activated_at or timezone.now()
@@ -326,7 +333,10 @@ class Command(BaseCommand):
             alice_professional = alice_staff.ensure_professional()
             if alice_professional:
                 # Atualizar dados se necessário
-                if alice_professional.name != "Alice" or alice_professional.bio != "Especialista em cortes e coloração.":
+                if (
+                    alice_professional.name != "Alice"
+                    or alice_professional.bio != "Especialista em cortes e coloração."
+                ):
                     alice_professional.name = "Alice"
                     alice_professional.bio = "Especialista em cortes e coloração."
                     alice_professional.save(update_fields=["name", "bio"])
@@ -334,15 +344,24 @@ class Command(BaseCommand):
             bruno_professional = bruno_staff.ensure_professional()
             if bruno_professional:
                 # Atualizar dados se necessário
-                if bruno_professional.name != "Bruno" or bruno_professional.bio != "Barbeiro especialista em fade.":
+                if (
+                    bruno_professional.name != "Bruno"
+                    or bruno_professional.bio != "Barbeiro especialista em fade."
+                ):
                     bruno_professional.name = "Bruno"
                     bruno_professional.bio = "Barbeiro especialista em fade."
                     bruno_professional.save(update_fields=["name", "bio"])
 
             # Contar professionals criados/atualizados
-            prof1_exists = Professional.objects.filter(staff_member=alice_staff).exists()
-            prof2_exists = Professional.objects.filter(staff_member=bruno_staff).exists()
-            created_counts["professionals_created"] = int(not prof1_exists) + int(not prof2_exists)
+            prof1_exists = Professional.objects.filter(
+                staff_member=alice_staff
+            ).exists()
+            prof2_exists = Professional.objects.filter(
+                staff_member=bruno_staff
+            ).exists()
+            created_counts["professionals_created"] = int(not prof1_exists) + int(
+                not prof2_exists
+            )
 
             # --- Serviços do salão do pro_smoke ---
             svc1, s1_new = Service.objects.get_or_create(
@@ -375,9 +394,15 @@ class Command(BaseCommand):
             created_counts["services_created"] = int(s1_new) + int(s2_new) + int(s3_new)
 
             # Buscar professionals para criar slots
-            alice_professional = Professional.objects.filter(staff_member=alice_staff).first()
-            bruno_professional = Professional.objects.filter(staff_member=bruno_staff).first()
-            professionals = [p for p in [alice_professional, bruno_professional] if p is not None]
+            alice_professional = Professional.objects.filter(
+                staff_member=alice_staff
+            ).first()
+            bruno_professional = Professional.objects.filter(
+                staff_member=bruno_staff
+            ).first()
+            professionals = [
+                p for p in [alice_professional, bruno_professional] if p is not None
+            ]
 
             # --- Slots próximos 3 dias (9h–17h, de hora em hora) ---
             tz_now = timezone.now()
@@ -410,11 +435,15 @@ class Command(BaseCommand):
 
             # --- Alguns agendamentos (scheduled, cancelled, completed) ---
             # Buscar professionals pelos staff members
-            alice_professional = Professional.objects.filter(staff_member=alice_staff).first()
-            bruno_professional = Professional.objects.filter(staff_member=bruno_staff).first()
-            
+            alice_professional = Professional.objects.filter(
+                staff_member=alice_staff
+            ).first()
+            bruno_professional = Professional.objects.filter(
+                staff_member=bruno_staff
+            ).first()
+
             professionals = [p for p in [alice_professional, bruno_professional] if p]
-            
+
             # Seleciona 3 slots disponíveis e reserva para o cliente
             free_slots = (
                 ScheduleSlot.objects.filter(
@@ -483,7 +512,7 @@ class Command(BaseCommand):
 
         # --- Histórico de transações de créditos (CommLedger) ---
         comm_ledger_created = 0
-        
+
         # Transações para o tenant padrão
         if default_tenant:
             # Crédito inicial
@@ -497,7 +526,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("10.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=30),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -513,7 +542,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("15.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=20),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -529,7 +558,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("14.50"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=15),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -545,7 +574,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("14.20"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=10),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -563,7 +592,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("25.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=25),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -575,7 +604,7 @@ class Command(BaseCommand):
                 (Decimal("2.50"), "Notificações promocionais", 15),
                 (Decimal("0.60"), "Confirmações de agendamento", 12),
             ]
-            
+
             balance_before = Decimal("25.00")
             for amount, desc, days_ago in consumos_pro:
                 balance_after = balance_before - amount
@@ -589,7 +618,7 @@ class Command(BaseCommand):
                         "balance_after": balance_after,
                         "status": "completed",
                         "created_at": timezone.now() - timedelta(days=days_ago),
-                    }
+                    },
                 )
                 if created:
                     comm_ledger_created += 1
@@ -608,7 +637,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("5.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=15),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -624,7 +653,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("4.50"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=10),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -642,7 +671,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("3.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=10),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1
@@ -658,7 +687,7 @@ class Command(BaseCommand):
                     "balance_after": Decimal("0.00"),
                     "status": "completed",
                     "created_at": timezone.now() - timedelta(days=5),
-                }
+                },
             )
             if created:
                 comm_ledger_created += 1

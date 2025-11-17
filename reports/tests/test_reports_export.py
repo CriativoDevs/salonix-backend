@@ -35,10 +35,7 @@ def test_export_overview_csv_ok_without_data():
     body = r.content.decode("utf-8")
     assert "TimelyOne" in body  # Novo cabeçalho
     assert "Agendamentos Totais" in body  # Coluna traduzida
-    assert (
-        "data,receita" in body.replace(" ", "").lower()
-        or "Data,Receita" in body
-    )
+    assert "data,receita" in body.replace(" ", "").lower() or "Data,Receita" in body
 
 
 @pytest.mark.django_db

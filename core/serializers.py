@@ -289,7 +289,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if tenant:
             try:
                 data = validate_appointment_data(data, tenant, user)
-            except Exception as e:
+            except Exception:
                 # Se a validação avançada falhar, manter validação básica
                 pass
 
@@ -431,7 +431,6 @@ class BulkAppointmentSerializer(serializers.Serializer):
         return value
 
     def validate_appointments(self, value):
-
         if not value:
             raise serializers.ValidationError(
                 "Pelo menos um agendamento é obrigatório."

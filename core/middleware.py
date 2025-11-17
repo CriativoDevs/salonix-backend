@@ -1,6 +1,5 @@
 from django.http import Http404
 from django.utils.deprecation import MiddlewareMixin
-from users.models import Tenant
 
 
 class TenantMiddleware(MiddlewareMixin):

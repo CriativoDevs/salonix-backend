@@ -84,7 +84,7 @@ def observe_request(endpoint):
                     ),
                 )
                 return resp
-            except Exception as exc:
+            except Exception:
                 dur = time.time() - start
                 REPORTS_LATENCY.labels(endpoint=endpoint).observe(dur)
                 REPORTS_REQUESTS.labels(endpoint=endpoint, result="500").inc()

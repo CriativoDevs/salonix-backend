@@ -3,10 +3,8 @@ Sistema de feature flags e permissions baseado em planos.
 """
 
 from functools import wraps
-from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
-from rest_framework.response import Response
 
 
 class RequiresFeatureFlag(BasePermission):

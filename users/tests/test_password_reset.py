@@ -21,7 +21,9 @@ def test_password_reset_request_neutral_response():
 @pytest.mark.django_db
 @override_settings(CAPTCHA_ENABLED=False)
 def test_password_reset_flow_success():
-    user = User.objects.create_user(username="u", email="u@example.com", password="OldPass123")
+    user = User.objects.create_user(
+        username="u", email="u@example.com", password="OldPass123"
+    )
     c = APIClient()
 
     # request token
@@ -35,10 +37,11 @@ def test_password_reset_flow_success():
     token = PasswordResetTokenGenerator().make_token(user)
 
     conf_url = reverse("password_reset_confirm")
-    r2 = c.post(conf_url, {"uid": str(user.pk), "token": token, "new_password": "NewPass123"})
+    r2 = c.post(
+        conf_url, {"uid": str(user.pk), "token": token, "new_password": "NewPass123"}
+    )
     assert r2.status_code == 200
 
     # can login with new password
     assert user.refresh_from_db() is None
     assert user.check_password("NewPass123")
-

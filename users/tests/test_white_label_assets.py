@@ -3,7 +3,6 @@ Testes para funcionalidades de white-label assets (upload de logo, favicon e app
 """
 
 import pytest
-import tempfile
 from io import BytesIO
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -259,9 +258,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_updates_own_tenant(self):
         """Teste PATCH atualiza apenas o tenant do próprio usuário."""
         # Criar outro tenant e usuário
-        other_tenant = Tenant.objects.create(
-            name="Other Salon", slug="other-salon"
-        )
+        other_tenant = Tenant.objects.create(name="Other Salon", slug="other-salon")
         other_user = CustomUser.objects.create_user(
             username="other_owner",
             email="other@test.com",
@@ -340,7 +337,10 @@ class TestTenantBrandingIntegration:
         assert response.data["logo_url"] is None
 
         # 2. Atualizar cores
-        branding_data = {"app_name": "Integration App", "favicon_url": "https://example.com/fav.png"}
+        branding_data = {
+            "app_name": "Integration App",
+            "favicon_url": "https://example.com/fav.png",
+        }
         response = self.client.patch(url, branding_data)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["app_name"] == "Integration App"

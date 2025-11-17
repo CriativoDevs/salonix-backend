@@ -50,8 +50,8 @@ def test_default_pagination_headers(user_fixture):
     assert resp["X-Offset"] == "0"
 
     link = resp.get("Link", "")
-    assert "rel=\"next\"" in link
-    assert "rel=\"prev\"" not in link
+    assert 'rel="next"' in link
+    assert 'rel="prev"' not in link
 
 
 @pytest.mark.django_db
@@ -77,7 +77,7 @@ def test_limit_capped_to_100(user_fixture):
 
     link = resp.get("Link", "")
     # como total=110 e limit=100, deve existir next para offset=100
-    assert "rel=\"next\"" in link
+    assert 'rel="next"' in link
     assert "offset=100" in link
 
 
@@ -105,9 +105,15 @@ def test_ordering_by_start_time(user_fixture):
     prof = Professional.objects.create(user=user_fixture, name="Pro", bio="OK")
 
     now = timezone.now()
-    a1 = _create_apt(user_fixture, svc, prof, now + timedelta(hours=1), note_prefix="A1")
-    a2 = _create_apt(user_fixture, svc, prof, now + timedelta(hours=2), note_prefix="A2")
-    a3 = _create_apt(user_fixture, svc, prof, now + timedelta(hours=3), note_prefix="A3")
+    a1 = _create_apt(
+        user_fixture, svc, prof, now + timedelta(hours=1), note_prefix="A1"
+    )
+    _create_apt(
+        user_fixture, svc, prof, now + timedelta(hours=2), note_prefix="A2"
+    )
+    a3 = _create_apt(
+        user_fixture, svc, prof, now + timedelta(hours=3), note_prefix="A3"
+    )
 
     # asc: primeiro é A1
     resp_asc = client.get("/api/salon/appointments/", {"ordering": "start_time"})
@@ -137,7 +143,9 @@ def test_tenant_scope_reflected_in_total_count(user_fixture):
     other = CustomUser.objects.create_user(
         username="other", email="other@example.com", password="pass"
     )
-    other_tenant = Tenant.objects.create(name="Tenant Pagination", slug="tenant-pagination")
+    other_tenant = Tenant.objects.create(
+        name="Tenant Pagination", slug="tenant-pagination"
+    )
     other.tenant = other_tenant
     other.save(update_fields=["tenant"])
 
@@ -148,15 +156,21 @@ def test_tenant_scope_reflected_in_total_count(user_fixture):
         duration_minutes=20,
         price_eur="10.00",
     )
-    prof_o = Professional.objects.create(tenant=other_tenant, user=other, name="Outro", bio="Pro")
+    prof_o = Professional.objects.create(
+        tenant=other_tenant, user=other, name="Outro", bio="Pro"
+    )
 
     now = timezone.now()
     # cria 10 para owner
     for i in range(10):
-        _create_apt(user_fixture, svc, prof, now + timedelta(minutes=i), note_prefix="Own")
+        _create_apt(
+            user_fixture, svc, prof, now + timedelta(minutes=i), note_prefix="Own"
+        )
     # cria 5 para other
     for i in range(5):
-        _create_apt(other, svc_o, prof_o, now + timedelta(minutes=60 + i), note_prefix="Other")
+        _create_apt(
+            other, svc_o, prof_o, now + timedelta(minutes=60 + i), note_prefix="Other"
+        )
 
     # Em ambiente de teste o isolamento por tenant está desligado pelo mixin,
     # então o OWNER deve ver o total agregado (10 do owner + 5 do other = 15)
@@ -190,8 +204,8 @@ def test_link_headers_next_and_prev(user_fixture):
     assert len(resp.data) == 10
 
     link = resp.get("Link", "")
-    assert "rel=\"next\"" in link
-    assert "rel=\"prev\"" in link
+    assert 'rel="next"' in link
+    assert 'rel="prev"' in link
     # next deve apontar para offset=20 e prev para offset=0
     assert "offset=20" in link
     assert "offset=0" in link

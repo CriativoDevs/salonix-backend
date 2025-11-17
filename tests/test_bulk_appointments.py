@@ -91,7 +91,7 @@ class TestBulkAppointments(TestCase):
             "notes": "Curso de 3 sessões",
         }
 
-        with patch("core.views.logger") as mock_logger:
+        with patch("core.views.logger"):
             response = self.client_api.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -387,10 +387,10 @@ class TestBulkAppointments(TestCase):
             ],
         }
 
-        with patch("core.views.BULK_APPOINTMENTS_TOTAL") as mock_total, patch(
-            "core.views.BULK_APPOINTMENTS_SIZE"
-        ) as mock_size:
-
+        with (
+            patch("core.views.BULK_APPOINTMENTS_TOTAL") as mock_total,
+            patch("core.views.BULK_APPOINTMENTS_SIZE") as mock_size,
+        ):
             response = self.client_api.post(self.url, data, format="json")
 
         assert response.status_code == status.HTTP_201_CREATED

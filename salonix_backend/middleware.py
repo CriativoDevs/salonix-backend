@@ -203,7 +203,7 @@ class ScopeAccessMiddleware(MiddlewareMixin):
 
         try:
             auth_result = self.authenticator.authenticate(request)
-        except InvalidToken as exc:
+        except InvalidToken:
             return self._build_error_response(
                 request,
                 message="Token inválido.",

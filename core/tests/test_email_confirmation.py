@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch
 from rest_framework.test import APIClient
 
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import Service, Professional, ScheduleSlot
 
 
 @pytest.mark.django_db

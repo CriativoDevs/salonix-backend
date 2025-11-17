@@ -115,7 +115,6 @@ def translate_column_names(columns: dict) -> dict:
         "period_start": "Data",
         "revenue": "Receita",
         # Top Services
-        "service_name": "Nome do Serviço",
         "appointments_count": "Quantidade de Agendamentos",
         "total_revenue": "Receita Total",
         # Revenue

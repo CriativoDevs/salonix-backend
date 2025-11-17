@@ -62,12 +62,16 @@ class Command(BaseCommand):
                 raise CommandError(
                     "Utilizador já existe. Use --force para atualizar senha e role."
                 )
-            self.stdout.write(self.style.WARNING("⚠️ Utilizador existente será atualizado."))
+            self.stdout.write(
+                self.style.WARNING("⚠️ Utilizador existente será atualizado.")
+            )
 
         user.username = user.username or username
         user.ops_role = role
         user.is_active = True
-        user._tenant_explicitly_none = True  # evitar associação automática em seeds de teste
+        user._tenant_explicitly_none = (
+            True  # evitar associação automática em seeds de teste
+        )
         user.tenant = None
         user.set_password(password)
         user.save()

@@ -3,7 +3,13 @@ from prometheus_client import CollectorRegistry, Counter
 from rest_framework.test import APIClient
 
 from core import views as series_views
-from core.models import Appointment, AppointmentSeries, Professional, ScheduleSlot, Service
+from core.models import (
+    Appointment,
+    AppointmentSeries,
+    Professional,
+    ScheduleSlot,
+    Service,
+)
 from django.utils import timezone
 from datetime import timedelta
 
@@ -92,11 +98,14 @@ def test_series_creation_metrics(api_client, user_fixture, prometheus_registry):
     response = api_client.post("/api/appointments/series/", payload, format="json")
     assert response.status_code == 201
 
-    assert _metric_value(
-        series_views.APPOINTMENT_SERIES_CREATED_TOTAL,
-        tenant_id=tenant_id,
-        status="success",
-    ) == 1
+    assert (
+        _metric_value(
+            series_views.APPOINTMENT_SERIES_CREATED_TOTAL,
+            tenant_id=tenant_id,
+            status="success",
+        )
+        == 1
+    )
     assert _metric_value(
         series_views.APPOINTMENT_SERIES_SIZE_TOTAL,
         tenant_id=tenant_id,
@@ -123,7 +132,9 @@ def test_series_update_metrics(api_client, user_fixture, prometheus_registry):
         "professional_id": professional.id,
         "appointments": [{"slot_id": slot.id}],
     }
-    response = api_client.post("/api/appointments/series/", create_payload, format="json")
+    response = api_client.post(
+        "/api/appointments/series/", create_payload, format="json"
+    )
     assert response.status_code == 201
     series_id = response.json()["series_id"]
 
@@ -135,16 +146,21 @@ def test_series_update_metrics(api_client, user_fixture, prometheus_registry):
     )
     assert response.status_code == 200
 
-    assert _metric_value(
-        series_views.APPOINTMENT_SERIES_UPDATED_TOTAL,
-        tenant_id=tenant_id,
-        action="cancel_all",
-        status="success",
-    ) == 1
+    assert (
+        _metric_value(
+            series_views.APPOINTMENT_SERIES_UPDATED_TOTAL,
+            tenant_id=tenant_id,
+            action="cancel_all",
+            status="success",
+        )
+        == 1
+    )
 
 
 @pytest.mark.django_db
-def test_series_occurrence_cancel_metrics(api_client, user_fixture, prometheus_registry):
+def test_series_occurrence_cancel_metrics(
+    api_client, user_fixture, prometheus_registry
+):
     tenant_id = str(user_fixture.tenant_id)
 
     service = Service.objects.create(
@@ -178,8 +194,11 @@ def test_series_occurrence_cancel_metrics(api_client, user_fixture, prometheus_r
     )
     assert response.status_code == 200
 
-    assert _metric_value(
-        series_views.APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL,
-        tenant_id=tenant_id,
-        status="success",
-    ) == 1
+    assert (
+        _metric_value(
+            series_views.APPOINTMENT_SERIES_OCCURRENCE_CANCEL_TOTAL,
+            tenant_id=tenant_id,
+            status="success",
+        )
+        == 1
+    )

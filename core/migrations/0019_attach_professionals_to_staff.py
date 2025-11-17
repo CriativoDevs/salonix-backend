@@ -53,9 +53,7 @@ def attach_professionals_to_staff(apps, schema_editor):
             role_collaborator = getattr(
                 TenantStaffMember.Role, "COLLABORATOR", "collaborator"
             )
-            status_active = getattr(
-                TenantStaffMember.Status, "ACTIVE", "active"
-            )
+            status_active = getattr(TenantStaffMember.Status, "ACTIVE", "active")
             staff = TenantStaffMember.objects.create(
                 tenant=tenant,
                 user=user,
@@ -78,7 +76,10 @@ def attach_professionals_to_staff(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("core", "0018_rename_core_prof_tenant_staff_idx_core_profes_tenant__f17964_idx"),
+        (
+            "core",
+            "0018_rename_core_prof_tenant_staff_idx_core_profes_tenant__f17964_idx",
+        ),
         ("users", "0013_tenantstaffmember"),
     ]
 

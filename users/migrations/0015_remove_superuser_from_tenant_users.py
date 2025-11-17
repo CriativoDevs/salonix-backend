@@ -15,7 +15,10 @@ def noop(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("users", "0014_rename_users_staff_tenant_idx_users_tenan_tenant__61c8d0_idx_and_more"),
+        (
+            "users",
+            "0014_rename_users_staff_tenant_idx_users_tenan_tenant__61c8d0_idx_and_more",
+        ),
     ]
 
     operations = [

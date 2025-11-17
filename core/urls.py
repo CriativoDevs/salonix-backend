@@ -29,9 +29,7 @@ router.register("slots", ScheduleSlotViewSet, basename="slot")
 router.register(
     "salon/appointments", SalonAppointmentViewSet, basename="salon-appointments"
 )
-router.register(
-    "salon/customers", SalonCustomerViewSet, basename="salon-customers"
-)
+router.register("salon/customers", SalonCustomerViewSet, basename="salon-customers")
 
 urlpatterns = [
     path("", include(router.urls)),

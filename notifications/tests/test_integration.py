@@ -1,10 +1,7 @@
 import pytest
 from django.contrib.auth import get_user_model
-from django.test import override_settings
-from users.models import Tenant
 from core.models import Appointment, Service, Professional, ScheduleSlot
 from notifications.models import Notification, NotificationLog
-from notifications.signals import send_appointment_notifications
 
 User = get_user_model()
 
@@ -33,7 +30,7 @@ class TestNotificationIntegration:
             bio="Especialista em cortes masculinos",
         )
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from django.utils import timezone
 
         slot = ScheduleSlot.objects.create(
@@ -101,7 +98,7 @@ class TestNotificationIntegration:
             bio="Especialista em manicure e pedicure",
         )
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from django.utils import timezone
 
         slot = ScheduleSlot.objects.create(
@@ -175,7 +172,7 @@ class TestNotificationIntegration:
             bio="Especialista em massagens relaxantes",
         )
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from django.utils import timezone
 
         slot = ScheduleSlot.objects.create(
@@ -234,7 +231,7 @@ class TestNotificationIntegration:
             bio="Especialista em pedicure e cuidados dos pés",
         )
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from django.utils import timezone
 
         slot = ScheduleSlot.objects.create(
@@ -293,7 +290,7 @@ class TestNotificationIntegration:
             bio="Profissional de teste",
         )
 
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from django.utils import timezone
 
         slot = ScheduleSlot.objects.create(

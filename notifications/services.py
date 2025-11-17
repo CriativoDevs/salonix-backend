@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional, Any
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -11,7 +10,9 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-def send_customer_pwa_invite(tenant: Tenant, customer, invited_by: Optional[Any] = None) -> bool:
+def send_customer_pwa_invite(
+    tenant: Tenant, customer, invited_by: Optional[Any] = None
+) -> bool:
     """Placeholder para envio de convite do PWA Cliente."""
     logger.info(
         "PWA invite dispatched",
@@ -330,20 +331,20 @@ class SMSDriver(NotificationDriverBase):
         # Verificar e cobrar créditos
         charge_result = credit_service.charge_for_message(
             tenant=tenant,
-            communication_type='sms',
+            communication_type="sms",
             description=f"SMS para {user.username} - {notification_type}",
-            user=user
+            user=user,
         )
-        
-        if not charge_result['success']:
+
+        if not charge_result["success"]:
             logger.warning(
                 f"SMS não enviado - {charge_result['error']}",
                 extra={
                     "tenant_id": tenant.id,
                     "user_id": user.id,
-                    "error": charge_result['error'],
-                    "cost": str(charge_result.get('cost', 0)),
-                    "balance": str(charge_result.get('balance', 0))
+                    "error": charge_result["error"],
+                    "cost": str(charge_result.get("cost", 0)),
+                    "balance": str(charge_result.get("balance", 0)),
                 },
             )
             return False
@@ -356,9 +357,9 @@ class SMSDriver(NotificationDriverBase):
                 "user_id": user.id,
                 "phone": user.phone_number,
                 "notification_message": message,
-                "cost_charged": str(charge_result['cost']),
-                "new_balance": str(charge_result['new_balance']),
-                "ledger_id": charge_result['ledger_entry'].id
+                "cost_charged": str(charge_result["cost"]),
+                "new_balance": str(charge_result["new_balance"]),
+                "ledger_id": charge_result["ledger_entry"].id,
             },
         )
         return True
@@ -386,31 +387,31 @@ class WhatsAppDriver(NotificationDriverBase):
             return False
 
         # Determinar categoria da mensagem WhatsApp baseado no tipo de notificação
-        message_category = 'utility'  # Padrão para confirmações/lembretes
-        if 'marketing' in notification_type.lower():
-            message_category = 'marketing'
-        elif 'service' in notification_type.lower():
-            message_category = 'service'
+        message_category = "utility"  # Padrão para confirmações/lembretes
+        if "marketing" in notification_type.lower():
+            message_category = "marketing"
+        elif "service" in notification_type.lower():
+            message_category = "service"
 
         # Verificar e cobrar créditos
         charge_result = credit_service.charge_for_message(
             tenant=tenant,
-            communication_type='whatsapp',
+            communication_type="whatsapp",
             message_category=message_category,
             description=f"WhatsApp para {user.username} - {notification_type} ({message_category})",
-            user=user
+            user=user,
         )
-        
-        if not charge_result['success']:
+
+        if not charge_result["success"]:
             logger.warning(
                 f"WhatsApp não enviado - {charge_result['error']}",
                 extra={
                     "tenant_id": tenant.id,
                     "user_id": user.id,
-                    "error": charge_result['error'],
-                    "cost": str(charge_result.get('cost', 0)),
-                    "balance": str(charge_result.get('balance', 0)),
-                    "message_category": message_category
+                    "error": charge_result["error"],
+                    "cost": str(charge_result.get("cost", 0)),
+                    "balance": str(charge_result.get("balance", 0)),
+                    "message_category": message_category,
                 },
             )
             return False
@@ -424,9 +425,9 @@ class WhatsAppDriver(NotificationDriverBase):
                 "phone": user.phone_number,
                 "notification_message": f"{title}\n{message}",
                 "message_category": message_category,
-                "cost_charged": str(charge_result['cost']),
-                "new_balance": str(charge_result['new_balance']),
-                "ledger_id": charge_result['ledger_entry'].id
+                "cost_charged": str(charge_result["cost"]),
+                "new_balance": str(charge_result["new_balance"]),
+                "ledger_id": charge_result["ledger_entry"].id,
             },
         )
         return True

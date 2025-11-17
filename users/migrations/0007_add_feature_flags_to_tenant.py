@@ -4,65 +4,87 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0006_make_tenant_nullable_for_tests'),
+        ("users", "0006_make_tenant_nullable_for_tests"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='tenant',
-            name='addons_enabled',
-            field=models.JSONField(blank=True, default=list, help_text="Lista de addons habilitados (ex: ['rn_admin', 'rn_client'])"),
+            model_name="tenant",
+            name="addons_enabled",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="Lista de addons habilitados (ex: ['rn_admin', 'rn_client'])",
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='plan_tier',
-            field=models.CharField(choices=[('basic', 'Basic'), ('standard', 'Standard'), ('pro', 'Pro')], default='basic', help_text='Nível do plano contratado', max_length=20),
+            model_name="tenant",
+            name="plan_tier",
+            field=models.CharField(
+                choices=[("basic", "Basic"), ("standard", "Standard"), ("pro", "Pro")],
+                default="basic",
+                help_text="Nível do plano contratado",
+                max_length=20,
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='push_mobile_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita notificações mobile push'),
+            model_name="tenant",
+            name="push_mobile_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita notificações mobile push"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='push_web_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita notificações web push'),
+            model_name="tenant",
+            name="push_web_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita notificações web push"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='pwa_admin_enabled',
-            field=models.BooleanField(default=True, help_text='Habilita PWA Admin'),
+            model_name="tenant",
+            name="pwa_admin_enabled",
+            field=models.BooleanField(default=True, help_text="Habilita PWA Admin"),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='pwa_client_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita PWA Cliente'),
+            model_name="tenant",
+            name="pwa_client_enabled",
+            field=models.BooleanField(default=False, help_text="Habilita PWA Cliente"),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='reports_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita módulo de relatórios'),
+            model_name="tenant",
+            name="reports_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita módulo de relatórios"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='rn_admin_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita app nativo Admin (React Native)'),
+            model_name="tenant",
+            name="rn_admin_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita app nativo Admin (React Native)"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='rn_client_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita app nativo Cliente (React Native)'),
+            model_name="tenant",
+            name="rn_client_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita app nativo Cliente (React Native)"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='sms_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita notificações SMS'),
+            model_name="tenant",
+            name="sms_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita notificações SMS"
+            ),
         ),
         migrations.AddField(
-            model_name='tenant',
-            name='whatsapp_enabled',
-            field=models.BooleanField(default=False, help_text='Habilita notificações WhatsApp'),
+            model_name="tenant",
+            name="whatsapp_enabled",
+            field=models.BooleanField(
+                default=False, help_text="Habilita notificações WhatsApp"
+            ),
         ),
     ]

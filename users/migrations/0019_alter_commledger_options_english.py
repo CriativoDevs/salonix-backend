@@ -4,14 +4,17 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0018_alter_commledger_options'),
+        ("users", "0018_alter_commledger_options"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='commledger',
-            options={'ordering': ['-created_at'], 'verbose_name': 'Credit History', 'verbose_name_plural': 'Credit History'},
+            name="commledger",
+            options={
+                "ordering": ["-created_at"],
+                "verbose_name": "Credit History",
+                "verbose_name_plural": "Credit History",
+            },
         ),
     ]

@@ -4,7 +4,9 @@ from email.mime.multipart import MIMEMultipart
 from django.conf import settings
 
 
-def send_appointment_confirmation_email(to_email, client_name, service_name, date_time, salon_name="Salonix"):
+def send_appointment_confirmation_email(
+    to_email, client_name, service_name, date_time, salon_name="Salonix"
+):
     """
     Envia e-mail de confirmação de agendamento via SMTP (Gmail).
 

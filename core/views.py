@@ -17,7 +17,14 @@ from core.email_utils import (
     send_appointment_confirmation_email,
     send_appointment_cancellation_email,
 )
-from core.models import Appointment, AppointmentSeries, Professional, SalonCustomer, Service, ScheduleSlot
+from core.models import (
+    Appointment,
+    AppointmentSeries,
+    Professional,
+    SalonCustomer,
+    Service,
+    ScheduleSlot,
+)
 from users.models import Tenant, TenantStaffMember
 from notifications.services import send_customer_pwa_invite
 from core.serializers import (
@@ -52,13 +59,8 @@ from core.utils.ics import ICSGenerator
 
 import csv
 import io
-import logging
 from typing import Any, Dict, List, Optional, cast
-from reports.utils.csv_formatter import (
-    write_timely_one_header,
-    format_datetime_pt,
-    translate_column_names
-)
+
 
 def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
     existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
@@ -243,7 +245,9 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
         context.setdefault("enforce_client_slot_uniqueness", False)
         return context
 
-    def _ensure_customer(self, tenant: Optional[Tenant], customer: Optional[SalonCustomer]):
+    def _ensure_customer(
+        self, tenant: Optional[Tenant], customer: Optional[SalonCustomer]
+    ):
         if customer or tenant is None:
             return customer
 
@@ -317,7 +321,9 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
                         or (self.request.user.email or "").split("@")[0]
                     )
                 )
-                salon_name = appointment.tenant.name if appointment.tenant else "Salonix"
+                salon_name = (
+                    appointment.tenant.name if appointment.tenant else "Salonix"
+                )
                 send_appointment_confirmation_email(
                     to_email=recipient_email,
                     client_name=client_display_name,
@@ -416,7 +422,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         notes="Gerado via seed/bulk de agendamentos.",
                     )
 
-            appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
+            appointments_list = cast(List[Dict[str, Any]], data["appointments"])
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
 
@@ -430,9 +436,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         service=service,
                         professional=professional,
                         slot=slot,
-                        notes=str(
-                            appt_data.get("notes") or data.get("notes") or ""
-                        ),
+                        notes=str(appt_data.get("notes") or data.get("notes") or ""),
                         status="scheduled",
                         tenant=tenant,
                         customer=customer,
@@ -456,7 +460,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             total_value = float(unit_price * count)
 
             tenant_label = tenant.id if tenant is not None else "unknown"
-            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="success").inc()
+            BULK_APPOINTMENTS_TOTAL.labels(
+                tenant_id=tenant_label, status="success"
+            ).inc()
             BULK_APPOINTMENTS_SIZE.labels(tenant_id=tenant_label).inc(len(appointments))
 
             # log estruturado de sucesso (exatamente 1 vez)
@@ -477,7 +483,11 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             serialized = AppointmentSerializer(
                 appointments, many=True, context={"request": request}
             ).data
-            message = f"{count} agendamentos criados com sucesso" if count != 1 else "1 agendamento criado com sucesso"
+            message = (
+                f"{count} agendamentos criados com sucesso"
+                if count != 1
+                else "1 agendamento criado com sucesso"
+            )
 
             return Response(
                 {
@@ -605,7 +615,7 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                         notes="Gerado via criação de série de agendamentos.",
                     )
 
-            appointments_list = cast(List[Dict[str, Any]], data["appointments"]) 
+            appointments_list = cast(List[Dict[str, Any]], data["appointments"])
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
 
@@ -629,9 +639,7 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
                         service=service,
                         professional=professional,
                         slot=slot,
-                        notes=str(
-                            appt_data.get("notes") or data.get("notes") or ""
-                        ),
+                        notes=str(appt_data.get("notes") or data.get("notes") or ""),
                         status="scheduled",
                         tenant=tenant,
                         series=series,
@@ -710,7 +718,9 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
         qs = (
             super()
             .get_queryset()
-            .select_related("tenant", "service", "professional__staff_member", "professional")
+            .select_related(
+                "tenant", "service", "professional__staff_member", "professional"
+            )
         )
         user = self.request.user
 
@@ -721,7 +731,9 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
         if _is_owner_or_manager(user) and tenant:
             return qs.filter(tenant_id=tenant.id)
 
-        base_filter = Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        base_filter = (
+            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        )
 
         if _is_collaborator(user):
             staff_member = _get_staff_member(user)
@@ -760,9 +772,9 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
 
         data = cast(Dict[str, Any], update_serializer.validated_data)
         action = cast(str, data["action"])
-        start_from = cast(
-            Any, data.get("start_from")
-        ) or timezone.now()  # atrasa para agora por padrão
+        start_from = (
+            cast(Any, data.get("start_from")) or timezone.now()
+        )  # atrasa para agora por padrão
 
         upcoming = list(
             series.appointments.filter(slot__start_time__gte=start_from)
@@ -790,11 +802,15 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
             APPOINTMENT_SERIES_ERRORS_TOTAL.labels(
                 tenant_id=tenant_id_label, action=action, error_type="validation_error"
             ).inc()
-            detail = getattr(exc, "detail", None) or exc.args or {
-                "detail": "Requisição inválida",
-            }
+            detail = (
+                getattr(exc, "detail", None)
+                or exc.args
+                or {
+                    "detail": "Requisição inválida",
+                }
+            )
             return Response(detail, status=drf_status.HTTP_400_BAD_REQUEST)
-        except Exception as exc:  # pragma: no cover - guard para falhas imprevisíveis
+        except Exception:  # pragma: no cover - guard para falhas imprevisíveis
             APPOINTMENT_SERIES_ERRORS_TOTAL.labels(
                 tenant_id=tenant_id_label, action=action, error_type="exception"
             ).inc()
@@ -880,12 +896,15 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
         if slot_ids:
             if len(slot_ids) != len(upcoming):
                 raise ValidationError(
-                    {"slot_ids": ["Quantidade de slots não corresponde aos agendamentos futuros."]}
+                    {
+                        "slot_ids": [
+                            "Quantidade de slots não corresponde aos agendamentos futuros."
+                        ]
+                    }
                 )
 
-            slots_qs = (
-                ScheduleSlot.objects.select_for_update()
-                .filter(id__in=slot_ids, tenant=tenant)
+            slots_qs = ScheduleSlot.objects.select_for_update().filter(
+                id__in=slot_ids, tenant=tenant
             )
             slots_map = {slot.id: slot for slot in slots_qs}
             missing = [slot_id for slot_id in slot_ids if slot_id not in slots_map]
@@ -939,9 +958,16 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
                 desired_slot = slots_map[desired_slot_id]
 
                 if desired_slot_id != appointment.slot_id:
-                    if desired_slot.is_available is False or desired_slot.status != "available":
+                    if (
+                        desired_slot.is_available is False
+                        or desired_slot.status != "available"
+                    ):
                         raise ValidationError(
-                            {"slot_ids": [f"Slot {desired_slot_id} não está disponível."]}
+                            {
+                                "slot_ids": [
+                                    f"Slot {desired_slot_id} não está disponível."
+                                ]
+                            }
                         )
 
                     if appointment.slot:
@@ -984,11 +1010,15 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
         responses={200: AppointmentSeriesOccurrenceCancelResponseSerializer},
     )
     def post(self, request, series_id: int, occurrence_id: int):
-        series = get_object_or_404(AppointmentSeries.objects.select_related("tenant"), pk=series_id)
+        series = get_object_or_404(
+            AppointmentSeries.objects.select_related("tenant"), pk=series_id
+        )
 
         if not self._user_has_access(series, request.user):
             return Response(
-                {"detail": "Você não tem permissão para cancelar ocorrências desta série."},
+                {
+                    "detail": "Você não tem permissão para cancelar ocorrências desta série."
+                },
                 status=drf_status.HTTP_403_FORBIDDEN,
             )
 
@@ -1064,7 +1094,9 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
             return True
         if _is_owner_or_manager(user):
             tenant_id = getattr(series.tenant, "id", None) or series.tenant_id
-            return tenant_id is not None and tenant_id == getattr(user, "tenant_id", None)
+            return tenant_id is not None and tenant_id == getattr(
+                user, "tenant_id", None
+            )
 
         if _is_collaborator(user):
             staff_member = _get_staff_member(user)
@@ -1076,6 +1108,7 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
             or user == series.service.user
             or user == series.professional.user
         )
+
 
 class AppointmentCancelView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1120,7 +1153,9 @@ class AppointmentCancelView(APIView):
             )
             salon_email = appointment.professional.user.email
             if client_email:
-                salon_name = appointment.tenant.name if appointment.tenant else "Salonix"
+                salon_name = (
+                    appointment.tenant.name if appointment.tenant else "Salonix"
+                )
                 send_appointment_cancellation_email(
                     client_email=client_email,
                     salon_email=salon_email,
@@ -1152,10 +1187,9 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
             self.request.user, "tenant", None
         )
         if tenant is None:
-            slug = (
-                self.request.headers.get("X-Tenant-Slug")
-                or self.request.query_params.get("tenant")
-            )
+            slug = self.request.headers.get(
+                "X-Tenant-Slug"
+            ) or self.request.query_params.get("tenant")
             if slug:
                 try:
                     tenant = Tenant.objects.get(slug=slug, is_active=True)
@@ -1179,7 +1213,9 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
 
     def get_object(self):
         # Busca direta por PK e valida tenant explicitamente (evita filtros indevidos no queryset)
-        obj = get_object_or_404(Service, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
+        obj = get_object_or_404(
+            Service, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
         if self.request.user.is_superuser:
             return obj
 
@@ -1194,10 +1230,14 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
                         "Apenas owner/manager ou o responsável pelo serviço podem alterar."
                     )
 
-        tenant = getattr(self.request, 'tenant', None) or getattr(self.request.user, 'tenant', None)
-        if tenant and hasattr(obj, 'tenant'):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant and hasattr(obj, "tenant"):
             if obj.tenant_id != tenant.id:
-                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+                raise PermissionDenied(
+                    "Acesso negado: objeto não pertence ao seu tenant"
+                )
         return obj
 
 
@@ -1265,13 +1305,19 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         )
 
     def get_object(self):
-        obj = get_object_or_404(Professional, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk')))
+        obj = get_object_or_404(
+            Professional, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
         if self.request.user.is_superuser:
             return obj
-        tenant = getattr(self.request, 'tenant', None) or getattr(self.request.user, 'tenant', None)
-        if tenant and hasattr(obj, 'tenant'):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant and hasattr(obj, "tenant"):
             if obj.tenant_id != tenant.id:
-                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+                raise PermissionDenied(
+                    "Acesso negado: objeto não pertence ao seu tenant"
+                )
 
         if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(self.request.user, "staff_member", None)
@@ -1290,7 +1336,9 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(user, "staff_member", None)
             if not staff_member or instance.staff_member_id != staff_member.id:
-                raise PermissionDenied("Colaborador não pode alterar outro profissional.")
+                raise PermissionDenied(
+                    "Colaborador não pode alterar outro profissional."
+                )
         elif staff_member and staff_member.tenant_id != instance.tenant_id:
             raise PermissionDenied("Staff informado não pertence ao tenant.")
 
@@ -1370,7 +1418,7 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
                     customer=customer,
                     invited_by=self.request.user,
                 )
-            except Exception as exc:  # pragma: no cover
+            except Exception:  # pragma: no cover
                 logger.error(
                     "Auto invite dispatch failed",
                     exc_info=True,
@@ -1392,13 +1440,11 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
             self.request.user, "tenant", None
         )
         if tenant and obj.tenant_id != tenant.id:
-            raise PermissionDenied(
-                "Acesso negado: cliente não pertence ao seu tenant."
-            )
+            raise PermissionDenied("Acesso negado: cliente não pertence ao seu tenant.")
         return obj
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
+        self.get_object()
         try:
             return super().destroy(request, *args, **kwargs)
         except ProtectedError:
@@ -1415,7 +1461,9 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
     @action(detail=True, methods=["post"], url_path="invite")
     def invite(self, request, pk=None):
         customer = self.get_object()
-        tenant = getattr(request, "tenant", None) or getattr(request.user, "tenant", None)
+        tenant = getattr(request, "tenant", None) or getattr(
+            request.user, "tenant", None
+        )
 
         if tenant is None:
             return Response(
@@ -1445,7 +1493,7 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
                 customer=customer,
                 invited_by=request.user,
             )
-        except Exception as exc:  # pragma: no cover - logging crítico
+        except Exception:  # pragma: no cover - logging crítico
             logger.error(
                 "Falha ao reenviar convite do PWA",
                 exc_info=True,
@@ -1470,7 +1518,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
 
     def get_queryset(self):
         # Garantir que request.tenant esteja definido para o mixin, usando o tenant do usuário autenticado
-        if not getattr(self.request, "tenant", None) and getattr(self.request.user, "tenant", None):
+        if not getattr(self.request, "tenant", None) and getattr(
+            self.request.user, "tenant", None
+        ):
             self.request.tenant = self.request.user.tenant
 
         qs = super().get_queryset()
@@ -1501,25 +1551,31 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         tenant = getattr(self.request.user, "tenant", None)
         if tenant is None:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError({"tenant": ["Usuário sem tenant. Não é possível criar slot."]})
+
+            raise ValidationError(
+                {"tenant": ["Usuário sem tenant. Não é possível criar slot."]}
+            )
 
         validated = getattr(serializer, "validated_data", {}) or {}
         professional = validated.get("professional")
         if professional is None:
             from rest_framework.exceptions import ValidationError
+
             raise ValidationError({"professional": ["Profissional é obrigatório."]})
         if hasattr(professional, "tenant_id") and professional.tenant_id != tenant.id:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError({"professional": ["Profissional não pertence ao tenant atual."]})
+
+            raise ValidationError(
+                {"professional": ["Profissional não pertence ao tenant atual."]}
+            )
 
         user = self.request.user
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(user, "staff_member", None)
-            if (
-                not staff_member
-                or professional.staff_member_id != staff_member.id
-            ):
-                raise PermissionDenied("Colaboradores só podem criar slots para si mesmos.")
+            if not staff_member or professional.staff_member_id != staff_member.id:
+                raise PermissionDenied(
+                    "Colaboradores só podem criar slots para si mesmos."
+                )
         elif not (
             user.is_superuser
             or user.has_staff_role(
@@ -1545,30 +1601,33 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         user = self.request.user
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(user, "staff_member", None)
-            if (
-                not staff_member
-                or professional.staff_member_id != staff_member.id
-            ):
-                raise PermissionDenied("Colaborador só pode alterar seus próprios slots.")
+            if not staff_member or professional.staff_member_id != staff_member.id:
+                raise PermissionDenied(
+                    "Colaborador só pode alterar seus próprios slots."
+                )
 
         serializer.save()
 
     def get_object(self):
         obj = get_object_or_404(
-            ScheduleSlot, pk=self.kwargs.get(self.lookup_field, self.kwargs.get('pk'))
+            ScheduleSlot, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
         )
         if self.request.user.is_superuser:
             return obj
-        tenant = getattr(self.request, 'tenant', None) or getattr(
-            self.request.user, 'tenant', None
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
         )
-        if tenant and hasattr(obj, 'tenant'):
+        if tenant and hasattr(obj, "tenant"):
             if obj.tenant_id != tenant.id:
-                raise PermissionDenied("Acesso negado: objeto não pertence ao seu tenant")
+                raise PermissionDenied(
+                    "Acesso negado: objeto não pertence ao seu tenant"
+                )
         if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(self.request.user, "staff_member", None)
             if not staff_member or obj.professional.staff_member_id != staff_member.id:
-                raise PermissionDenied("Colaboradores só podem acessar seus próprios slots.")
+                raise PermissionDenied(
+                    "Colaboradores só podem acessar seus próprios slots."
+                )
         return obj
 
 
@@ -1594,8 +1653,10 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             if tenant_from_user is not None:
                 self.request.tenant = tenant_from_user
 
-        qs = super().get_queryset().select_related(
-            "client", "customer", "service", "professional", "slot"
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("client", "customer", "service", "professional", "slot")
         )
 
         if not (
@@ -1678,14 +1739,29 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
 
     @extend_schema(
         parameters=[
-            OpenApiParameter(name="limit", required=False, type=int, description="Quantidade por página (default=20, max=100)"),
-            OpenApiParameter(name="offset", required=False, type=int, description="Deslocamento de registros (default=0)"),
-            OpenApiParameter(name="ordering", required=False, type=str, description="Ordenação: start_time, -start_time, created_at, -created_at, slot_time, -slot_time"),
+            OpenApiParameter(
+                name="limit",
+                required=False,
+                type=int,
+                description="Quantidade por página (default=20, max=100)",
+            ),
+            OpenApiParameter(
+                name="offset",
+                required=False,
+                type=int,
+                description="Deslocamento de registros (default=0)",
+            ),
+            OpenApiParameter(
+                name="ordering",
+                required=False,
+                type=str,
+                description="Ordenação: start_time, -start_time, created_at, -created_at, slot_time, -slot_time",
+            ),
         ],
         responses={
             200: OpenApiResponse(
                 response=AppointmentSerializer(many=True),
-                description="Lista paginada. Headers de resposta: X-Total-Count, X-Limit, X-Offset, Link (RFC 5988)."
+                description="Lista paginada. Headers de resposta: X-Total-Count, X-Limit, X-Offset, Link (RFC 5988).",
             )
         },
     )
@@ -1699,7 +1775,9 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
 
         serializer = self.get_serializer(sliced, many=True)
         resp = Response(serializer.data, status=drf_status.HTTP_200_OK)
-        set_pagination_headers(resp, request, total_count=total, limit=limit, offset=offset)
+        set_pagination_headers(
+            resp, request, total_count=total, limit=limit, offset=offset
+        )
         return resp
 
     def perform_create(self, serializer):
@@ -1718,14 +1796,13 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
         if professional.tenant_id != tenant.id:
             from rest_framework.exceptions import ValidationError
 
-            raise ValidationError({"professional": ["Profissional não pertence ao tenant."]})
+            raise ValidationError(
+                {"professional": ["Profissional não pertence ao tenant."]}
+            )
 
         if self.request.user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(self.request.user, "staff_member", None)
-            if (
-                not staff_member
-                or professional.staff_member_id != staff_member.id
-            ):
+            if not staff_member or professional.staff_member_id != staff_member.id:
                 raise PermissionDenied("Colaboradores só podem agendar para si mesmos.")
 
         serializer.save(tenant=tenant)
@@ -1834,7 +1911,9 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                     )
                     salon_email = instance.professional.user.email
                     if client_email:
-                        salon_name = instance.tenant.name if instance.tenant else "Salonix"
+                        salon_name = (
+                            instance.tenant.name if instance.tenant else "Salonix"
+                        )
                         send_appointment_cancellation_email(
                             client_email=client_email,
                             salon_email=salon_email,
@@ -1942,7 +2021,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 logger.warning(f"Invalid date format in export request: {e}")
                 return Response(
                     {"error": "Formato de data inválido. Use YYYY-MM-DD."},
-                    status=drf_status.HTTP_400_BAD_REQUEST
+                    status=drf_status.HTTP_400_BAD_REQUEST,
                 )
 
             if d_from:
@@ -1955,7 +2034,6 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             from reports.utils.csv_formatter import (
                 write_timely_one_header,
                 format_datetime_pt,
-                translate_column_names
             )
 
             column_mapping = {
@@ -1968,9 +2046,9 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 "slot_end_time": "Fim",
                 "status": "Status",
                 "notes": "Observações",
-                "created_at": "Criado em"
+                "created_at": "Criado em",
             }
-            
+
             headers = list(column_mapping.values())
 
             def row(a):
@@ -1993,19 +2071,21 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                         format_datetime_pt(a.created_at),
                     ]
                 except Exception as e:
-                    logger.error(f"Error processing appointment {getattr(a, 'id', 'unknown')}: {e}")
+                    logger.error(
+                        f"Error processing appointment {getattr(a, 'id', 'unknown')}: {e}"
+                    )
                     # Retorna linha com dados básicos em caso de erro
                     return [
-                        getattr(a, 'id', ''),
+                        getattr(a, "id", ""),
                         "Erro ao processar",
                         "",
                         "",
                         "",
                         "",
                         "",
-                        getattr(a, 'status', ''),
+                        getattr(a, "status", ""),
                         "Erro na exportação",
-                        format_datetime_pt(getattr(a, 'created_at', timezone.now())),
+                        format_datetime_pt(getattr(a, "created_at", timezone.now())),
                     ]
 
             # aplica o limite de linhas (proteção)
@@ -2018,7 +2098,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 logger.error(f"Error querying appointments for export: {e}")
                 return Response(
                     {"error": "Erro ao consultar agendamentos. Tente novamente."},
-                    status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR
+                    status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
             class Echo:
@@ -2036,10 +2116,10 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                         header_writer,
                         report_title="Relatório de Agendamentos",
                         start_date=d_from,
-                        end_date=d_to
+                        end_date=d_to,
                     )
                     yield header_buffer.getvalue()
-                    
+
                     # Cabeçalho das colunas
                     yield writer.writerow(headers)
                     for r in rows:
@@ -2067,29 +2147,33 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             except Exception as e:
                 logger.warning(f"Could not count total appointments for export: {e}")
                 total = None
-                
+
             if total is not None and total > len(rows):
                 response["X-Result-Truncated"] = "1"
                 response["X-Result-Total"] = str(total)
                 response["X-Result-Returned"] = str(len(rows))
 
-            logger.info(f"CSV export completed successfully. Rows: {len(rows)}, Total: {total}")
+            logger.info(
+                f"CSV export completed successfully. Rows: {len(rows)}, Total: {total}"
+            )
             return response
 
         except PermissionDenied:
-            logger.warning(f"Permission denied for CSV export by user {request.user.id}")
+            logger.warning(
+                f"Permission denied for CSV export by user {request.user.id}"
+            )
             raise
         except ValidationError as e:
             logger.warning(f"Validation error in CSV export: {e}")
             return Response(
                 {"error": "Dados inválidos para exportação."},
-                status=drf_status.HTTP_400_BAD_REQUEST
+                status=drf_status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
             logger.error(f"Unexpected error in CSV export: {e}", exc_info=True)
             return Response(
                 {"error": "Erro interno do servidor. Tente novamente mais tarde."},
-                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -2143,7 +2227,9 @@ class AppointmentDetailView(TenantIsolatedMixin, RetrieveAPIView):
         if _is_owner_or_manager(user) and tenant:
             return qs.filter(tenant_id=tenant.id)
 
-        filters: Any = Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        filters: Any = (
+            Q(client=user) | Q(service__user=user) | Q(professional__user=user)
+        )
 
         if _is_collaborator(user):
             staff_member = _get_staff_member(user)
@@ -2228,8 +2314,11 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
                 status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        has_permission = appointment.client_id == user.id or IsSalonOwnerOfAppointment().has_object_permission(
-            request, self, appointment
+        has_permission = (
+            appointment.client_id == user.id
+            or IsSalonOwnerOfAppointment().has_object_permission(
+                request, self, appointment
+            )
         )
         if not has_permission:
             ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant.id, status="forbidden").inc()

@@ -24,7 +24,11 @@ urlpatterns = [
     path("register/", UserRegistrationView.as_view(), name="register"),
     path("me/profile/", MeProfileView.as_view(), name="me_profile"),
     path("staff/", TenantStaffView.as_view(), name="tenant_staff"),
-    path("staff/accept/", TenantStaffAcceptInviteView.as_view(), name="tenant_staff_accept"),
+    path(
+        "staff/accept/",
+        TenantStaffAcceptInviteView.as_view(),
+        name="tenant_staff_accept",
+    ),
     path("me/features/", MeFeatureFlagsView.as_view(), name="me_feature_flags"),
     path("me/tenant/", MeTenantView.as_view(), name="me_tenant"),
     path("tenant/meta/", TenantMetaView.as_view(), name="tenant_meta"),
@@ -42,5 +46,7 @@ urlpatterns = [
     path("credits/consume/", ConsumeCreditsView.as_view(), name="consume_credits"),
     path("credits/purchase/", PurchaseCreditsView.as_view(), name="purchase_credits"),
     # Realtime SSE
-    path("realtime/credits/", RealtimeCreditsSSEView.as_view(), name="realtime_credits"),
+    path(
+        "realtime/credits/", RealtimeCreditsSSEView.as_view(), name="realtime_credits"
+    ),
 ]

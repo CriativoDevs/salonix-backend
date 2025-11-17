@@ -1,7 +1,6 @@
 # payments/tests/test_payments_stripe.py
 import json
 import pytest
-from django.urls import reverse
 from rest_framework.test import APIClient
 from users.models import CustomUser
 from payments.models import PaymentCustomer, Subscription
@@ -153,7 +152,7 @@ def test_webhook_checkout_session_completed_creates_subscription(
 
     # constrói customer local
     c, user = auth_client()
-    pc = PaymentCustomer.objects.create(user=user, stripe_customer_id="cus_test_123")
+    PaymentCustomer.objects.create(user=user, stripe_customer_id="cus_test_123")
 
     # mocka stripe.Webhook.construct_event
     from payments import views as payments_views

@@ -118,7 +118,6 @@ def mock_tenant_in_views(setup_default_tenant):
     """
     Mock automático para definir request.tenant em todas as views que usam TenantAwareMixin
     """
-    from unittest.mock import patch
     from core.mixins import TenantIsolatedMixin
 
     original_get_queryset = TenantIsolatedMixin.get_queryset

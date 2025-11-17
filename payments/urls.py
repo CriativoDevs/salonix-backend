@@ -46,7 +46,6 @@ urlpatterns = [
         CreateCreditPaymentIntentView.as_view(),
         name="create_credit_payment_intent",
     ),
-    
     # Novas URLs para sistema completo de assinaturas
     path(
         "plans/",
@@ -78,7 +77,6 @@ urlpatterns = [
         StripeSettingsView.as_view(),
         name="stripe_settings",
     ),
-    
     # URLs melhoradas (v2)
     path(
         "v2/checkout/",

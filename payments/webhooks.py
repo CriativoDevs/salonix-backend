@@ -1,4 +1,3 @@
-import json
 import logging
 import stripe
 from django.conf import settings
@@ -11,7 +10,6 @@ from django.utils import timezone
 from decimal import Decimal
 
 from .models import CreditPayment, StripeWebhookEvent, PaymentCustomer, Subscription
-from users.models import Tenant
 from users.services import CreditService
 from . import stripe_utils
 
@@ -21,8 +19,8 @@ logger = logging.getLogger(__name__)
 stripe.api_key = settings.STRIPE_API_KEY
 
 
-@method_decorator(csrf_exempt, name='dispatch')
-@method_decorator(require_POST, name='dispatch')
+@method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(require_POST, name="dispatch")
 class StripeWebhookView(View):
     """
     View para processar webhooks do Stripe.
@@ -31,14 +29,12 @@ class StripeWebhookView(View):
 
     def post(self, request):
         payload = request.body
-        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
         endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
 
         try:
             # Verificar assinatura do webhook
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, endpoint_secret
-            )
+            event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
         except ValueError:
             logger.error("Invalid payload in Stripe webhook")
             return HttpResponseBadRequest("Invalid payload")
@@ -48,11 +44,11 @@ class StripeWebhookView(View):
 
         # Verificar se já processamos este evento
         webhook_event, created = StripeWebhookEvent.objects.get_or_create(
-            stripe_event_id=event['id'],
+            stripe_event_id=event["id"],
             defaults={
-                'event_type': event['type'],
-                'event_data': event['data'],
-            }
+                "event_type": event["type"],
+                "event_data": event["data"],
+            },
         )
 
         if not created and webhook_event.processed:
@@ -61,12 +57,12 @@ class StripeWebhookView(View):
 
         try:
             # Processar o evento
-            if event['type'] == 'payment_intent.succeeded':
-                self._handle_payment_succeeded(event['data']['object'])
-            elif event['type'] == 'payment_intent.payment_failed':
-                self._handle_payment_failed(event['data']['object'])
-            elif event['type'] == 'checkout.session.completed':
-                self._handle_checkout_session_completed(event['data']['object'])
+            if event["type"] == "payment_intent.succeeded":
+                self._handle_payment_succeeded(event["data"]["object"])
+            elif event["type"] == "payment_intent.payment_failed":
+                self._handle_payment_failed(event["data"]["object"])
+            elif event["type"] == "checkout.session.completed":
+                self._handle_checkout_session_completed(event["data"]["object"])
             else:
                 logger.info(f"Unhandled event type: {event['type']}")
 
@@ -87,62 +83,70 @@ class StripeWebhookView(View):
         """Processa checkout session completed e cria/atualiza subscription."""
         try:
             # Buscar o customer
-            customer_id = session.get('customer')
-            subscription_id = session.get('subscription')
-            
+            customer_id = session.get("customer")
+            subscription_id = session.get("subscription")
+
             if not customer_id or not subscription_id:
-                logger.warning(f"Missing customer or subscription in session: {session}")
+                logger.warning(
+                    f"Missing customer or subscription in session: {session}"
+                )
                 return
-            
+
             # Buscar PaymentCustomer
             payment_customer = PaymentCustomer.objects.filter(
                 stripe_customer_id=customer_id
             ).first()
-            
+
             if not payment_customer:
-                logger.warning(f"PaymentCustomer not found for customer_id: {customer_id}")
+                logger.warning(
+                    f"PaymentCustomer not found for customer_id: {customer_id}"
+                )
                 return
-            
+
             # Buscar subscription no Stripe
-            subscription = stripe.Subscription.retrieve(subscription_id, expand=['items.data.price'])
-            price_id = subscription['items']['data'][0]['price']['id']
-            
+            subscription = stripe.Subscription.retrieve(
+                subscription_id, expand=["items.data.price"]
+            )
+            price_id = subscription["items"]["data"][0]["price"]["id"]
+
             # Criar ou atualizar subscription
             Subscription.objects.update_or_create(
                 user=payment_customer.user,
                 defaults={
-                    'stripe_subscription_id': subscription_id,
-                    'price_id': price_id,
-                    'status': subscription['status'],
-                }
+                    "stripe_subscription_id": subscription_id,
+                    "price_id": price_id,
+                    "status": subscription["status"],
+                },
             )
-            
+
             # Atualizar feature flags do usuário
             plan_code = stripe_utils.get_plan_code_from_price(price_id)
             if plan_code:
                 flags = payment_customer.user.featureflags
-                if plan_code == 'pro':
+                if plan_code == "pro":
                     flags.is_pro = True
-                    flags.pro_plan = 'pro'
-                elif plan_code == 'basic':
+                    flags.pro_plan = "pro"
+                elif plan_code == "basic":
                     flags.is_basic = True
-                    flags.basic_plan = 'basic'
-                elif plan_code == 'standard':
+                    flags.basic_plan = "basic"
+                elif plan_code == "standard":
                     flags.is_standard = True
-                    flags.standard_plan = 'standard'
-                elif plan_code == 'enterprise':
+                    flags.standard_plan = "standard"
+                elif plan_code == "enterprise":
                     flags.is_enterprise = True
-                    flags.enterprise_plan = 'enterprise'
+                    flags.enterprise_plan = "enterprise"
                 flags.save()
-                
+
                 # Atualizar tenant plan_tier
                 tenant = payment_customer.user.tenant
                 if tenant:
                     tenant.plan_tier = plan_code
                     tenant.save()
-            
-            logger.info(f"Subscription created/updated for user {payment_customer.user.id}")
-            
+
+            logger.info(
+                f"Subscription created/updated for user {payment_customer.user.id}"
+            )
+
         except Exception as e:
             logger.error(f"Error handling checkout session completed: {str(e)}")
             raise
@@ -152,11 +156,11 @@ class StripeWebhookView(View):
         try:
             # Buscar o pagamento no banco
             credit_payment = CreditPayment.objects.get(
-                stripe_payment_intent_id=payment_intent['id']
+                stripe_payment_intent_id=payment_intent["id"]
             )
 
             # Atualizar status do pagamento
-            credit_payment.status = 'succeeded'
+            credit_payment.status = "succeeded"
             credit_payment.completed_at = timezone.now()
 
             # Aplicar créditos se ainda não foram aplicados
@@ -167,9 +171,9 @@ class StripeWebhookView(View):
                 cs = CreditService(tenant)
                 cs.add_credits(
                     amount=credit_payment.credits_purchased,
-                    transaction_type='purchase',
-                    description='Compra de créditos via Stripe',
-                    reference_id=payment_intent['id'],
+                    transaction_type="purchase",
+                    description="Compra de créditos via Stripe",
+                    reference_id=payment_intent["id"],
                     created_by=credit_payment.user,
                 )
 
@@ -184,24 +188,28 @@ class StripeWebhookView(View):
             credit_payment.save()
 
         except CreditPayment.DoesNotExist:
-            logger.error(f"CreditPayment not found for payment_intent: {payment_intent['id']}")
+            logger.error(
+                f"CreditPayment not found for payment_intent: {payment_intent['id']}"
+            )
             raise Exception(f"Payment not found: {payment_intent['id']}")
 
     def _handle_payment_failed(self, payment_intent):
         """Processa pagamento falhado."""
         try:
             credit_payment = CreditPayment.objects.get(
-                stripe_payment_intent_id=payment_intent['id']
+                stripe_payment_intent_id=payment_intent["id"]
             )
-            
-            credit_payment.status = 'failed'
+
+            credit_payment.status = "failed"
             credit_payment.completed_at = timezone.now()
             credit_payment.save()
 
             logger.info(f"Payment failed: {payment_intent['id']}")
 
         except CreditPayment.DoesNotExist:
-            logger.error(f"CreditPayment not found for failed payment: {payment_intent['id']}")
+            logger.error(
+                f"CreditPayment not found for failed payment: {payment_intent['id']}"
+            )
             raise Exception(f"Payment not found: {payment_intent['id']}")
 
 
@@ -209,11 +217,11 @@ class StripeWebhookView(View):
 def get_credits_from_price_id(price_id: str) -> Decimal:
     """Mapeia price_id do Stripe para quantidade de créditos."""
     price_mapping = {
-        settings.STRIPE_PRICE_CREDITS_5_ID: Decimal('5.00'),
-        settings.STRIPE_PRICE_CREDITS_10_ID: Decimal('10.00'),
-        settings.STRIPE_PRICE_CREDITS_25_ID: Decimal('25.00'),
-        settings.STRIPE_PRICE_CREDITS_50_ID: Decimal('50.00'),
-        settings.STRIPE_PRICE_CREDITS_100_ID: Decimal('100.00'),
+        settings.STRIPE_PRICE_CREDITS_5_ID: Decimal("5.00"),
+        settings.STRIPE_PRICE_CREDITS_10_ID: Decimal("10.00"),
+        settings.STRIPE_PRICE_CREDITS_25_ID: Decimal("25.00"),
+        settings.STRIPE_PRICE_CREDITS_50_ID: Decimal("50.00"),
+        settings.STRIPE_PRICE_CREDITS_100_ID: Decimal("100.00"),
     }
-    
-    return price_mapping.get(price_id, Decimal('0.00'))
+
+    return price_mapping.get(price_id, Decimal("0.00"))

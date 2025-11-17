@@ -10,7 +10,6 @@ Testa:
 """
 
 import pytest
-from datetime import datetime, timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -25,20 +24,15 @@ from salonix_backend.validators import (
     PriceValidator,
     DurationValidator,
     BusinessHoursValidator,
-    FutureTimeValidator,
-    WorkdayValidator,
-    TenantOwnershipValidator,
-    UniqueTogetherValidator,
     sanitize_text_input,
     sanitize_phone_number,
     sanitize_postal_code,
-    validate_appointment_data,
     validate_service_data,
     validate_professional_data,
 )
-from salonix_backend.error_handling import BusinessError, SalonixError
+from salonix_backend.error_handling import BusinessError
 from users.models import Tenant, CustomUser
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import Service
 
 
 class PhoneNumberValidatorTestCase(TestCase):
@@ -160,7 +154,7 @@ class NIFValidatorTestCase(TestCase):
 
     def test_invalid_nif_format(self):
         """Testa formatos de NIF inválidos."""
-         # Testar apenas formatos claramente inválidos
+        # Testar apenas formatos claramente inválidos
         invalid_nifs = [
             "12345678",  # Muito curto
             "1234567890",  # Muito longo
@@ -391,7 +385,7 @@ class ValidationIntegrationTestCase(TestCase):
 
         try:
             call_command("migrate", verbosity=0, interactive=False)
-        except:
+        except Exception:
             pass  # Migrações podem já estar aplicadas
 
         # Testar preço inválido (se constraint estiver ativa)
@@ -493,7 +487,7 @@ class ConstraintTestCase(TestCase):
 
         try:
             call_command("migrate", verbosity=0, interactive=False)
-        except:
+        except Exception:
             pass
 
         self.tenant = Tenant.objects.create(name="Test Salon", slug="test-salon")

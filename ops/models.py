@@ -164,4 +164,3 @@ class OpsSupportAuditLog(models.Model):
             "result": self.result,
             "created_at": self.created_at.isoformat(),
         }
-

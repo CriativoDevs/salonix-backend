@@ -1,7 +1,5 @@
 from django.core.exceptions import PermissionDenied
-from django.db import models
 from django.conf import settings
-from rest_framework.exceptions import ValidationError
 
 
 class TenantIsolatedMixin:

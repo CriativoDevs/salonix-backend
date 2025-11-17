@@ -5,20 +5,17 @@ from django.db.models.functions import Lower
 
 
 def ensure_unique_emails(apps, schema_editor):
-    User = apps.get_model('users', 'CustomUser')
+    User = apps.get_model("users", "CustomUser")
 
     duplicates = (
-        User.objects
-        .annotate(email_lower=Lower('email'))
-        .values('email_lower')
-        .annotate(count=models.Count('id'))
+        User.objects.annotate(email_lower=Lower("email"))
+        .values("email_lower")
+        .annotate(count=models.Count("id"))
         .filter(count__gt=1)
     )
 
     if duplicates.exists():
-        emails = ', '.join(
-            (dup['email_lower'] or '<vazio>') for dup in duplicates[:5]
-        )
+        emails = ", ".join((dup["email_lower"] or "<vazio>") for dup in duplicates[:5])
         raise RuntimeError(
             "Não foi possível aplicar a constraint de email único. "
             "Remova ou ajuste os utilizadores duplicados antes de prosseguir. "
@@ -27,19 +24,18 @@ def ensure_unique_emails(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('users', '0010_alter_tenant_plan_tier_and_more'),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("users", "0010_alter_tenant_plan_tier_and_more"),
     ]
 
     operations = [
         migrations.RunPython(ensure_unique_emails, migrations.RunPython.noop),
         migrations.AddConstraint(
-            model_name='customuser',
+            model_name="customuser",
             constraint=models.UniqueConstraint(
-                Lower('email'),
-                name='users_customuser_email_ci_unique',
+                Lower("email"),
+                name="users_customuser_email_ci_unique",
             ),
         ),
     ]

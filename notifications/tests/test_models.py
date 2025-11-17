@@ -1,7 +1,5 @@
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
-from users.models import Tenant
 from notifications.models import Notification, NotificationDevice, NotificationLog
 
 User = get_user_model()

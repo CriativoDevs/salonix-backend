@@ -4,20 +4,39 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0009_customuser_ops_role_and_more'),
+        ("users", "0009_customuser_ops_role_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='tenant',
-            name='plan_tier',
-            field=models.CharField(choices=[('basic', 'Basic'), ('standard', 'Standard'), ('pro', 'Pro'), ('enterprise', 'Enterprise')], default='basic', help_text='Nível do plano contratado', max_length=20),
+            model_name="tenant",
+            name="plan_tier",
+            field=models.CharField(
+                choices=[
+                    ("basic", "Basic"),
+                    ("standard", "Standard"),
+                    ("pro", "Pro"),
+                    ("enterprise", "Enterprise"),
+                ],
+                default="basic",
+                help_text="Nível do plano contratado",
+                max_length=20,
+            ),
         ),
         migrations.AlterField(
-            model_name='userfeatureflags',
-            name='pro_plan',
-            field=models.CharField(blank=True, choices=[('basic', 'Basic'), ('standard', 'Standard'), ('pro', 'Pro'), ('enterprise', 'Enterprise')], max_length=20, null=True),
+            model_name="userfeatureflags",
+            name="pro_plan",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("basic", "Basic"),
+                    ("standard", "Standard"),
+                    ("pro", "Pro"),
+                    ("enterprise", "Enterprise"),
+                ],
+                max_length=20,
+                null=True,
+            ),
         ),
     ]

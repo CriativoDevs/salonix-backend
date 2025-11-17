@@ -4,25 +4,24 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0013_tenantstaffmember'),
+        ("users", "0013_tenantstaffmember"),
     ]
 
     operations = [
         migrations.RenameIndex(
-            model_name='tenantstaffmember',
-            new_name='users_tenan_tenant__61c8d0_idx',
-            old_name='users_staff_tenant_idx',
+            model_name="tenantstaffmember",
+            new_name="users_tenan_tenant__61c8d0_idx",
+            old_name="users_staff_tenant_idx",
         ),
         migrations.RenameIndex(
-            model_name='tenantstaffmember',
-            new_name='users_tenan_tenant__d6e220_idx',
-            old_name='users_staff_tenant_role_idx',
+            model_name="tenantstaffmember",
+            new_name="users_tenan_tenant__d6e220_idx",
+            old_name="users_staff_tenant_role_idx",
         ),
         migrations.RenameIndex(
-            model_name='tenantstaffmember',
-            new_name='users_tenan_tenant__9487cf_idx',
-            old_name='users_staff_tenant_status_idx',
+            model_name="tenantstaffmember",
+            new_name="users_tenan_tenant__9487cf_idx",
+            old_name="users_staff_tenant_status_idx",
         ),
     ]

@@ -5,31 +5,50 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0009_remove_tenant_defaults'),
-        ('users', '0006_make_tenant_nullable_for_tests'),
+        ("core", "0009_remove_tenant_defaults"),
+        ("users", "0006_make_tenant_nullable_for_tests"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='appointment',
-            name='tenant',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='users.tenant'),
+            model_name="appointment",
+            name="tenant",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="appointments",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='professional',
-            name='tenant',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='professionals', to='users.tenant'),
+            model_name="professional",
+            name="tenant",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="professionals",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='scheduleslot',
-            name='tenant',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='schedule_slots', to='users.tenant'),
+            model_name="scheduleslot",
+            name="tenant",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="schedule_slots",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='service',
-            name='tenant',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='services', to='users.tenant'),
+            model_name="service",
+            name="tenant",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="services",
+                to="users.tenant",
+            ),
         ),
     ]
