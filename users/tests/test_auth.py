@@ -34,7 +34,8 @@ class TestAuthEndpoints:
         tenant = response.data["tenant"]
         assert tenant["slug"] == "lucas"
         assert tenant["plan"]["tier"] == "basic"
-        assert tenant["branding"]["primary_color"] == "#3B82F6"
+        # Com branding atualizado, verificar app_name (fallback para name)
+        assert tenant["branding"]["app_name"] == "lucas"
 
     def test_registration_missing_fields(self):
         response = self.client.post(self.register_url, data={"email": "x@x.com"})

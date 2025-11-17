@@ -41,3 +41,8 @@ O backend expõe APIs REST documentadas via Swagger UI e schema OpenAPI. Esta p�
 - Arquitetura: `ARQUITETURA_SISTEMA.md`.
 - Relatórios: `REPORTS_OVERVIEW.md`.
 - Pagamentos (Stripe): `PAGAMENTOS_STRIPE.md`.
+
+## Branding (Tenant)
+- Endpoint público: `GET /api/users/tenant/meta/`
+- Campos: `logo_url`, `favicon_url`, `app_name`, além de `name`, `slug`, `feature_flags`, `plan_tier`.
+- Endpoint de atualização: `PATCH /api/users/tenant/meta/` com `logo` (upload), `logo_url`, `favicon_url`, `app_name`.

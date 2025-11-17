@@ -46,7 +46,7 @@ class TenantAdmin(admin.ModelAdmin):
         (
             "Branding/White-label",
             {
-                "fields": ("logo", "logo_url", "primary_color", "secondary_color"),
+                "fields": ("logo", "logo_url", "favicon_url", "app_name"),
                 "classes": ("collapse",),
             },
         ),

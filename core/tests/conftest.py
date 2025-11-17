@@ -10,8 +10,7 @@ def setup_default_tenant(db):
         slug="test-default",
         defaults={
             "name": "Test Default Salon",
-            "primary_color": "#3B82F6",
-            "secondary_color": "#1F2937",
+            "app_name": "Test Default App",
         },
     )
 

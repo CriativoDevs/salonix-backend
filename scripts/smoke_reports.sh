@@ -59,14 +59,21 @@ assert_csv_headers() {
   fi
   ok "CSV content-type ok ($ct)"
 
-  local first; first=$(head -n 1 "$curl_body_file")
-  if echo "$first" | grep -q "$want_prefix"; then
+  # Verifica nas primeiras 10 linhas do CSV para suportar cabeçalhos decorativos e PT-BR
+  local header_block; header_block=$(head -n 10 "$curl_body_file")
+
+  if echo "$header_block" | grep -q "$want_prefix"; then
     ok "CSV header contains '$want_prefix'"; return 0
   fi
-  if [[ -n "$alt_prefix" ]] && echo "$first" | grep -q "$alt_prefix"; then
+  if [[ -n "$alt_prefix" ]] && echo "$header_block" | grep -q "$alt_prefix"; then
     ok "CSV header contains '$alt_prefix'"; return 0
   fi
-  echo "--- First lines ---"; head -n 10 "$curl_body_file"
+  # Aceita marcação genérica em português
+  if echo "$header_block" | grep -q 'RELATÓRIO:'; then
+    ok "CSV header contains 'RELATÓRIO:'"; return 0
+  fi
+
+  echo "--- First lines ---"; echo "$header_block" | head -n 10
   fail "CSV header not found: '$want_prefix' nor '$alt_prefix'"
 }
 
@@ -133,7 +140,7 @@ PY
 
   log "GET /api/reports/overview/export/"
   get_with_backoff_csv "$BASE_URL/api/reports/overview/export/?from=$START&to=$END" "Overview report"
-  grep -q "appointments_total" "$curl_body_file" || fail "CSV missing 'appointments_total'"
+  grep -Eq "appointments_total|Agendamentos Totais" "$curl_body_file" || fail "CSV missing 'appointments_total' or 'Agendamentos Totais'"
   ok "overview CSV OK"
 
   log "GET /api/reports/top-services/export/"

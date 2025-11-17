@@ -1,5 +1,5 @@
 """
-Testes para funcionalidades de white-label assets (upload de logo, cores).
+Testes para funcionalidades de white-label assets (upload de logo, favicon e app_name).
 """
 
 import pytest
@@ -12,53 +12,11 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from users.models import CustomUser, Tenant
-from users.validators import validate_hex_color, validate_logo_image
+from users.validators import validate_logo_image
 from django.core.exceptions import ValidationError
 
 
-@pytest.mark.django_db
-class TestHexColorValidator:
-    """Testes para validador de cores hexadecimais."""
-
-    def test_valid_hex_colors(self):
-        """Teste cores hexadecimais válidas."""
-        valid_colors = [
-            "#FF0000",  # Vermelho
-            "#00FF00",  # Verde
-            "#0000FF",  # Azul
-            "#FFFFFF",  # Branco
-            "#000000",  # Preto
-            "#123ABC",  # Misto maiúsculo
-            "#abc123",  # Misto minúsculo
-            "#3B82F6",  # Cor padrão do sistema
-        ]
-
-        for color in valid_colors:
-            # Não deve levantar exceção
-            validate_hex_color(color)
-
-    def test_invalid_hex_colors(self):
-        """Teste cores hexadecimais inválidas."""
-        invalid_colors = [
-            "FF0000",  # Sem #
-            "#FF00",  # Muito curto
-            "#FF00000",  # Muito longo
-            "#GGGGGG",  # Caracteres inválidos
-            "#ff00zz",  # Caracteres inválidos
-            "red",  # Nome de cor
-            "#",  # Apenas #
-            "123456",  # Sem #
-        ]
-
-        for color in invalid_colors:
-            with pytest.raises(ValidationError):
-                validate_hex_color(color)
-
-    def test_empty_hex_color(self):
-        """Teste cor vazia (deve ser permitida)."""
-        # None e string vazia devem ser permitidos (campos opcionais)
-        validate_hex_color(None)
-        validate_hex_color("")
+# Removidos testes de cores hex (campos de cor foram descontinuados)
 
 
 @pytest.mark.django_db
@@ -154,17 +112,7 @@ class TestTenantModel:
         assert "/media/tenant_logos/test_logo" in tenant_fixture.get_logo_url
         assert tenant_fixture.get_logo_url.endswith(".png")
 
-    def test_tenant_hex_color_validation(self, tenant_fixture):
-        """Teste validação de cores hex no modelo."""
-        # Cor válida
-        tenant_fixture.primary_color = "#FF0000"
-        tenant_fixture.secondary_color = "#00FF00"
-        tenant_fixture.full_clean()  # Deve passar
-
-        # Cor inválida
-        tenant_fixture.primary_color = "invalid_color"
-        with pytest.raises(ValidationError):
-            tenant_fixture.full_clean()
+    # Removido: validação de cores hex (campos descontinuados)
 
 
 @pytest.mark.django_db
@@ -181,8 +129,6 @@ class TestTenantMetaEndpoint:
         self.tenant = Tenant.objects.create(
             name="Test Salon",
             slug="test-salon",
-            primary_color="#FF0000",
-            secondary_color="#00FF00",
         )
 
         # Criar usuário associado ao tenant
@@ -195,20 +141,20 @@ class TestTenantMetaEndpoint:
 
     def test_get_tenant_meta_success(self):
         """Teste GET bem-sucedido do endpoint meta."""
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
         response = self.client.get(url, {"tenant": "test-salon"})
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["name"] == "Test Salon"
         assert response.data["slug"] == "test-salon"
-        assert response.data["primary_color"] == "#FF0000"
-        assert response.data["secondary_color"] == "#00FF00"
+        assert response.data["app_name"] is None
+        assert response.data["favicon_url"] is None
         assert response.data["logo_url"] is None
         assert "feature_flags" in response.data
 
     def test_get_tenant_meta_with_header(self):
         """Teste GET usando header X-Tenant-Slug."""
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
         response = self.client.get(url, HTTP_X_TENANT_SLUG="test-salon")
 
         assert response.status_code == status.HTTP_200_OK
@@ -216,34 +162,34 @@ class TestTenantMetaEndpoint:
 
     def test_patch_tenant_meta_unauthorized(self):
         """Teste PATCH sem autenticação."""
-        url = reverse("users:tenant_meta")
-        response = self.client.patch(url, {"primary_color": "#0000FF"})
+        url = reverse("tenant_meta")
+        response = self.client.patch(url, {"app_name": "New Name"})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_patch_tenant_meta_success_colors(self):
-        """Teste PATCH bem-sucedido para atualizar cores."""
+    def test_patch_tenant_meta_success_branding(self):
+        """Teste PATCH bem-sucedido para atualizar branding (app_name e favicon)."""
         self.client.force_authenticate(user=self.user)
 
-        url = reverse("users:tenant_meta")
-        data = {"primary_color": "#0000FF", "secondary_color": "#FFFF00"}
+        url = reverse("tenant_meta")
+        data = {"app_name": "New App", "favicon_url": "https://example.com/favicon.png"}
         response = self.client.patch(url, data)
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["primary_color"] == "#0000FF"
-        assert response.data["secondary_color"] == "#FFFF00"
+        assert response.data["app_name"] == "New App"
+        assert response.data["favicon_url"] == "https://example.com/favicon.png"
 
         # Verificar no banco
         self.tenant.refresh_from_db()
-        assert self.tenant.primary_color == "#0000FF"
-        assert self.tenant.secondary_color == "#FFFF00"
+        assert self.tenant.app_name == "New App"
+        assert self.tenant.favicon_url == "https://example.com/favicon.png"
 
-    def test_patch_tenant_meta_invalid_color(self):
-        """Teste PATCH com cor inválida."""
+    def test_patch_tenant_meta_invalid_favicon(self):
+        """Teste PATCH com favicon_url inválido."""
         self.client.force_authenticate(user=self.user)
 
-        url = reverse("users:tenant_meta")
-        data = {"primary_color": "invalid_color"}
+        url = reverse("tenant_meta")
+        data = {"favicon_url": "not-a-url"}
         response = self.client.patch(url, data)
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -262,7 +208,7 @@ class TestTenantMetaEndpoint:
             "new_logo.png", image_io.getvalue(), content_type="image/png"
         )
 
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
         data = {"logo": logo_file}
         response = self.client.patch(url, data, format="multipart")
 
@@ -278,7 +224,7 @@ class TestTenantMetaEndpoint:
         """Teste PATCH com logo_url externa."""
         self.client.force_authenticate(user=self.user)
 
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
         data = {"logo_url": "https://example.com/new_logo.png"}
         response = self.client.patch(url, data)
 
@@ -303,7 +249,7 @@ class TestTenantMetaEndpoint:
             "conflict_logo.png", image_io.getvalue(), content_type="image/png"
         )
 
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
         data = {"logo": logo_file, "logo_url": "https://example.com/conflict.png"}
         response = self.client.patch(url, data, format="multipart")
 
@@ -314,7 +260,7 @@ class TestTenantMetaEndpoint:
         """Teste PATCH atualiza apenas o tenant do próprio usuário."""
         # Criar outro tenant e usuário
         other_tenant = Tenant.objects.create(
-            name="Other Salon", slug="other-salon", primary_color="#FFFFFF"
+            name="Other Salon", slug="other-salon"
         )
         other_user = CustomUser.objects.create_user(
             username="other_owner",
@@ -326,21 +272,21 @@ class TestTenantMetaEndpoint:
         # Autenticar com o outro usuário
         self.client.force_authenticate(user=other_user)
 
-        url = reverse("users:tenant_meta")
-        data = {"primary_color": "#000000"}
+        url = reverse("tenant_meta")
+        data = {"app_name": "Other New App"}
         response = self.client.patch(url, data)
 
         # Deve ter sucesso (altera o próprio tenant)
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["primary_color"] == "#000000"
+        assert response.data["app_name"] == "Other New App"
 
         # Verificar que alterou o tenant correto
         other_tenant.refresh_from_db()
-        assert other_tenant.primary_color == "#000000"
+        assert other_tenant.app_name == "Other New App"
 
         # Verificar que o tenant original não foi alterado
         self.tenant.refresh_from_db()
-        assert self.tenant.primary_color == "#FF0000"  # Valor original
+        assert self.tenant.app_name is None  # Valor original
 
     def test_patch_tenant_meta_user_without_tenant(self):
         """Teste PATCH com usuário sem tenant."""
@@ -354,8 +300,8 @@ class TestTenantMetaEndpoint:
 
         self.client.force_authenticate(user=user_no_tenant)
 
-        url = reverse("users:tenant_meta")
-        data = {"primary_color": "#000000"}
+        url = reverse("tenant_meta")
+        data = {"app_name": "NoTenant"}
         response = self.client.patch(url, data)
 
         # Com novo sistema de erros, formato padronizado
@@ -386,7 +332,7 @@ class TestTenantBrandingIntegration:
     def test_complete_branding_workflow(self):
         """Teste fluxo completo de branding."""
         self.client.force_authenticate(user=self.user)
-        url = reverse("users:tenant_meta")
+        url = reverse("tenant_meta")
 
         # 1. Verificar estado inicial
         response = self.client.get(url, {"tenant": "integration-salon"})
@@ -394,10 +340,11 @@ class TestTenantBrandingIntegration:
         assert response.data["logo_url"] is None
 
         # 2. Atualizar cores
-        color_data = {"primary_color": "#FF5733", "secondary_color": "#33FF57"}
-        response = self.client.patch(url, color_data)
+        branding_data = {"app_name": "Integration App", "favicon_url": "https://example.com/fav.png"}
+        response = self.client.patch(url, branding_data)
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["primary_color"] == "#FF5733"
+        assert response.data["app_name"] == "Integration App"
+        assert response.data["favicon_url"] == "https://example.com/fav.png"
 
         # 3. Adicionar logo
         image = Image.new("RGB", (150, 150), color="purple")
@@ -417,6 +364,6 @@ class TestTenantBrandingIntegration:
         # 4. Verificar estado final via GET público
         response = self.client.get(url, {"tenant": "integration-salon"})
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["primary_color"] == "#FF5733"
-        assert response.data["secondary_color"] == "#33FF57"
+        assert response.data["app_name"] == "Integration App"
+        assert response.data["favicon_url"] == "https://example.com/fav.png"
         assert "workflow_logo" in response.data["logo_url"]

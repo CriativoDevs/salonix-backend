@@ -146,7 +146,7 @@ class TenantMetaView(APIView):
     Endpoint público para obter metadados do tenant (branding + feature flags).
     Aceita tenant via query parameter 'tenant' ou header 'X-Tenant-Slug'.
 
-    PATCH requer autenticação e permite atualizar branding (logo, cores).
+    PATCH requer autenticação e permite atualizar branding (logo, favicon_url, app_name).
     """
 
     def get_permissions(self):
@@ -212,7 +212,7 @@ class TenantMetaView(APIView):
         responses=TenantMetaSerializer,
     )
     def patch(self, request):
-        """Atualizar branding do tenant (logo, cores)"""
+        """Atualizar branding do tenant (logo, favicon_url, app_name)"""
         try:
             tenant = self.get_tenant(request)
         except ValueError as e:

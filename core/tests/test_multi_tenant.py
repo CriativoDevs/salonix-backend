@@ -25,8 +25,7 @@ class MultiTenantTestCase(TestCase):
             slug="test-default",
             defaults={
                 "name": "Test Default Salon",
-                "primary_color": "#3B82F6",
-                "secondary_color": "#1F2937",
+                "app_name": "Test Default App",
             },
         )
 
@@ -34,8 +33,7 @@ class MultiTenantTestCase(TestCase):
         self.tenant2 = Tenant.objects.create(
             name="Studio Hair",
             slug="studio-hair",
-            primary_color="#45B7D1",
-            secondary_color="#96CEB4",
+            app_name="Studio Hair App",
         )
 
         # Criar usuários para cada tenant
@@ -336,8 +334,7 @@ class TenantModelTest(MultiTenantTestCase):
         tenant = Tenant.objects.create(
             name="Novo Salão",
             slug="novo-salao",
-            primary_color="#FF5733",
-            secondary_color="#C70039",
+            app_name="Novo Salão App",
         )
 
         self.assertEqual(tenant.name, "Novo Salão")

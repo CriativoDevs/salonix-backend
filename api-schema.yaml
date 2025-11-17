@@ -4805,7 +4805,7 @@ components:
       type: object
       description: |-
         Serializer para atualização de branding do tenant.
-        Permite upload de logo e atualização de cores.
+        Permite upload de logo e atualização de favicon_url e app_name.
       properties:
         logo:
           type: string
@@ -4818,16 +4818,17 @@ components:
           nullable: true
           description: URL do logo do salão (para compatibilidade)
           maxLength: 200
-        primary_color:
+        favicon_url:
           type: string
-          minLength: 1
-          description: Cor primária (hex) para branding
-          maxLength: 7
-        secondary_color:
+          format: uri
+          nullable: true
+          description: URL do favicon do salão
+          maxLength: 200
+        app_name:
           type: string
-          minLength: 1
-          description: Cor secundária (hex) para branding
-          maxLength: 7
+          nullable: true
+          description: Nome exibido do salão/aplicativo
+          maxLength: 100
         auto_invite_enabled:
           type: boolean
     PatchedUserFeatureFlagsUpdateRequest:
@@ -5303,14 +5304,15 @@ components:
           format: uri
           description: Retorna a URL do logo (upload ou URL externa)
           readOnly: true
-        primary_color:
+        favicon_url:
+          type: string
+          format: uri
+          readOnly: true
+          description: URL do favicon do salão
+        app_name:
           type: string
           readOnly: true
-          description: Cor primária (hex) para branding
-        secondary_color:
-          type: string
-          readOnly: true
-          description: Cor secundária (hex) para branding
+          description: Nome exibido do salão/aplicativo
         timezone:
           type: string
           readOnly: true
@@ -5345,8 +5347,6 @@ components:
       - logo_url
       - name
       - plan_tier
-      - primary_color
-      - secondary_color
       - slug
       - timezone
     TenantSelfService:

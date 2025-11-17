@@ -75,8 +75,8 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
     def get_branding(self, obj):
         return {
             "logo_url": obj.get_logo_url,
-            "primary_color": obj.primary_color,
-            "secondary_color": obj.secondary_color,
+            "favicon_url": getattr(obj, "favicon_url", None),
+            "app_name": obj.app_name or obj.name,
         }
 
     def get_plan(self, obj):
@@ -570,8 +570,8 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "logo_url",
-            "primary_color",
-            "secondary_color",
+            "favicon_url",
+            "app_name",
             "timezone",
             "currency",
             "plan_tier",
@@ -582,8 +582,8 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "logo_url",
-            "primary_color",
-            "secondary_color",
+            "favicon_url",
+            "app_name",
             "timezone",
             "currency",
             "plan_tier",
@@ -605,7 +605,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
 class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer para atualização de branding do tenant.
-    Permite upload de logo e atualização de cores.
+    Permite upload de logo.
     """
 
     auto_invite_enabled = serializers.BooleanField(required=False)
@@ -615,15 +615,15 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
         fields = [
             "logo",
             "logo_url",
-            "primary_color",
-            "secondary_color",
+            "favicon_url",
+            "app_name",
             "auto_invite_enabled",
         ]
         extra_kwargs = {
             "logo": {"required": False},
             "logo_url": {"required": False},
-            "primary_color": {"required": False},
-            "secondary_color": {"required": False},
+            "favicon_url": {"required": False},
+            "app_name": {"required": False},
             "auto_invite_enabled": {"required": False},
         }
 
