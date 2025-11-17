@@ -18,7 +18,7 @@ This document defines the lifecycle of a tenant (salon/organization) in Salonix 
   - Toggle `Tenant.is_active` via admin actions.
   - Staff members and professionals may be deactivated with `TenantStaffMember.status`.
 - Configuration:
-  - Branding: `logo`/`logo_url`, `primary_color`, `secondary_color`.
+  - Branding: `logo`/`logo_url`, `favicon_url`, `app_name`.
   - Locale: `timezone`, `currency`.
   - Plans & flags: `plan_tier`, `addons_enabled`, modules (PWA, reports, RN apps), notification channels.
 - Invitations:
@@ -66,7 +66,7 @@ Este documento define o ciclo de vida de um tenant (salão/organização) no Bac
   - Alternar `Tenant.is_active` via ações de admin.
   - Membros de equipe e profissionais podem ser desativados com `TenantStaffMember.status`.
 - Configuração:
-  - Branding: `logo`/`logo_url`, `primary_color`, `secondary_color`.
+  - Branding: `logo`/`logo_url`, `favicon_url`, `app_name`.
   - Localização: `timezone`, `currency`.
   - Planos & flags: `plan_tier`, `addons_enabled`, módulos (PWA, relatórios, apps RN), canais de notificação.
 - Convites:

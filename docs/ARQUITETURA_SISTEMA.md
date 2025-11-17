@@ -158,8 +158,9 @@ class Tenant(models.Model):
     slug = models.SlugField(unique=True)
     plan_tier = models.CharField(choices=PLAN_CHOICES)
     logo = models.ImageField(upload_to='tenant_logos/')
-    primary_color = models.CharField(max_length=7)  # Hex
-    secondary_color = models.CharField(max_length=7)
+    logo_url = models.URLField(null=True, blank=True)
+    favicon_url = models.URLField(null=True, blank=True)
+    app_name = models.CharField(max_length=100, null=True, blank=True)
     # Feature flags
     reports_enabled = models.BooleanField(default=False)
     sms_enabled = models.BooleanField(default=False)

@@ -11,7 +11,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from .managers import CustomUserManager
-from .validators import validate_hex_color, validate_logo_image
+from .validators import validate_logo_image
 
 
 class Tenant(models.Model):
@@ -33,17 +33,16 @@ class Tenant(models.Model):
     logo_url = models.URLField(
         blank=True, null=True, help_text="URL do logo do salão (para compatibilidade)"
     )
-    primary_color = models.CharField(
-        max_length=7,
-        default="#3B82F6",
-        validators=[validate_hex_color],
-        help_text="Cor primária (hex) para branding",
+    favicon_url = models.URLField(
+        blank=True,
+        null=True,
+        help_text="URL do favicon do salão",
     )
-    secondary_color = models.CharField(
-        max_length=7,
-        default="#1F2937",
-        validators=[validate_hex_color],
-        help_text="Cor secundária (hex) para branding",
+    app_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Nome exibido do salão/aplicativo",
     )
     auto_invite_enabled = models.BooleanField(
         default=cast(Any, False),

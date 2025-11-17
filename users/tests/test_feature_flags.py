@@ -253,7 +253,7 @@ class TestTenantMetaEndpoint:
             plan_tier=Tenant.PLAN_STANDARD,
             reports_enabled=True,
             push_web_enabled=True,
-            primary_color="#FF0000",
+            app_name="Test Salon App",
         )
 
         url = reverse("tenant_meta")
@@ -265,7 +265,7 @@ class TestTenantMetaEndpoint:
         assert data["name"] == "Test Salon"
         assert data["slug"] == "test-salon"
         assert data["plan_tier"] == "standard"
-        assert data["primary_color"] == "#FF0000"
+        assert data["app_name"] == "Test Salon App"
         assert data["feature_flags"]["modules"]["reports_enabled"] is True
         assert data["feature_flags"]["notifications"]["push_web"] is True
 

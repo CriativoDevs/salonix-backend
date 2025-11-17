@@ -217,25 +217,23 @@ Permissões Específicas:
    - **Dimensões recomendadas**: 300x300px
    - **Formato**: Transparente (PNG) preferível
 
-### **Cores Personalizadas**
-```
-Cor Primária: #ff6b6b (botões, links, destaques)
-Cor Secundária: #4ecdc4 (backgrounds, elementos secundários)
-```
+### **Branding (sem cores)**
+Os campos de cor foram removidos. Branding agora utiliza:
+- `logo_url` (ou upload de `logo`)
+- `favicon_url`
+- `app_name`
 
 ### **Testando o Branding**
-1. Acesse `/api/tenant/meta/` logado como usuário do tenant
+1. Acesse `/api/users/tenant/meta/` logado como usuário do tenant
 2. Verifique se retorna:
 ```json
 {
-  "tenant_name": "Salão Beleza & Estilo",
+  "name": "Salão Beleza & Estilo",
   "logo_url": "https://domain.com/media/tenant_logos/logo_abc123.png",
-  "theme_colors": {
-    "primary": "#ff6b6b",
-    "secondary": "#4ecdc4"
-  },
+  "favicon_url": "https://domain.com/media/tenant_favicons/fav_abc123.png",
+  "app_name": "Salão App",
   "plan_tier": "pro",
-  "features": {
+  "feature_flags": {
     "reports_enabled": true,
     "sms_enabled": true,
     "whatsapp_enabled": true

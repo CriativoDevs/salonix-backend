@@ -30,8 +30,7 @@ class Command(BaseCommand):
                 slug="default",
                 defaults={
                     "name": "Default Salon",
-                    "primary_color": "#3B82F6",
-                    "secondary_color": "#1F2937",
+                    "app_name": "Default Salon",
                     # Configurar plano Standard para demo
                     "plan_tier": "standard",
                     # Habilitar features para demo
@@ -73,8 +72,7 @@ class Command(BaseCommand):
                 slug="basic-demo",
                 defaults={
                     "name": "Basic Salon Demo",
-                    "primary_color": "#10B981",
-                    "secondary_color": "#1F2937",
+                    "app_name": "Basic Salon",
                     "plan_tier": "basic",
                     "reports_enabled": True,  # Basic agora tem relatórios
                     "pwa_admin_enabled": True,
@@ -95,8 +93,7 @@ class Command(BaseCommand):
                 slug="pro-demo",
                 defaults={
                     "name": "Pro Salon Demo",
-                    "primary_color": "#8B5CF6",
-                    "secondary_color": "#1F2937",
+                    "app_name": "Pro Salon",
                     "plan_tier": "pro",
                     "reports_enabled": True,
                     "pwa_admin_enabled": True,
@@ -117,8 +114,7 @@ class Command(BaseCommand):
                 slug="empty-credits",
                 defaults={
                     "name": "Empty Credits Demo",
-                    "primary_color": "#EF4444",
-                    "secondary_color": "#1F2937",
+                    "app_name": "Empty Credits",
                     "plan_tier": "standard",
                     "reports_enabled": True,
                     "pwa_admin_enabled": True,

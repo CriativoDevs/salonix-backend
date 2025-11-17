@@ -18,8 +18,7 @@ def setup_default_tenant(db):
     tenant = Tenant.objects.create(
         slug="test-default",
         name="Test Default Salon",
-        primary_color="#3B82F6",
-        secondary_color="#1F2937",
+        app_name="Test Default App",
         # Habilitar features para testes
         plan_tier="standard",
         reports_enabled=True,

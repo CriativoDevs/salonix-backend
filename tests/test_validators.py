@@ -529,16 +529,10 @@ class ConstraintTestCase(TestCase):
         except IntegrityError:
             pass  # Esperado se constraint estiver ativa
 
-    def test_tenant_color_format_constraint(self):
-        """Testa constraint de formato de cor hexadecimal."""
-        try:
-            with cast(Any, transaction.atomic()):
-                tenant = Tenant(
-                    name="Invalid Color Tenant",
-                    slug="invalid-color",
-                    primary_color="invalid-color",  # Cor inválida
-                )
-                tenant.save()
-            # Se chegou aqui, constraint não está ativa
-        except (IntegrityError, ValidationError):
-            pass  # Esperado se constraint estiver ativa
+    def test_tenant_branding_url_validation(self):
+        """Valida URL inválida de favicon via serializer de branding."""
+        from users.serializers import TenantBrandingUpdateSerializer
+
+        serializer = TenantBrandingUpdateSerializer(data={"favicon_url": "not-a-url"})
+        assert not serializer.is_valid()
+        assert "favicon_url" in serializer.errors
