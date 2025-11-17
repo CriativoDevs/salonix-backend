@@ -192,10 +192,10 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `users/models.py` - Campos de branding no Tenant
 
 **Características**:
-- ✅ GET `/api/tenant/meta/` - Dados do tenant
-- ✅ PATCH `/api/tenant/meta/` - Atualizar branding
+- ✅ GET `/api/users/tenant/meta/` - Dados do tenant
+- ✅ PATCH `/api/users/tenant/meta/` - Atualizar branding
 - ✅ Upload de logo com validação
-- ✅ Cores personalizáveis (hex)
+- ✅ Branding neutro (logo_url, favicon_url, app_name)
 - ✅ Feature flags por tenant
 
 #### **Sistema de Validação de Assets**
@@ -205,7 +205,6 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `users/models.py` - Validação de logo e cores
 
 **Características**:
-- ✅ Validação de cores hex (#ff6b6b)
 - ✅ Validação de imagens (formato, tamanho, dimensões)
 - ✅ Limite de 2MB para logos
 - ✅ Formatos suportados: PNG, JPG, JPEG

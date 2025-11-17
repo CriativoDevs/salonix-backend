@@ -599,7 +599,7 @@ paths:
           description: ''
     patch:
       operationId: auth_tenant_meta_partial_update
-      description: Atualizar branding do tenant (logo, cores)
+      description: Atualizar branding do tenant (logo, favicon_url, app_name)
       tags:
       - auth
       requestBody:
@@ -3387,7 +3387,7 @@ paths:
           description: ''
     patch:
       operationId: users_tenant_meta_partial_update
-      description: Atualizar branding do tenant (logo, cores)
+      description: Atualizar branding do tenant (logo, favicon_url, app_name)
       tags:
       - users
       requestBody:
