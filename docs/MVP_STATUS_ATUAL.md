@@ -7,7 +7,7 @@ Salonix Backend is approximately ~85% complete for MVP. Core multi-tenant schedu
 - Infrastructure: Django/DRF, JWT auth (`/api/users/token/`), mandatory multi-tenancy, feature flags, Redis cache, `.env` config, custom Django Admin.
 - Scheduling: services, professionals, slots, appointments; CRUD; advanced statuses; business validations; tenant isolation; recurring series with bulk edit/cancel.
 - Reporting: endpoints + CSV, smart cache invalidation, throttling, Prometheus metrics, plan-gated access.
-- White-label: tenant meta (`/api/tenant/meta`), logo upload, color palette, feature flags.
+- White-label: tenant meta (`/api/users/tenant/meta/`), logo upload, favicon/app_name, feature flags.
 - Notifications: event hooks, Prometheus metrics, structured logging; real SMS/WhatsApp drivers pending.
 - Calendar: standard `.ics` downloads compatible with Google/Apple/Outlook.
 - Quality: error handling, data validation, structured logs, 270+ tests green.
@@ -71,9 +71,9 @@ Revisão das regras de negócio e do código aponta que o backend já cobre **o 
 6. ✅ **Feature flags** - Controle de acesso por plano
 
 ### **🎨 White-label e Branding (100%)**
-1. ✅ **Endpoint /api/tenant/meta** - BE-105 ✅ (Branding completo)
+1. ✅ **Endpoint /api/users/tenant/meta/** - BE-105 ✅ (Branding sem cores)
 2. ✅ **Upload de logo** - Validação de imagens
-3. ✅ **Paleta de cores** - Validação hex, cores primária/secundária
+3. ✅ **Branding neutro** - `logo_url`, `favicon_url`, `app_name`
 4. ✅ **Feature flags específicas** - BE-108 ✅ (can_use_white_label)
 
 ### **🔔 Sistema de Notificações (50%)**
@@ -154,7 +154,7 @@ A maioria são melhorias avançadas:
 - ✅ **BE-191 ~ BE-194**: Séries recorrentes (edição, cancelamento, métricas e admin)
 
 ### **🎨 Funcionalidades Avançadas Implementadas**
-- ✅ **White-label completo** - Logo + paleta de cores por tenant
+- ✅ **White-label** - Branding neutro por tenant (logo, favicon, app_name)
 - ✅ **Sistema de notificações** - 5 canais com logging
 - ✅ **Calendário integrado** - Export .ics padrão
 - ✅ **Feature flags granulares** - Controle por funcionalidade
@@ -208,7 +208,7 @@ Backend covers the core multi-tenant scheduling platform (appointments, reports,
 - Infrastructure: Django/DRF architecture, JWT auth, tenant isolation, feature flags, Redis cache, environment config, custom admin.
 - Scheduling: services/professionals/slots/appointments, status updates, validation rules, multi-tenant filters, recurring series with bulk edit/cancel.
 - Reporting: endpoints + CSV export, cache invalidation, throttling, Prometheus metrics, plan-based access.
-- White-label: `/api/tenant/meta`, logo upload, color palette, feature gating.
+- White-label: `/api/users/tenant/meta/`, logo upload, favicon/app_name, feature gating.
 - Notifications: event hooks, Prometheus metrics, structured logs (drivers for real channels pending).
 - Calendar: .ics downloads compatible with major calendar providers.
 - Quality: error handling, validation, structured logging, 270+ tests green.
@@ -254,8 +254,7 @@ Backend covers the core multi-tenant scheduling platform (appointments, reports,
 - **270 testes** passando (100%)
 - **Logging estruturado** (BE-97)
 
-### **🎨 Experiência Premium**
-- **White-label** completo (logo + cores)
+- **White-label** (logo, favicon, app_name — sem cores)
 - **Notificações** multi-canal
 - **Calendário** integrado (.ics)
 - **Relatórios** avançados com cache
@@ -287,7 +286,7 @@ O backend Salonix possui **todas as funcionalidades core necessárias** para um 
 
 1. **✅ Sistema completo de agendamentos** multi-tenant
 2. **✅ Relatórios profissionais** com cache e exportação
-3. **✅ White-label empresarial** (logo + cores)
+3. **✅ White-label empresarial** (branding sem cores)
 4. **✅ Notificações estruturadas** (5 canais)
 5. **✅ Qualidade enterprise** (270 testes, erros padronizados)
 6. **✅ Django Admin** customizado com dashboard

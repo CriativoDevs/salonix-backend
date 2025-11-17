@@ -18,7 +18,7 @@ This document describes the backend architecture, including multi‑tenancy, sec
 
 ### Key Endpoints (examples)
 - Auth: `POST /api/users/token/`, `POST /api/users/token/refresh/`, `POST /api/users/register/`.
-- Tenant bootstrap/meta: `GET /api/users/me/tenant/`, `GET/PATCH /api/tenant/meta/`.
+- Tenant bootstrap/meta: `GET /api/users/me/tenant/`, `GET/PATCH /api/users/tenant/meta/`.
 - Reports: `GET /api/reports/**` (supports `?format=csv`).
 - Notifications: `POST /api/notifications/register_device/`, `POST /api/notifications/test/`.
 - Credits (summary/history/purchase): `/api/credits/**`.
@@ -248,8 +248,8 @@ POST /api/users/logout/         # Logout
 ### **🏢 Tenant Management**
 ```
 GET  /api/users/me/tenant/      # Bootstrap do tenant autenticado (slug, plano, branding)
-GET  /api/tenant/meta/          # Dados do tenant (branding)
-PATCH /api/tenant/meta/         # Atualizar branding
+GET  /api/users/tenant/meta/    # Dados do tenant (branding)
+PATCH /api/users/tenant/meta/   # Atualizar branding
 ```
 
 ### **📅 Agendamentos**

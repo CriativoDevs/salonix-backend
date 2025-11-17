@@ -14,7 +14,7 @@ This tutorial explains how to use Salonix’s customized Django Admin to manage 
 1. In Admin, go to `Tenants` → `Add Tenant`.
 2. Fill basic info: Name, Slug (auto), Description.
 3. Choose a Plan and enable relevant Features (Reports, SMS, WhatsApp, PWA, Push).
-4. Optional branding: upload Logo (PNG/JPG, ≤2MB, 300×300), set Primary/Secondary colors.
+4. Optional branding: upload Logo (PNG/JPG, ≤2MB, 300×300).
 5. Save — the tenant becomes Active.
 
 ### Create/Invite Staff Members
@@ -29,8 +29,8 @@ Tip: when migrating legacy data, ensure all `Professional` records are linked to
 
 ### Configure White‑label
 - Edit the tenant → Branding.
-- Upload logo (transparent PNG preferred) and set color scheme.
-- Validate via `/api/tenant/meta/` to see logo URL, colors, plan tier, and features.
+- Upload logo (transparent PNG preferred).
+- Validate via `/api/users/tenant/meta/` to see logo URL, favicon/app_name, plan tier, and features.
 
 ### Feature Flags
 - Plans toggle feature availability (Basic/Standard/Pro/Enterprise).
@@ -113,8 +113,6 @@ Features Habilitadas:
 #### **Passo 4: White-label (Opcional)**
 ```
 Logo: [Upload de imagem - máx 2MB, 300x300px]
-Cor Primária: #ff6b6b
-Cor Secundária: #4ecdc4
 ```
 
 #### **Passo 5: Salvar**
@@ -354,7 +352,7 @@ Busque por:
 **Solução**:
 1. Confirme as **feature flags** do tenant
 2. Verifique o **plano** do tenant
-3. Teste o endpoint `/api/tenant/meta/`
+3. Teste o endpoint `/api/users/tenant/meta/`
 
 ### **Problema: Logo não aparece**
 **Solução**:
@@ -362,11 +360,7 @@ Busque por:
 2. Confirme as **permissões** do diretório media
 3. Teste o **link direto** da imagem
 
-### **Problema: Cores não aplicam**
-**Solução**:
-1. Verifique o **formato hex** das cores (#ff6b6b)
-2. Confirme se o frontend está **consumindo** `/api/tenant/meta/`
-3. Limpe o **cache** do browser
+
 
 ## 📚 **Comandos Úteis**
 
