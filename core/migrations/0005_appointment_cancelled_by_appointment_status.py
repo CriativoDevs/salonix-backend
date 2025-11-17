@@ -6,21 +6,30 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0004_appointment'),
+        ("core", "0004_appointment"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='appointment',
-            name='cancelled_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='cancelled_appointments', to=settings.AUTH_USER_MODEL),
+            model_name="appointment",
+            name="cancelled_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="cancelled_appointments",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='appointment',
-            name='status',
-            field=models.CharField(choices=[('scheduled', 'Scheduled'), ('cancelled', 'Cancelled')], default='scheduled', max_length=20),
+            model_name="appointment",
+            name="status",
+            field=models.CharField(
+                choices=[("scheduled", "Scheduled"), ("cancelled", "Cancelled")],
+                default="scheduled",
+                max_length=20,
+            ),
         ),
     ]

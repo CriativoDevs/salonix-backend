@@ -1,4 +1,3 @@
-import json
 import itertools
 import pytest
 from django.urls import reverse
@@ -19,7 +18,10 @@ class TestRealtimeCreditsSSE:
     def test_sse_requires_auth(self):
         url = reverse("realtime_credits")
         response = self.client.get(url)
-        assert response.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}
+        assert response.status_code in {
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        }
 
     def test_sse_initial_events(self, user_fixture, monkeypatch):
         # Evitar espera no loop do SSE
@@ -74,7 +76,7 @@ class TestRealtimeCreditsSSE:
             except StopIteration:
                 break
             text = self._decode_chunk(chunk)
-            if "event: credit_update" in text and "\"ledger\"" in text:
+            if "event: credit_update" in text and '"ledger"' in text:
                 found_ledger_event = True
                 break
 
@@ -86,8 +88,12 @@ class TestRealtimeCreditsSSE:
 
         self.client.force_authenticate(user=user_fixture)
 
-        hb_before = USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted")._value.get()
-        cu_before = USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted")._value.get()
+        hb_before = USERS_SSE_EVENTS_TOTAL.labels(
+            event="heartbeat", result="emitted"
+        )._value.get()
+        cu_before = USERS_SSE_EVENTS_TOTAL.labels(
+            event="credit_update", result="emitted"
+        )._value.get()
 
         url = reverse("realtime_credits")
         response = self.client.get(url)
@@ -96,8 +102,12 @@ class TestRealtimeCreditsSSE:
         stream = response.streaming_content
         _ = list(itertools.islice(stream, 2))
 
-        hb_after = USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted")._value.get()
-        cu_after = USERS_SSE_EVENTS_TOTAL.labels(event="credit_update", result="emitted")._value.get()
+        hb_after = USERS_SSE_EVENTS_TOTAL.labels(
+            event="heartbeat", result="emitted"
+        )._value.get()
+        cu_after = USERS_SSE_EVENTS_TOTAL.labels(
+            event="credit_update", result="emitted"
+        )._value.get()
 
         assert hb_after >= hb_before + 1
         assert cu_after >= cu_before + 1
@@ -108,8 +118,12 @@ class TestRealtimeCreditsSSE:
 
         self.client.force_authenticate(user=user_fixture)
 
-        err_before = USERS_SSE_EVENTS_TOTAL.labels(event="error", result="emitted")._value.get()
-        hb_before = USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted")._value.get()
+        err_before = USERS_SSE_EVENTS_TOTAL.labels(
+            event="error", result="emitted"
+        )._value.get()
+        hb_before = USERS_SSE_EVENTS_TOTAL.labels(
+            event="heartbeat", result="emitted"
+        )._value.get()
 
         url = reverse("realtime_credits")
 
@@ -124,8 +138,12 @@ class TestRealtimeCreditsSSE:
         stream = response.streaming_content
         _ = list(itertools.islice(stream, 3))
 
-        err_after = USERS_SSE_EVENTS_TOTAL.labels(event="error", result="emitted")._value.get()
-        hb_after = USERS_SSE_EVENTS_TOTAL.labels(event="heartbeat", result="emitted")._value.get()
+        err_after = USERS_SSE_EVENTS_TOTAL.labels(
+            event="error", result="emitted"
+        )._value.get()
+        hb_after = USERS_SSE_EVENTS_TOTAL.labels(
+            event="heartbeat", result="emitted"
+        )._value.get()
 
         assert err_after >= err_before + 1
         assert hb_after >= hb_before + 1

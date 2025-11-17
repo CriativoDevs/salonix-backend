@@ -153,13 +153,28 @@ class AppointmentAdmin(admin.ModelAdmin):
         "tenant__name",
         "series__id",
     )
-    readonly_fields = ("created_at", "appointment_datetime", "total_price_eur", "series")
+    readonly_fields = (
+        "created_at",
+        "appointment_datetime",
+        "total_price_eur",
+        "series",
+    )
     date_hierarchy = "created_at"
 
     fieldsets = (
         (
             "Informações do Agendamento",
-            {"fields": ("tenant", "client", "customer", "service", "professional", "slot", "series")},
+            {
+                "fields": (
+                    "tenant",
+                    "client",
+                    "customer",
+                    "service",
+                    "professional",
+                    "slot",
+                    "series",
+                )
+            },
         ),
         ("Status e Notas", {"fields": ("status", "notes", "cancelled_by")}),
         (
@@ -273,7 +288,9 @@ class AppointmentAdmin(admin.ModelAdmin):
         """Link para a série relacionada."""
         if obj.series:
             namespace = getattr(self.admin_site, "name", "admin")
-            url = reverse(f"{namespace}:core_appointmentseries_change", args=[obj.series.pk])
+            url = reverse(
+                f"{namespace}:core_appointmentseries_change", args=[obj.series.pk]
+            )
             return format_html('<a href="{}">Série #{}</a>', url, obj.series.pk)
         return "-"
 
@@ -384,18 +401,31 @@ class AppointmentSeriesAdmin(admin.ModelAdmin):
         return "-"
 
     updated_at_display.short_description = "Última ocorrência"
+
+
 @admin.register(SalonCustomer)
 class SalonCustomerAdmin(admin.ModelAdmin):
     """Admin do Django para clientes do salão."""
 
-    list_display = ("name", "tenant_name", "email", "phone_number", "is_active", "marketing_opt_in", "created_at")
+    list_display = (
+        "name",
+        "tenant_name",
+        "email",
+        "phone_number",
+        "is_active",
+        "marketing_opt_in",
+        "created_at",
+    )
     list_filter = ("tenant", "is_active", "marketing_opt_in", "created_at")
     search_fields = ("name", "email", "phone_number", "tenant__name")
     readonly_fields = ("created_at", "updated_at")
     ordering = ("name",)
 
     fieldsets = (
-        ("Informações Básicas", {"fields": ("tenant", "name", "email", "phone_number")}),
+        (
+            "Informações Básicas",
+            {"fields": ("tenant", "name", "email", "phone_number")},
+        ),
         ("Preferências", {"fields": ("marketing_opt_in", "is_active")}),
         ("Notas", {"fields": ("notes",)}),
         ("Metadados", {"fields": ("created_at", "updated_at")}),

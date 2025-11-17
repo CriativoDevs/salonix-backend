@@ -61,9 +61,9 @@ def test_export_csv_basic(user_fixture):
         if row and row[0] == "ID":  # Procura pela coluna traduzida
             header_row_index = i
             break
-    
+
     assert header_row_index is not None, "Cabeçalho das colunas não encontrado"
-    
+
     # cabeçalho + 1 linha de dados
     data_rows = rows[header_row_index:]
     assert len(data_rows) == 2
@@ -140,7 +140,7 @@ def test_export_respects_filters_and_isolation(user_fixture):
         status="available",
     )
     slot_b.mark_booked()
-    appt_b = Appointment.objects.create(
+    Appointment.objects.create(
         client=owner,
         service=service,
         professional=prof,
@@ -160,16 +160,16 @@ def test_export_respects_filters_and_isolation(user_fixture):
 
     content = b"".join(resp.streaming_content).decode("utf-8")
     rows = list(csv.reader(io.StringIO(content)))
-    
+
     # Encontra a linha do cabeçalho das colunas (após o cabeçalho TimelyOne)
     header_row_index = None
     for i, row in enumerate(rows):
         if row and row[0] == "ID":  # Procura pela coluna traduzida
             header_row_index = i
             break
-    
+
     assert header_row_index is not None, "Cabeçalho das colunas não encontrado"
-    
+
     # cabeçalho + 1 linha de dados (somente appt_a deve entrar)
     data_rows = rows[header_row_index:]
     assert len(data_rows) == 2
@@ -182,16 +182,18 @@ def test_export_respects_filters_and_isolation(user_fixture):
     assert resp_other.status_code == 200
     content_other = b"".join(resp_other.streaming_content).decode("utf-8")
     rows_other = list(csv.reader(io.StringIO(content_other)))
-    
+
     # Encontra a linha do cabeçalho das colunas para o usuário 'other'
     header_row_index_other = None
     for i, row in enumerate(rows_other):
         if row and row[0] == "ID":
             header_row_index_other = i
             break
-    
-    assert header_row_index_other is not None, "Cabeçalho das colunas não encontrado para 'other'"
-    
+
+    assert (
+        header_row_index_other is not None
+    ), "Cabeçalho das colunas não encontrado para 'other'"
+
     # Deve ter apenas o cabeçalho, sem dados
     data_rows_other = rows_other[header_row_index_other:]
     assert len(data_rows_other) == 1  # apenas header, sem dados

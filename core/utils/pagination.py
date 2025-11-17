@@ -4,7 +4,9 @@ from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 from rest_framework.exceptions import ValidationError
 
 
-def get_limit_offset(request, default: int = 20, max_limit: int = 100) -> Tuple[int, int]:
+def get_limit_offset(
+    request, default: int = 20, max_limit: int = 100
+) -> Tuple[int, int]:
     qp = getattr(request, "query_params", None) or getattr(request, "GET", {})
 
     limit_raw = qp.get("limit")
@@ -38,15 +40,24 @@ def _update_query(url: str, new_params: dict) -> str:
         existing[k] = [str(v)]
     query = urlencode(existing, doseq=True)
     return urlunparse(
-        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment)
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            query,
+            parsed.fragment,
+        )
     )
 
 
 def _build_link(url: str, rel: str) -> str:
-    return f"<{url}>; rel=\"{rel}\""
+    return f'<{url}>; rel="{rel}"'
 
 
-def set_pagination_headers(response, request, total_count: int, limit: int, offset: int):
+def set_pagination_headers(
+    response, request, total_count: int, limit: int, offset: int
+):
     response["X-Total-Count"] = str(total_count)
     response["X-Limit"] = str(limit)
     response["X-Offset"] = str(offset)

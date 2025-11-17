@@ -3,13 +3,9 @@ Testes para o endpoint de download de arquivos .ics (iCalendar).
 """
 
 import pytest
-from datetime import datetime, timedelta
-from django.urls import reverse
+from datetime import timedelta
 from django.utils import timezone
-from rest_framework import status
-from rest_framework.test import APIClient
 
-from users.models import CustomUser, Tenant
 from core.models import Service, Professional, ScheduleSlot, Appointment
 from core.utils.ics import ICSGenerator
 

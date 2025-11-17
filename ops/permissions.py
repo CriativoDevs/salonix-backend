@@ -11,9 +11,7 @@ class IsOpsUser(BasePermission):
     def has_permission(self, request, view) -> bool:
         user = getattr(request, "user", None)
         return bool(
-            user
-            and user.is_authenticated
-            and getattr(user, "is_ops_user", False)
+            user and user.is_authenticated and getattr(user, "is_ops_user", False)
         )
 
 

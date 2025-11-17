@@ -166,7 +166,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         salon_display_name = data.get("salon_name") or data.get("username", "")
         sanitized_display_name = sanitize_text_input(salon_display_name, max_length=255)
         if not sanitized_display_name:
-            sanitized_display_name = sanitize_text_input(data["username"], max_length=255)
+            sanitized_display_name = sanitize_text_input(
+                data["username"], max_length=255
+            )
 
         tenant_slug = _generate_unique_tenant_slug(sanitized_display_name)
         tenant = Tenant.objects.create(
@@ -389,7 +391,10 @@ class StaffAcceptInviteSerializer(serializers.Serializer):
         if staff_member.status != TenantStaffMember.Status.INVITED:
             raise ValidationError("Convite já foi processado.")
 
-        if staff_member.invite_token_expires_at and timezone.now() > staff_member.invite_token_expires_at:
+        if (
+            staff_member.invite_token_expires_at
+            and timezone.now() > staff_member.invite_token_expires_at
+        ):
             raise ValidationError("Convite expirado.")
 
         self._staff_member = staff_member
@@ -449,7 +454,10 @@ class StaffUpdateSerializer(serializers.Serializer):
         update_fields = ["updated_at"]
 
         if role:
-            if request.user.staff_role != TenantStaffMember.Role.OWNER and role == TenantStaffMember.Role.MANAGER:
+            if (
+                request.user.staff_role != TenantStaffMember.Role.OWNER
+                and role == TenantStaffMember.Role.MANAGER
+            ):
                 raise ValidationError("Apenas owner pode promover para manager.")
             instance.role = role
             update_fields.append("role")
@@ -512,9 +520,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
             raise AuthenticationFailed("Credenciais inválidas.")
 
         if not user.is_active:
-            raise AuthenticationFailed(
-                "Conta inativa. Entre em contato com o suporte."
-            )
+            raise AuthenticationFailed("Conta inativa. Entre em contato com o suporte.")
 
         if getattr(user, "is_ops_user", False):
             raise AuthenticationFailed(
@@ -642,76 +648,83 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
 # Serializers para Sistema de Créditos de Comunicação
 # ============================================================================
 
+
 class CommLedgerSerializer(serializers.ModelSerializer):
     """Serializer para histórico de transações de crédito."""
-    
+
     created_by_username = serializers.CharField(
-        source='created_by.username', 
-        read_only=True, 
-        allow_null=True
+        source="created_by.username", read_only=True, allow_null=True
     )
-    
+
     class Meta:
         model = CommLedger
         fields = [
-            'id',
-            'transaction_type',
-            'amount_eur',
-            'balance_before',
-            'balance_after',
-            'status',
-            'description',
-            'reference_id',
-            'expires_at',
-            'created_by_username',
-            'created_at',
-            'updated_at',
+            "id",
+            "transaction_type",
+            "amount_eur",
+            "balance_before",
+            "balance_after",
+            "status",
+            "description",
+            "reference_id",
+            "expires_at",
+            "created_by_username",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = fields
 
 
 class CreditBalanceSerializer(serializers.Serializer):
     """Serializer para saldo de créditos do tenant."""
-    
-    current_balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    total_purchased = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    total_consumed = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    total_bonus = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    current_balance = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    total_purchased = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    total_consumed = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
+    total_bonus = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True
+    )
     can_purchase_extra = serializers.BooleanField(read_only=True)
     has_auto_renewal = serializers.BooleanField(read_only=True)
 
 
 class ConsumeCreditsSerializer(serializers.Serializer):
     """Serializer para consumir créditos."""
-    
+
     amount = serializers.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
+        max_digits=10,
+        decimal_places=2,
         min_value=0.01,
-        help_text="Quantidade de créditos a consumir em EUR"
+        help_text="Quantidade de créditos a consumir em EUR",
     )
     description = serializers.CharField(
         max_length=255,
-        help_text="Descrição da transação (ex: 'SMS para +351912345678')"
+        help_text="Descrição da transação (ex: 'SMS para +351912345678')",
     )
     reference_id = serializers.CharField(
-        max_length=100, 
-        required=False, 
+        max_length=100,
+        required=False,
         allow_blank=True,
-        help_text="ID de referência externa (ex: message_id)"
+        help_text="ID de referência externa (ex: message_id)",
     )
 
 
 class PurchaseCreditsSerializer(serializers.Serializer):
     """Serializer para compra de créditos (futuro uso com Stripe)."""
-    
+
     amount = serializers.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
+        max_digits=10,
+        decimal_places=2,
         min_value=5.00,  # Mínimo 5 EUR
-        help_text="Quantidade de créditos a comprar em EUR (mínimo 5.00)"
+        help_text="Quantidade de créditos a comprar em EUR (mínimo 5.00)",
     )
-    
+
     def validate_amount(self, value):
         """Validar valores permitidos para compra."""
         allowed_amounts = [5.00, 10.00, 25.00, 50.00, 100.00]

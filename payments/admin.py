@@ -144,8 +144,6 @@ class StripeWebhookEventAdmin(admin.ModelAdmin):
     processing_error_short.short_description = "Erro"
 
 
-
-
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
     """Admin para assinaturas com filtro por tenant."""

@@ -18,7 +18,11 @@ router.register("alerts", OpsAlertViewSet, basename="ops-alerts")
 urlpatterns = [
     path("auth/login/", OpsAuthLoginView.as_view(), name="ops_auth_login"),
     path("auth/refresh/", OpsAuthRefreshView.as_view(), name="ops_auth_refresh"),
-    path("metrics/overview/", OpsMetricsOverviewView.as_view(), name="ops_metrics_overview"),
+    path(
+        "metrics/overview/",
+        OpsMetricsOverviewView.as_view(),
+        name="ops_metrics_overview",
+    ),
     path(
         "support/resend-notification/",
         OpsSupportResendNotificationView.as_view(),

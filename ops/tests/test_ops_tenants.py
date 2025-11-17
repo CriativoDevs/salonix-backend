@@ -65,8 +65,12 @@ class TestOpsTenantsEndpoints:
         ops_authenticate,
         tenant_with_owner_factory,
     ):
-        admin = ops_user_factory(CustomUser.OpsRoles.OPS_ADMIN, "filters_ops@example.com")
-        tenant_pro, _ = tenant_with_owner_factory("Salon Pro", plan_tier=Tenant.PLAN_PRO)
+        admin = ops_user_factory(
+            CustomUser.OpsRoles.OPS_ADMIN, "filters_ops@example.com"
+        )
+        tenant_pro, _ = tenant_with_owner_factory(
+            "Salon Pro", plan_tier=Tenant.PLAN_PRO
+        )
         tenant_basic, _ = tenant_with_owner_factory(
             "Salon Basic",
             plan_tier=Tenant.PLAN_BASIC,
@@ -106,7 +110,9 @@ class TestOpsTenantsEndpoints:
         ops_authenticate,
         tenant_with_owner_factory,
     ):
-        admin = ops_user_factory(CustomUser.OpsRoles.OPS_ADMIN, "export_ops@example.com")
+        admin = ops_user_factory(
+            CustomUser.OpsRoles.OPS_ADMIN, "export_ops@example.com"
+        )
         tenant, _ = tenant_with_owner_factory("Salon Export")
         access = ops_authenticate(admin.email)
 
@@ -198,7 +204,9 @@ class TestOpsTenantsEndpoints:
         ops_authenticate,
         tenant_with_owner_factory,
     ):
-        support = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com")
+        support = ops_user_factory(
+            CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com"
+        )
         tenant, _ = tenant_with_owner_factory("Salon Support")
         access = ops_authenticate(support.email)
 

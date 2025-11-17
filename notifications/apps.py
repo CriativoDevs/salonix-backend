@@ -9,4 +9,5 @@ class NotificationsConfig(AppConfig):
 
     def ready(self):
         """Importar signals quando a app estiver pronta"""
-        import notifications.signals
+        # Garantir registro dos receivers
+        from . import signals  # noqa: F401

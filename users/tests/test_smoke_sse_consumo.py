@@ -51,7 +51,7 @@ def test_smoke_consumo_emite_credit_update_com_ledger(
         except StopIteration:
             break
         text = _decode(chunk)
-        if "event: credit_update" in text and "\"ledger\"" in text:
+        if "event: credit_update" in text and '"ledger"' in text:
             found = True
             break
 

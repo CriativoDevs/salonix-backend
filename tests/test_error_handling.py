@@ -9,16 +9,13 @@ Testa:
 - Formatos de resposta
 """
 
-import json
-import logging
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase, APIClient
 from typing import Any, cast
-from rest_framework import status
-from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
+from rest_framework.exceptions import ValidationError
 
 from salonix_backend.error_handling import (
     ErrorCodes,
@@ -32,7 +29,7 @@ from salonix_backend.error_handling import (
     validate_required_fields,
     create_error_response,
 )
-from users.models import Tenant, CustomUser
+from users.models import Tenant
 
 User = get_user_model()
 
@@ -248,7 +245,6 @@ class CustomExceptionHandlerTestCase(APITestCase):
     def test_validation_error_format(self):
         """Testa formato de resposta para ValidationError."""
         from rest_framework.views import APIView
-        from rest_framework.response import Response
 
         class TestView(APIView):
             def get(self, request):

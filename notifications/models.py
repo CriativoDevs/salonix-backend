@@ -37,7 +37,8 @@ class NotificationDevice(models.Model):
     )
     token = models.TextField(help_text="Token do dispositivo para push notifications")
     is_active = models.BooleanField(
-        default=cast(Any, True), help_text="Se o device está ativo para receber notificações"
+        default=cast(Any, True),
+        help_text="Se o device está ativo para receber notificações",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -88,7 +89,9 @@ class Notification(models.Model):
     )
     title = models.CharField(max_length=255, help_text="Título da notificação")
     message = models.TextField(help_text="Conteúdo da notificação")
-    is_read = models.BooleanField(default=cast(Any, False), help_text="Se a notificação foi lida")
+    is_read = models.BooleanField(
+        default=cast(Any, False), help_text="Se a notificação foi lida"
+    )
     metadata = models.JSONField(
         default=dict,
         blank=True,

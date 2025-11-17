@@ -5,28 +5,37 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('users', '0003_add_tenant_model'),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("users", "0003_add_tenant_model"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='customuser',
+            name="customuser",
             options={},
         ),
         migrations.AddField(
-            model_name='customuser',
-            name='tenant',
-            field=models.ForeignKey(default=1, help_text='Tenant/salão ao qual o usuário pertence', on_delete=django.db.models.deletion.CASCADE, related_name='users', to='users.tenant'),
+            model_name="customuser",
+            name="tenant",
+            field=models.ForeignKey(
+                default=1,
+                help_text="Tenant/salão ao qual o usuário pertence",
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="users",
+                to="users.tenant",
+            ),
         ),
         migrations.AddIndex(
-            model_name='customuser',
-            index=models.Index(fields=['tenant', 'username'], name='users_custo_tenant__838c95_idx'),
+            model_name="customuser",
+            index=models.Index(
+                fields=["tenant", "username"], name="users_custo_tenant__838c95_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='customuser',
-            index=models.Index(fields=['tenant', 'email'], name='users_custo_tenant__c09ca3_idx'),
+            model_name="customuser",
+            index=models.Index(
+                fields=["tenant", "email"], name="users_custo_tenant__c09ca3_idx"
+            ),
         ),
     ]

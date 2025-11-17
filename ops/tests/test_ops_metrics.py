@@ -19,9 +19,15 @@ def test_metrics_overview_endpoint(
     ops_authenticate,
     tenant_with_owner_factory,
 ):
-    support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "metrics_ops@example.com")
-    tenant_basic, owner_basic = tenant_with_owner_factory("Salon Metrics Basic", plan_tier=Tenant.PLAN_BASIC)
-    tenant_pro, owner_pro = tenant_with_owner_factory("Salon Metrics Pro", plan_tier=Tenant.PLAN_PRO)
+    support_user = ops_user_factory(
+        CustomUser.OpsRoles.OPS_SUPPORT, "metrics_ops@example.com"
+    )
+    tenant_basic, owner_basic = tenant_with_owner_factory(
+        "Salon Metrics Basic", plan_tier=Tenant.PLAN_BASIC
+    )
+    tenant_pro, owner_pro = tenant_with_owner_factory(
+        "Salon Metrics Pro", plan_tier=Tenant.PLAN_PRO
+    )
 
     now = timezone.now()
 
@@ -45,7 +51,9 @@ def test_metrics_overview_endpoint(
         message="Mensagem",
         status="delivered",
     )
-    NotificationLog.objects.filter(pk=log2.pk).update(created_at=now - timedelta(days=2))
+    NotificationLog.objects.filter(pk=log2.pk).update(
+        created_at=now - timedelta(days=2)
+    )
 
     owner_basic.featureflags.trial_until = now + timedelta(days=3)
     owner_basic.featureflags.save(update_fields=["trial_until"])
@@ -90,7 +98,9 @@ def test_alerts_list_and_resolve(
     ops_user_factory,
     ops_authenticate,
 ):
-    support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "alerts_ops@example.com")
+    support_user = ops_user_factory(
+        CustomUser.OpsRoles.OPS_SUPPORT, "alerts_ops@example.com"
+    )
     alert_active = OpsAlert.objects.create(
         category=OpsAlert.Categories.NOTIFICATION_FAILURE,
         severity=OpsAlert.Severity.WARNING,
@@ -120,7 +130,9 @@ def test_alerts_list_and_resolve(
     assert resolve_resp.status_code == status.HTTP_200_OK
     alert_active.refresh_from_db()
     assert alert_active.is_resolved
-    assert OpsSupportAuditLog.objects.filter(action=OpsSupportAuditLog.Actions.RESOLVE_ALERT).exists()
+    assert OpsSupportAuditLog.objects.filter(
+        action=OpsSupportAuditLog.Actions.RESOLVE_ALERT
+    ).exists()
 
     resolved_list = api_client.get(
         reverse("ops-alerts-list"),

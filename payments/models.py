@@ -48,15 +48,14 @@ class Subscription(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status in {"trialing", "active"} and (
-            not self.cancel_at_period_end or (
-                self.current_period_end and self.current_period_end > timezone.now()
-            )
+            not self.cancel_at_period_end
+            or (self.current_period_end and self.current_period_end > timezone.now())
         )
 
 
 class CreditPayment(models.Model):
     """Modelo para pagamentos de créditos via Stripe"""
-    
+
     STATUS_CHOICES = (
         ("pending", "Pending"),
         ("processing", "Processing"),
@@ -64,7 +63,7 @@ class CreditPayment(models.Model):
         ("failed", "Failed"),
         ("canceled", "Canceled"),
     )
-    
+
     CREDIT_AMOUNTS = (
         (5.00, "5 EUR"),
         (10.00, "10 EUR"),
@@ -72,36 +71,36 @@ class CreditPayment(models.Model):
         (50.00, "50 EUR"),
         (100.00, "100 EUR"),
     )
-    
+
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="credit_payments"
     )
     tenant = models.ForeignKey(
         "users.Tenant", on_delete=models.CASCADE, related_name="credit_payments"
     )
-    
+
     # Stripe fields
     stripe_payment_intent_id = models.CharField(max_length=255, unique=True)
     stripe_customer_id = models.CharField(max_length=255)
     stripe_price_id = models.CharField(max_length=255)
-    
+
     # Payment details
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, default="EUR")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    
+
     # Credit details
     credits_purchased = models.DecimalField(max_digits=10, decimal_places=2)
     credits_applied = models.BooleanField(default=False)
-    
+
     # Metadata
     metadata = models.JSONField(default=dict, blank=True)
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    
+
     class Meta:
         indexes = [
             models.Index(fields=["user", "status"]),
@@ -110,14 +109,14 @@ class CreditPayment(models.Model):
             models.Index(fields=["created_at"]),
         ]
         ordering = ["-created_at"]
-    
+
     def __str__(self):
         return f"{self.user} - {self.amount} {self.currency} - {self.status}"
-    
+
     @property
     def is_completed(self) -> bool:
         return self.status == "succeeded"
-    
+
     @property
     def can_apply_credits(self) -> bool:
         return self.is_completed and not self.credits_applied
@@ -125,19 +124,19 @@ class CreditPayment(models.Model):
 
 class StripeWebhookEvent(models.Model):
     """Modelo para rastrear eventos de webhook do Stripe"""
-    
+
     stripe_event_id = models.CharField(max_length=255, unique=True)
     event_type = models.CharField(max_length=100)
     processed = models.BooleanField(default=False)
     processing_error = models.TextField(blank=True, null=True)
-    
+
     # Dados do evento
     event_data = models.JSONField()
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
-    
+
     class Meta:
         indexes = [
             models.Index(fields=["stripe_event_id"]),
@@ -145,6 +144,6 @@ class StripeWebhookEvent(models.Model):
             models.Index(fields=["created_at"]),
         ]
         ordering = ["-created_at"]
-    
+
     def __str__(self):
         return f"{self.event_type} - {self.stripe_event_id} - {'Processed' if self.processed else 'Pending'}"

@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import timedelta
 
 from pathlib import Path
 from configparser import ConfigParser
@@ -42,7 +43,6 @@ INI_ALL = _read_ini()
 
 
 # Helper para ler configs: pega de ENV, senão .env (já carregado), senão INI[ENV]
-from typing import Any, cast
 
 
 def env_get(name: str, default=None):
@@ -104,7 +104,7 @@ INSTALLED_APPS = [
     "core.apps.CoreConfig",
     "users",
     "ops.apps.OpsConfig",
-    "notifications",
+    "notifications.apps.NotificationsConfig",
     "payments",
     "reports",
 ]
@@ -186,7 +186,7 @@ WSGI_APPLICATION = "salonix_backend.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-DATABASE_URL = env_get("DATABASE_URL", f"sqlite:///{BASE_DIR/'db.sqlite3'}")
+DATABASE_URL = env_get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
 try:
     import dj_database_url  # type: ignore
 
@@ -325,8 +325,6 @@ REST_FRAMEWORK.setdefault("DEFAULT_SCHEMA_CLASS", "drf_spectacular.openapi.AutoS
 REST_FRAMEWORK["EXCEPTION_HANDLER"] = (
     "salonix_backend.error_handling.custom_exception_handler"
 )
-
-from datetime import timedelta
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MIN", 60)),

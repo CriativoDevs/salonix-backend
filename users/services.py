@@ -1,86 +1,89 @@
 """
 Serviços para gerenciamento de créditos de comunicação.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
 from typing import Optional, Dict, Any
 from django.db import transaction, models
 from django.utils import timezone
-from django.core.exceptions import ValidationError
 
 from .models import Tenant, CommLedger
 
 
 class CreditService:
     """Serviço para gerenciar créditos de comunicação."""
-    
+
     def __init__(self, tenant: Tenant):
         self.tenant = tenant
-    
+
     def get_credit_balance(self) -> Decimal:
         """Retorna o saldo atual de créditos do tenant."""
-        return self.tenant.comm_credit_eur or Decimal('0.00')
-    
+        return self.tenant.comm_credit_eur or Decimal("0.00")
+
     def get_credit_history(self, limit: int = 50) -> list[CommLedger]:
         """Retorna o histórico de transações de créditos do tenant."""
         return list(
-            CommLedger.objects.filter(tenant=self.tenant)
-            .order_by('-created_at')[:limit]
+            CommLedger.objects.filter(tenant=self.tenant).order_by("-created_at")[
+                :limit
+            ]
         )
-    
+
     @transaction.atomic
     def consume_credits(
-        self, 
-        amount: Decimal, 
+        self,
+        amount: Decimal,
         description: str,
         reference_id: Optional[str] = None,
-        created_by: Optional[Any] = None
+        created_by: Optional[Any] = None,
     ) -> CommLedger:
         """
         Consome créditos do tenant.
-        
+
         Args:
             amount: Valor em euros a ser consumido
             description: Descrição da transação
             reference_id: ID de referência externa (opcional)
             created_by: Usuário que criou a transação (opcional)
-            
+
         Returns:
             CommLedger: Registro da transação criada
-            
+
         Raises:
             ValueError: Se não houver saldo suficiente
         """
         if amount <= 0:
             raise ValueError("Valor deve ser maior que zero")
-            
+
         current_balance = self.get_credit_balance()
-        
+
         if current_balance < amount:
-            raise ValueError(f"Saldo insuficiente. Saldo atual: {current_balance}€, tentativa de consumo: {amount}€")
-        
+            raise ValueError(
+                f"Saldo insuficiente. Saldo atual: {current_balance}€, tentativa de consumo: {amount}€"
+            )
+
         new_balance = current_balance - amount
-        
+
         # Cria o registro da transação
         transaction_record = CommLedger.objects.create(
             tenant=self.tenant,
-            transaction_type='consumption',
+            transaction_type="consumption",
             amount_eur=amount,
             balance_before=current_balance,
             balance_after=new_balance,
-            status='completed',
+            status="completed",
             description=description,
             reference_id=reference_id,
-            created_by=created_by
+            created_by=created_by,
         )
-        
+
         # Atualiza o saldo do tenant
         self.tenant.comm_credit_eur = new_balance
-        self.tenant.save(update_fields=['comm_credit_eur'])
-        
+        self.tenant.save(update_fields=["comm_credit_eur"])
+
         return transaction_record
-    
+
     @transaction.atomic
     def add_credits(
         self,
@@ -89,11 +92,11 @@ class CreditService:
         description: str,
         reference_id: Optional[str] = None,
         created_by: Optional[Any] = None,
-        expires_at: Optional[timezone.datetime] = None
+        expires_at: Optional[timezone.datetime] = None,
     ) -> CommLedger:
         """
         Adiciona créditos ao tenant.
-        
+
         Args:
             amount: Valor em euros a ser adicionado
             transaction_type: Tipo da transação (purchase, bonus, refund)
@@ -101,19 +104,19 @@ class CreditService:
             reference_id: ID de referência externa (opcional)
             created_by: Usuário que criou a transação (opcional)
             expires_at: Data de expiração dos créditos (opcional)
-            
+
         Returns:
             CommLedger: Registro da transação criada
         """
         if amount <= 0:
             raise ValueError("Valor deve ser maior que zero")
-            
-        if transaction_type not in ['purchase', 'bonus', 'refund']:
+
+        if transaction_type not in ["purchase", "bonus", "refund"]:
             raise ValueError("Tipo de transação inválido")
-        
+
         current_balance = self.get_credit_balance()
         new_balance = current_balance + amount
-        
+
         # Cria o registro da transação
         transaction_record = CommLedger.objects.create(
             tenant=self.tenant,
@@ -121,41 +124,41 @@ class CreditService:
             amount_eur=amount,
             balance_before=current_balance,
             balance_after=new_balance,
-            status='completed',
+            status="completed",
             description=description,
             reference_id=reference_id,
             expires_at=expires_at,
-            created_by=created_by
+            created_by=created_by,
         )
-        
+
         # Atualiza o saldo do tenant
         self.tenant.comm_credit_eur = new_balance
-        self.tenant.save(update_fields=['comm_credit_eur'])
-        
+        self.tenant.save(update_fields=["comm_credit_eur"])
+
         return transaction_record
-    
+
     def can_consume_credits(self, amount: Decimal) -> bool:
         """Verifica se é possível consumir a quantidade especificada de créditos."""
         return self.get_credit_balance() >= amount
-    
+
     def get_credit_stats(self) -> Dict[str, Any]:
         """Retorna estatísticas de uso de créditos do tenant."""
-        transactions = CommLedger.objects.filter(tenant=self.tenant, status='completed')
-        
-        total_purchased = transactions.filter(transaction_type='purchase').aggregate(
-            total=models.Sum('amount_eur')
-        )['total'] or Decimal('0.00')
-        
-        total_consumed = transactions.filter(transaction_type='consumption').aggregate(
-            total=models.Sum('amount_eur')
-        )['total'] or Decimal('0.00')
-        
-        total_bonus = transactions.filter(transaction_type='bonus').aggregate(
-            total=models.Sum('amount_eur')
-        )['total'] or Decimal('0.00')
-        
+        transactions = CommLedger.objects.filter(tenant=self.tenant, status="completed")
+
+        total_purchased = transactions.filter(transaction_type="purchase").aggregate(
+            total=models.Sum("amount_eur")
+        )["total"] or Decimal("0.00")
+
+        total_consumed = transactions.filter(transaction_type="consumption").aggregate(
+            total=models.Sum("amount_eur")
+        )["total"] or Decimal("0.00")
+
+        total_bonus = transactions.filter(transaction_type="bonus").aggregate(
+            total=models.Sum("amount_eur")
+        )["total"] or Decimal("0.00")
+
         return {
-            'total_purchased': total_purchased,
-            'total_consumed': total_consumed,
-            'total_bonus': total_bonus,
+            "total_purchased": total_purchased,
+            "total_consumed": total_consumed,
+            "total_bonus": total_bonus,
         }

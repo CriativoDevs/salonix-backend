@@ -5,20 +5,34 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0002_professional'),
+        ("core", "0002_professional"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ScheduleSlot',
+            name="ScheduleSlot",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('start_time', models.DateTimeField()),
-                ('end_time', models.DateTimeField()),
-                ('is_available', models.BooleanField(default=True)),
-                ('professional', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='slots', to='core.professional')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("start_time", models.DateTimeField()),
+                ("end_time", models.DateTimeField()),
+                ("is_available", models.BooleanField(default=True)),
+                (
+                    "professional",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="slots",
+                        to="core.professional",
+                    ),
+                ),
             ],
         ),
     ]

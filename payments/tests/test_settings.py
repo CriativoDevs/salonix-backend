@@ -14,7 +14,9 @@ def _metric_value(label: str) -> float:
 
 @pytest.fixture
 def owner_user(db):
-    tenant = Tenant.objects.create(name="Salon", slug="salon", plan_tier=Tenant.PLAN_STANDARD)
+    tenant = Tenant.objects.create(
+        name="Salon", slug="salon", plan_tier=Tenant.PLAN_STANDARD
+    )
     user = CustomUser.objects.create_user(
         username="owner", email="owner@example.com", password="pass", tenant=tenant
     )
@@ -26,7 +28,9 @@ def owner_user(db):
 
 @pytest.fixture
 def manager_user(db):
-    tenant = Tenant.objects.create(name="Salon2", slug="salon2", plan_tier=Tenant.PLAN_STANDARD)
+    tenant = Tenant.objects.create(
+        name="Salon2", slug="salon2", plan_tier=Tenant.PLAN_STANDARD
+    )
     user = CustomUser.objects.create_user(
         username="manager", email="manager@example.com", password="pass", tenant=tenant
     )
@@ -155,7 +159,11 @@ def test_settings_patch_emits_audit_log_on_change(owner_user, monkeypatch):
     monkeypatch.setattr(
         payments_views,
         "logger",
-        type("_L", (), {"info": staticmethod(fake_info), "error": staticmethod(fake_error)}),
+        type(
+            "_L",
+            (),
+            {"info": staticmethod(fake_info), "error": staticmethod(fake_error)},
+        ),
     )
 
     resp = c.patch(

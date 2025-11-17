@@ -1,11 +1,9 @@
 import pytest
-import json
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
-from users.models import Tenant
-from notifications.models import Notification, NotificationDevice, NotificationLog
+from notifications.models import Notification, NotificationDevice
 
 User = get_user_model()
 

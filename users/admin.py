@@ -4,8 +4,8 @@ from django.utils.html import format_html
 from django.utils import timezone
 from django.urls import reverse
 from django.db import models
-from django.forms import TextInput, Select
-from typing import Any, cast
+from django.forms import TextInput
+from typing import Any
 
 from .models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember, CommLedger
 
@@ -55,7 +55,7 @@ class TenantAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "comm_credit_eur",
-                    "comm_extra_allowed", 
+                    "comm_extra_allowed",
                     "comm_auto_renew",
                 ),
                 "classes": ("collapse",),
@@ -338,9 +338,7 @@ class TenantStaffMemberAdmin(admin.ModelAdmin):
 
     @admin.action(description="Marcar selecionados como ativos")
     def marcar_ativos(self, request, queryset):
-        updated = queryset.exclude(
-            role=TenantStaffMember.Role.OWNER
-        ).update(
+        updated = queryset.exclude(role=TenantStaffMember.Role.OWNER).update(
             status=TenantStaffMember.Status.ACTIVE,
             deactivated_at=None,
             updated_at=timezone.now(),
@@ -349,9 +347,7 @@ class TenantStaffMemberAdmin(admin.ModelAdmin):
 
     @admin.action(description="Desativar selecionados")
     def desativar(self, request, queryset):
-        updated = queryset.exclude(
-            role=TenantStaffMember.Role.OWNER
-        ).update(
+        updated = queryset.exclude(role=TenantStaffMember.Role.OWNER).update(
             status=TenantStaffMember.Status.DISABLED,
             deactivated_at=timezone.now(),
         )
@@ -363,10 +359,10 @@ class CommLedgerAdmin(admin.ModelAdmin):
     """
     Admin para visualização do histórico de créditos de comunicação.
     """
-    
+
     list_display = [
         "tenant",
-        "transaction_type", 
+        "transaction_type",
         "amount_eur",
         "balance_before",
         "balance_after",
@@ -376,14 +372,14 @@ class CommLedgerAdmin(admin.ModelAdmin):
     list_filter = [
         "tenant",
         "transaction_type",
-        "status", 
+        "status",
         "created_at",
     ]
     search_fields = ["tenant__name", "description"]
     readonly_fields = [
         "tenant",
         "transaction_type",
-        "amount_eur", 
+        "amount_eur",
         "balance_before",
         "balance_after",
         "status",
@@ -391,15 +387,15 @@ class CommLedgerAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
-    
+
     def has_add_permission(self, request):
         """Não permite adicionar registros manualmente."""
         return False
-    
+
     def has_change_permission(self, request, obj=None):
         """Não permite editar registros."""
         return False
-    
+
     def has_delete_permission(self, request, obj=None):
         """Não permite deletar registros."""
         return False

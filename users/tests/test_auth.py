@@ -11,7 +11,6 @@ User = get_user_model()
 
 @pytest.mark.django_db
 class TestAuthEndpoints:
-
     def setup_method(self):
         self.client = APIClient()
         self.register_url = reverse("register")
@@ -233,7 +232,9 @@ class TestAuthEndpoints:
         assert response.data["theme_preference"] == "dark"
 
         # Test updating to system theme
-        response = self.client.patch(self.me_profile_url, {"theme_preference": "system"})
+        response = self.client.patch(
+            self.me_profile_url, {"theme_preference": "system"}
+        )
         assert response.status_code == status.HTTP_200_OK
         assert response.data["theme_preference"] == "system"
 
@@ -245,7 +246,9 @@ class TestAuthEndpoints:
         )
         self.client.force_authenticate(user=user)
 
-        response = self.client.patch(self.me_profile_url, {"theme_preference": "invalid"})
+        response = self.client.patch(
+            self.me_profile_url, {"theme_preference": "invalid"}
+        )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "theme_preference deve ser um dos valores" in response.data["detail"]
 

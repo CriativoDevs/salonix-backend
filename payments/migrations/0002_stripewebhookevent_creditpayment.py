@@ -6,53 +6,128 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('payments', '0001_initial'),
-        ('users', '0017_tenant_comm_auto_renew_tenant_comm_credit_eur_and_more'),
+        ("payments", "0001_initial"),
+        ("users", "0017_tenant_comm_auto_renew_tenant_comm_credit_eur_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='StripeWebhookEvent',
+            name="StripeWebhookEvent",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('stripe_event_id', models.CharField(max_length=255, unique=True)),
-                ('event_type', models.CharField(max_length=100)),
-                ('processed', models.BooleanField(default=False)),
-                ('processing_error', models.TextField(blank=True, null=True)),
-                ('event_data', models.JSONField()),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('processed_at', models.DateTimeField(blank=True, null=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("stripe_event_id", models.CharField(max_length=255, unique=True)),
+                ("event_type", models.CharField(max_length=100)),
+                ("processed", models.BooleanField(default=False)),
+                ("processing_error", models.TextField(blank=True, null=True)),
+                ("event_data", models.JSONField()),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("processed_at", models.DateTimeField(blank=True, null=True)),
             ],
             options={
-                'ordering': ['-created_at'],
-                'indexes': [models.Index(fields=['stripe_event_id'], name='payments_st_stripe__a444ea_idx'), models.Index(fields=['event_type', 'processed'], name='payments_st_event_t_6c60d1_idx'), models.Index(fields=['created_at'], name='payments_st_created_3ef7e8_idx')],
+                "ordering": ["-created_at"],
+                "indexes": [
+                    models.Index(
+                        fields=["stripe_event_id"],
+                        name="payments_st_stripe__a444ea_idx",
+                    ),
+                    models.Index(
+                        fields=["event_type", "processed"],
+                        name="payments_st_event_t_6c60d1_idx",
+                    ),
+                    models.Index(
+                        fields=["created_at"], name="payments_st_created_3ef7e8_idx"
+                    ),
+                ],
             },
         ),
         migrations.CreateModel(
-            name='CreditPayment',
+            name="CreditPayment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('stripe_payment_intent_id', models.CharField(max_length=255, unique=True)),
-                ('stripe_customer_id', models.CharField(max_length=255)),
-                ('stripe_price_id', models.CharField(max_length=255)),
-                ('amount', models.DecimalField(decimal_places=2, max_digits=10)),
-                ('currency', models.CharField(default='EUR', max_length=3)),
-                ('status', models.CharField(choices=[('pending', 'Pending'), ('processing', 'Processing'), ('succeeded', 'Succeeded'), ('failed', 'Failed'), ('canceled', 'Canceled')], default='pending', max_length=20)),
-                ('credits_purchased', models.DecimalField(decimal_places=2, max_digits=10)),
-                ('credits_applied', models.BooleanField(default=False)),
-                ('metadata', models.JSONField(blank=True, default=dict)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='credit_payments', to='users.tenant')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='credit_payments', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "stripe_payment_intent_id",
+                    models.CharField(max_length=255, unique=True),
+                ),
+                ("stripe_customer_id", models.CharField(max_length=255)),
+                ("stripe_price_id", models.CharField(max_length=255)),
+                ("amount", models.DecimalField(decimal_places=2, max_digits=10)),
+                ("currency", models.CharField(default="EUR", max_length=3)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("processing", "Processing"),
+                            ("succeeded", "Succeeded"),
+                            ("failed", "Failed"),
+                            ("canceled", "Canceled"),
+                        ],
+                        default="pending",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "credits_purchased",
+                    models.DecimalField(decimal_places=2, max_digits=10),
+                ),
+                ("credits_applied", models.BooleanField(default=False)),
+                ("metadata", models.JSONField(blank=True, default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="credit_payments",
+                        to="users.tenant",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="credit_payments",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
-                'indexes': [models.Index(fields=['user', 'status'], name='payments_cr_user_id_df944d_idx'), models.Index(fields=['tenant', 'status'], name='payments_cr_tenant__599106_idx'), models.Index(fields=['stripe_payment_intent_id'], name='payments_cr_stripe__6aff5f_idx'), models.Index(fields=['created_at'], name='payments_cr_created_271091_idx')],
+                "ordering": ["-created_at"],
+                "indexes": [
+                    models.Index(
+                        fields=["user", "status"], name="payments_cr_user_id_df944d_idx"
+                    ),
+                    models.Index(
+                        fields=["tenant", "status"],
+                        name="payments_cr_tenant__599106_idx",
+                    ),
+                    models.Index(
+                        fields=["stripe_payment_intent_id"],
+                        name="payments_cr_stripe__6aff5f_idx",
+                    ),
+                    models.Index(
+                        fields=["created_at"], name="payments_cr_created_271091_idx"
+                    ),
+                ],
             },
         ),
     ]

@@ -50,36 +50,27 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
 
     else:
         # Agendamento atualizado - verificar mudanças de status
-        # Precisamos comparar com o estado anterior
-        try:
-            previous_instance = Appointment.objects.get(pk=instance.pk)
+        if (
+            hasattr(instance, "_previous_status")
+            and instance._previous_status != instance.status
+        ):
+            if instance.status == "cancelled":
+                notification_type = "appointment_cancelled"
+                title = "Agendamento Cancelado"
+                message = (
+                    f"Seu agendamento de {instance.service.name} foi cancelado"
+                )
+                channels.extend(["push_web", "push_mobile", "sms"])
 
-            # Se status mudou
-            if (
-                hasattr(instance, "_previous_status")
-                and instance._previous_status != instance.status
-            ):
-                if instance.status == "cancelled":
-                    notification_type = "appointment_cancelled"
-                    title = "Agendamento Cancelado"
-                    message = (
-                        f"Seu agendamento de {instance.service.name} foi cancelado"
-                    )
-                    channels.extend(["push_web", "push_mobile", "sms"])
+            elif instance.status == "completed":
+                notification_type = "appointment_completed"
+                title = "Serviço Concluído"
+                message = f"Seu serviço de {instance.service.name} foi concluído. Obrigado!"
 
-                elif instance.status == "completed":
-                    notification_type = "appointment_completed"
-                    title = "Serviço Concluído"
-                    message = f"Seu serviço de {instance.service.name} foi concluído. Obrigado!"
-
-                elif instance.status == "paid":
-                    notification_type = "payment_received"
-                    title = "Pagamento Confirmado"
-                    message = f"Pagamento do serviço {instance.service.name} confirmado. Obrigado!"
-
-        except Appointment.DoesNotExist:
-            # Caso não encontre instância anterior, ignorar
-            pass
+            elif instance.status == "paid":
+                notification_type = "payment_received"
+                title = "Pagamento Confirmado"
+                message = f"Pagamento do serviço {instance.service.name} confirmado. Obrigado!"
 
     # Se não há tipo de notificação, não enviar
     if not notification_type:

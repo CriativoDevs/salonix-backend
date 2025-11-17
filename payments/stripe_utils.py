@@ -88,9 +88,16 @@ def get_or_create_customer(user):
 
     # cria Customer no Stripe
     from typing import Any
+
     cust = s.Customer.create(
         email=cast(Any, getattr(user, "email", None)),
-        name=cast(Any, (getattr(user, "get_full_name", lambda: None)() or getattr(user, "username", None))),
+        name=cast(
+            Any,
+            (
+                getattr(user, "get_full_name", lambda: None)()
+                or getattr(user, "username", None)
+            ),
+        ),
         metadata={"user_id": str(user.id)},
     )
     sc = PaymentCustomer.objects.create(user=user, stripe_customer_id=cust["id"])

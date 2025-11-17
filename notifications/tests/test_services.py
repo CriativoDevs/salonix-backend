@@ -1,10 +1,7 @@
 import pytest
-from unittest.mock import patch, MagicMock
 from django.contrib.auth import get_user_model
-from users.models import Tenant
 from notifications.models import Notification, NotificationDevice, NotificationLog
 from notifications.services import (
-    NotificationService,
     InAppNotificationDriver,
     WebPushDriver,
     MobilePushDriver,

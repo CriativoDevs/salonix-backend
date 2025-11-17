@@ -5,10 +5,12 @@ Este arquivo demonstra como usar as funcionalidades do error_handling.py
 nas views e serializers do projeto.
 """
 
-from rest_framework import status
+from rest_framework import status, serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.test import TestCase
+from rest_framework.test import APIClient
 
 from .error_handling import (
     BusinessError,
@@ -37,7 +39,7 @@ def example_appointment_create(request):
         validate_required_fields(
             request.data, ["service_id", "slot_id", "client_email"]
         )
-    except ValidationError as e:
+    except ValidationError:
         # O custom_exception_handler vai tratar automaticamente
         raise
 
@@ -188,8 +190,6 @@ def example_user_registration(request):
 # EXEMPLO 4: Serializer com validação customizada
 # =====================================================
 
-from rest_framework import serializers
-
 
 class ExampleAppointmentSerializer(serializers.Serializer):
     """Exemplo de serializer com validações customizadas."""
@@ -282,7 +282,7 @@ class ErrorLoggingMiddleware:
         from .error_handling import log_error
 
         # Log do erro
-        error_id = log_error(
+        log_error(
             exception=exception,
             request=request,
             user=getattr(request, "user", None),
@@ -297,9 +297,6 @@ class ErrorLoggingMiddleware:
 # =====================================================
 # EXEMPLO 6: Teste de integração
 # =====================================================
-
-from django.test import TestCase
-from rest_framework.test import APIClient
 
 
 class ErrorHandlingTestCase(TestCase):

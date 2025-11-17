@@ -4,15 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0015_remove_superuser_from_tenant_users'),
+        ("users", "0015_remove_superuser_from_tenant_users"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='customuser',
-            name='theme_preference',
-            field=models.CharField(choices=[('light', 'Light'), ('dark', 'Dark'), ('system', 'System')], default='system', help_text='Preferência de tema do usuário (light/dark/system)', max_length=10),
+            model_name="customuser",
+            name="theme_preference",
+            field=models.CharField(
+                choices=[("light", "Light"), ("dark", "Dark"), ("system", "System")],
+                default="system",
+                help_text="Preferência de tema do usuário (light/dark/system)",
+                max_length=10,
+            ),
         ),
     ]

@@ -26,7 +26,9 @@ class SalonCustomer(models.Model):
             models.Index(fields=["tenant"], name="core_customer_tenant_idx"),
             models.Index(fields=["tenant", "name"], name="core_customer_name_idx"),
             models.Index(fields=["tenant", "email"], name="core_customer_email_idx"),
-            models.Index(fields=["tenant", "phone_number"], name="core_customer_phone_idx"),
+            models.Index(
+                fields=["tenant", "phone_number"], name="core_customer_phone_idx"
+            ),
         ]
         ordering = ("name", "id")
 
@@ -72,10 +74,10 @@ class AppointmentSeries(models.Model):
         dj_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="series"
     )
     service = models.ForeignKey(
-        'Service', on_delete=models.CASCADE, related_name="series"
+        "Service", on_delete=models.CASCADE, related_name="series"
     )
     professional = models.ForeignKey(
-        'Professional', on_delete=models.CASCADE, related_name="series"
+        "Professional", on_delete=models.CASCADE, related_name="series"
     )
     notes = models.TextField(blank=True, null=True)
     recurrence_rule = models.CharField(max_length=100, blank=True, null=True)
@@ -91,6 +93,7 @@ class AppointmentSeries(models.Model):
 
     def __str__(self):
         return f"Series<{self.id}> {self.service.name} / {self.professional.name}"
+
 
 class Professional(models.Model):
     tenant = models.ForeignKey(
@@ -228,7 +231,9 @@ class Appointment(models.Model):
         indexes = [
             models.Index(fields=["tenant"]),
             models.Index(fields=["tenant", "client"]),
-            models.Index(fields=["tenant", "customer"], name="core_appoin_tenant_c_idx"),
+            models.Index(
+                fields=["tenant", "customer"], name="core_appoin_tenant_c_idx"
+            ),
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["tenant", "created_at"]),
             models.Index(fields=["tenant", "service"]),

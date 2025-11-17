@@ -91,7 +91,7 @@ def test_staff_update_reactivates_professional():
         password="pass123",
         tenant=tenant,
     )
-    owner_staff = TenantStaffMember.objects.create(
+    TenantStaffMember.objects.create(
         tenant=tenant,
         user=owner,
         role=TenantStaffMember.Role.OWNER,

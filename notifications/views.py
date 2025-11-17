@@ -1,7 +1,6 @@
 import logging
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from typing import Any, Dict, cast
@@ -149,7 +148,9 @@ class NotificationDeviceRegisterView(TenantIsolatedMixin, generics.CreateAPIView
 
         if existing_device:
             # Atualizar device existente
-            existing_device.is_active = cast(Dict[str, Any], serializer.validated_data).get("is_active", True)
+            existing_device.is_active = cast(
+                Dict[str, Any], serializer.validated_data
+            ).get("is_active", True)
             existing_device.save()
 
             logger.info(

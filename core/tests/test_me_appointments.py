@@ -3,9 +3,8 @@ import pytest
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient
-from unittest.mock import patch
 
-from users.models import CustomUser, Tenant
+from users.models import CustomUser
 from core.models import Service, Professional, ScheduleSlot, Appointment
 
 

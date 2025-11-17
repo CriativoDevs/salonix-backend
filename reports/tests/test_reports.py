@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import timedelta
 from django.utils import timezone
 from django.db import models
-from typing import Any, Type, cast
+from typing import Type, cast
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 

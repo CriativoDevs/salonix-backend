@@ -2,7 +2,6 @@ import pytest
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import Group, Permission
-from django.contrib.contenttypes.models import ContentType
 from users.models import CustomUser, Tenant
 from core.models import (
     Appointment,
@@ -112,7 +111,7 @@ class TestDjangoAdmin:
         other_tenant = Tenant.objects.create(name="Outro Salão", slug="outro-salao")
 
         # Criar usuário do outro tenant
-        other_user = CustomUser.objects.create_user(
+        CustomUser.objects.create_user(
             username="other_staff",
             email="other@test.com",
             password="other123",
@@ -280,9 +279,7 @@ class TestDjangoAdmin:
         )
 
         appointments_url = reverse("salonix_admin:core_appointment_changelist")
-        response = self.client.get(
-            f"{appointments_url}?series__id__exact={series.pk}"
-        )
+        response = self.client.get(f"{appointments_url}?series__id__exact={series.pk}")
         assert response.status_code == 200
         expected_link = reverse(
             "salonix_admin:core_appointmentseries_change", args=[series.pk]
@@ -377,7 +374,7 @@ class TestAdminIntegration:
     def test_admin_with_services(self):
         """Testa admin com serviços criados."""
         # Criar serviço
-        service = Service.objects.create(
+        Service.objects.create(
             tenant=self.tenant,
             user=self.superuser,
             name="Corte de Cabelo",

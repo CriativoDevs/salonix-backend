@@ -1,4 +1,3 @@
-from django.contrib import admin
 from django.contrib.admin import AdminSite
 from users.models import Tenant, CustomUser, UserFeatureFlags
 from core.models import Service, Professional, ScheduleSlot, Appointment

@@ -92,4 +92,6 @@ def test_smoke_isolamento_por_tenant_sse(monkeypatch):
             found_ledger_b = True
             break
 
-    assert not found_ledger_b, "Tenant B recebeu indevidamente evento de ledger do Tenant A"
+    assert (
+        not found_ledger_b
+    ), "Tenant B recebeu indevidamente evento de ledger do Tenant A"

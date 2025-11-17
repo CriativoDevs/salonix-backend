@@ -247,7 +247,7 @@ class TestTenantMetaEndpoint:
 
     def test_tenant_meta_success(self):
         """Teste endpoint com tenant válido."""
-        tenant = Tenant.objects.create(
+        Tenant.objects.create(
             name="Test Salon",
             slug="test-salon",
             plan_tier=Tenant.PLAN_STANDARD,
@@ -271,7 +271,7 @@ class TestTenantMetaEndpoint:
 
     def test_tenant_meta_with_header(self):
         """Teste endpoint usando header X-Tenant-Slug."""
-        tenant = Tenant.objects.create(
+        Tenant.objects.create(
             name="Header Salon",
             slug="header-salon",
             plan_tier=Tenant.PLAN_PRO,
@@ -307,7 +307,7 @@ class TestTenantMetaEndpoint:
 
     def test_tenant_meta_inactive_tenant(self):
         """Teste endpoint com tenant inativo."""
-        tenant = Tenant.objects.create(
+        Tenant.objects.create(
             name="Inactive Salon",
             slug="inactive-salon",
             is_active=False,

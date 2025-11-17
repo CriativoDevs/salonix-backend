@@ -11,7 +11,7 @@ Este módulo fornece:
 
 import logging
 import traceback
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404

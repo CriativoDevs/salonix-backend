@@ -90,7 +90,10 @@ class OpsAuthLoginView(APIView):
                 request,
                 event="login",
                 result="failure",
-                extra={"email": request.data.get("email", ""), "reason": "invalid_payload"},
+                extra={
+                    "email": request.data.get("email", ""),
+                    "reason": "invalid_payload",
+                },
             )
             OPS_AUTH_EVENTS_TOTAL.labels(
                 event="login", result="failure", role="unknown"
@@ -100,7 +103,9 @@ class OpsAuthLoginView(APIView):
         data = serializer.validated_data
         user = getattr(serializer, "user", None)
         ops_role = data.get("ops_role", "unknown")
-        OPS_AUTH_EVENTS_TOTAL.labels(event="login", result="success", role=ops_role).inc()
+        OPS_AUTH_EVENTS_TOTAL.labels(
+            event="login", result="success", role=ops_role
+        ).inc()
         self._log_event(
             request,
             event="login",
@@ -156,7 +161,9 @@ class OpsAuthRefreshView(APIView):
 
         data = serializer.validated_data
         ops_role = data.get("ops_role", "unknown")
-        OPS_AUTH_EVENTS_TOTAL.labels(event="refresh", result="success", role=ops_role).inc()
+        OPS_AUTH_EVENTS_TOTAL.labels(
+            event="refresh", result="success", role=ops_role
+        ).inc()
         self._log_event(
             request,
             event="refresh",
@@ -192,7 +199,9 @@ class OpsTenantPagination(PageNumberPagination):
     max_page_size = 100
 
 
-class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class OpsTenantViewSet(
+    mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
     """Endpoints de gestão de tenants para o console Ops."""
 
     serializer_class = OpsTenantSerializer
@@ -207,8 +216,8 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
 
         thirty_days_ago = timezone.now() - timedelta(days=30)
 
-        owner_subquery = (
-            CustomUser.objects.filter(tenant=OuterRef("pk")).order_by("date_joined")
+        owner_subquery = CustomUser.objects.filter(tenant=OuterRef("pk")).order_by(
+            "date_joined"
         )
 
         queryset = queryset.annotate(
@@ -264,9 +273,7 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
             owner_last_login=Subquery(owner_subquery.values("last_login")[:1]),
             owner_date_joined=Subquery(owner_subquery.values("date_joined")[:1]),
             owner_trial_until=Subquery(
-                UserFeatureFlags.objects.filter(
-                    user__tenant=OuterRef("pk")
-                )
+                UserFeatureFlags.objects.filter(user__tenant=OuterRef("pk"))
                 .order_by("user__date_joined")
                 .values("trial_until")[:1]
             ),
@@ -470,7 +477,9 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            owner_data = self._reset_owner_credentials(tenant, serializer.validated_data)
+            owner_data = self._reset_owner_credentials(
+                tenant, serializer.validated_data
+            )
         return Response(owner_data, status=status.HTTP_200_OK)
 
     def _validate_plan_change(self, tenant: Tenant, new_plan: str) -> list[str]:
@@ -536,7 +545,9 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
 
         tenant.save(update_fields=list(updates))
 
-    def _reset_owner_credentials(self, tenant: Tenant, data: dict[str, Any]) -> dict[str, Any]:
+    def _reset_owner_credentials(
+        self, tenant: Tenant, data: dict[str, Any]
+    ) -> dict[str, Any]:
         email = data["email"].lower()
         username = data.get("username")
         display_name = data.get("name")
@@ -559,7 +570,11 @@ class OpsTenantViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
             base_username = email.split("@")[0]
             candidate = base_username
             idx = 1
-            while CustomUser.objects.exclude(id=owner.id).filter(username=candidate).exists():
+            while (
+                CustomUser.objects.exclude(id=owner.id)
+                .filter(username=candidate)
+                .exists()
+            ):
                 idx += 1
                 candidate = f"{base_username}{idx}"
             username = candidate
@@ -674,7 +689,9 @@ class OpsAlertViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsOpsSupportOrAdmin]
 
     def get_queryset(self):
-        return OpsAlert.objects.select_related("tenant", "resolved_by", "notification_log")
+        return OpsAlert.objects.select_related(
+            "tenant", "resolved_by", "notification_log"
+        )
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
@@ -726,7 +743,9 @@ class OpsSupportResendNotificationView(APIView):
         log_id = serializer.validated_data["notification_log_id"]
 
         try:
-            log = NotificationLog.objects.select_related("tenant", "user").get(id=log_id)
+            log = NotificationLog.objects.select_related("tenant", "user").get(
+                id=log_id
+            )
         except NotificationLog.DoesNotExist:
             raise BusinessError(
                 "Notificação não encontrada.",
@@ -755,7 +774,9 @@ class OpsSupportResendNotificationView(APIView):
 
         success = results.get(log.channel, False)
         result_label = "success" if success else "failure"
-        OPS_NOTIFICATIONS_RESEND_TOTAL.labels(channel=log.channel, result=result_label).inc()
+        OPS_NOTIFICATIONS_RESEND_TOTAL.labels(
+            channel=log.channel, result=result_label
+        ).inc()
 
         if success:
             metadata["ops_last_resend_at"] = timezone.now().isoformat()
@@ -806,7 +827,9 @@ class OpsSupportClearLockoutView(APIView):
         note = serializer.validated_data.get("note")
 
         try:
-            lockout = AccountLockout.objects.select_related("user", "tenant").get(id=lockout_id)
+            lockout = AccountLockout.objects.select_related("user", "tenant").get(
+                id=lockout_id
+            )
         except AccountLockout.DoesNotExist:
             raise BusinessError(
                 "Lockout não encontrado.",
@@ -842,13 +865,19 @@ class OpsSupportClearLockoutView(APIView):
             target_user=lockout.user,
             target_tenant=lockout.tenant,
             payload={"lockout_id": lockout.id, "note": note},
-            result={"resolved_at": lockout.resolved_at.isoformat() if lockout.resolved_at else None},
+            result={
+                "resolved_at": (
+                    lockout.resolved_at.isoformat() if lockout.resolved_at else None
+                )
+            },
         )
 
         return Response(
             {
                 "lockout_id": lockout.id,
-                "resolved_at": lockout.resolved_at.isoformat() if lockout.resolved_at else None,
+                "resolved_at": (
+                    lockout.resolved_at.isoformat() if lockout.resolved_at else None
+                ),
                 "meta": self._meta(request),
             },
             status=status.HTTP_200_OK,

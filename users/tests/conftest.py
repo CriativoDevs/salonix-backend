@@ -40,12 +40,16 @@ class _StripePaymentIntent:
     def create(**kwargs):
         _StripePaymentIntent.last_kwargs = kwargs
         # objeto mínimo com client_secret e id
-        return type("PaymentIntentObj", (), {
-            "client_secret": "pi_secret_test_123",
-            "id": "pi_test_123",
-            "amount": kwargs.get("amount", 0),
-            "currency": kwargs.get("currency", "eur"),
-        })
+        return type(
+            "PaymentIntentObj",
+            (),
+            {
+                "client_secret": "pi_secret_test_123",
+                "id": "pi_test_123",
+                "amount": kwargs.get("amount", 0),
+                "currency": kwargs.get("currency", "eur"),
+            },
+        )
 
 
 class _StripeCustomer:
@@ -64,10 +68,12 @@ def stripe_mock(monkeypatch):
     """Mocka o Stripe utilizado pelos serviços de pagamentos e utilitários."""
     # payments.services importa "stripe" no topo; substituímos por nosso SDK
     import payments.services as payments_services
+
     monkeypatch.setattr(payments_services, "stripe", _StripeSDK, raising=True)
 
     # Também garantir que get_stripe() dos utils devolva nosso SDK
     import payments.stripe_utils as stripe_utils
+
     monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK, raising=True)
 
     return _StripeSDK
@@ -88,6 +94,7 @@ def configure_credit_prices(settings, monkeypatch):
 
     # Patch do mapa estático do serviço pós-configuração
     from payments.services import CreditPurchaseService
+
     monkeypatch.setattr(
         CreditPurchaseService,
         "PRICE_TO_CREDITS",

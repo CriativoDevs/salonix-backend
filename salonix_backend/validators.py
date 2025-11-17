@@ -15,10 +15,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Union
 
 from django.core.exceptions import ValidationError
-from django.core.validators import EmailValidator, URLValidator
 from django.utils import timezone
 from django.utils.deconstruct import deconstructible
-from rest_framework import serializers
 
 from salonix_backend.error_handling import (
     BusinessError,
@@ -152,6 +150,7 @@ class PriceValidator:
 
         # Validar casas decimais (máximo 2)
         from typing import cast
+
         if cast(int, decimal_value.as_tuple().exponent) < -2:
             raise ValidationError(
                 "Preço não pode ter mais de 2 casas decimais.", code="too_many_decimals"

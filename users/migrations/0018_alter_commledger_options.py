@@ -4,14 +4,17 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0017_tenant_comm_auto_renew_tenant_comm_credit_eur_and_more'),
+        ("users", "0017_tenant_comm_auto_renew_tenant_comm_credit_eur_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='commledger',
-            options={'ordering': ['-created_at'], 'verbose_name': 'Histórico de Créditos', 'verbose_name_plural': 'Histórico de Créditos'},
+            name="commledger",
+            options={
+                "ordering": ["-created_at"],
+                "verbose_name": "Histórico de Créditos",
+                "verbose_name_plural": "Histórico de Créditos",
+            },
         ),
     ]

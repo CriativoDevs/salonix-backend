@@ -12,7 +12,7 @@ from users.models import CustomUser
 
 
 @pytest.mark.django_db
-@patch('ops.views.NotificationService')
+@patch("ops.views.NotificationService")
 def test_resend_notification_success(
     mock_notification_service,
     api_client,
@@ -22,9 +22,13 @@ def test_resend_notification_success(
 ):
     # Mock the notification service to return success
     mock_service_instance = mock_notification_service.return_value
-    mock_service_instance.send_notification.return_value = {"sms": True}  # Retornar dict com canal
-    
-    support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com")
+    mock_service_instance.send_notification.return_value = {
+        "sms": True
+    }  # Retornar dict com canal
+
+    support_user = ops_user_factory(
+        CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com"
+    )
     tenant, owner = tenant_with_owner_factory("Salon Notify")
     owner.phone_number = "+351999888777"
     owner.save(update_fields=["phone_number"])
@@ -51,7 +55,9 @@ def test_resend_notification_success(
     failed_log.refresh_from_db()
     assert failed_log.status == "sent"
     assert failed_log.metadata.get("ops_resends") == 1
-    assert OpsSupportAuditLog.objects.filter(action=OpsSupportAuditLog.Actions.RESEND_NOTIFICATION).exists()
+    assert OpsSupportAuditLog.objects.filter(
+        action=OpsSupportAuditLog.Actions.RESEND_NOTIFICATION
+    ).exists()
 
 
 @pytest.mark.django_db
@@ -61,7 +67,9 @@ def test_resend_notification_requires_failed_status(
     ops_authenticate,
     tenant_with_owner_factory,
 ):
-    support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "support_block@example.com")
+    support_user = ops_user_factory(
+        CustomUser.OpsRoles.OPS_SUPPORT, "support_block@example.com"
+    )
     tenant, owner = tenant_with_owner_factory("Salon Notify 2")
 
     log = NotificationLog.objects.create(
@@ -116,7 +124,9 @@ def test_clear_lockout_marks_resolved(
     owner.refresh_from_db()
     assert lockout.resolved_at is not None
     assert owner.is_active is True
-    assert OpsSupportAuditLog.objects.filter(action=OpsSupportAuditLog.Actions.CLEAR_LOCKOUT).exists()
+    assert OpsSupportAuditLog.objects.filter(
+        action=OpsSupportAuditLog.Actions.CLEAR_LOCKOUT
+    ).exists()
 
 
 @pytest.mark.django_db
@@ -126,7 +136,9 @@ def test_support_cannot_clear_lockout(
     ops_authenticate,
     tenant_with_owner_factory,
 ):
-    support_user = ops_user_factory(CustomUser.OpsRoles.OPS_SUPPORT, "lockout_support@example.com")
+    support_user = ops_user_factory(
+        CustomUser.OpsRoles.OPS_SUPPORT, "lockout_support@example.com"
+    )
     tenant, owner = tenant_with_owner_factory("Salon Secure 2")
 
     lockout = AccountLockout.objects.create(

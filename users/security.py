@@ -34,7 +34,10 @@ def enforce_captcha_or_raise(request) -> None:
     if bypass and token == bypass:
         logger.info(
             "Captcha bypass aceito",
-            extra={"provider": getattr(settings, "CAPTCHA_PROVIDER", ""), "bypass": True},
+            extra={
+                "provider": getattr(settings, "CAPTCHA_PROVIDER", ""),
+                "bypass": True,
+            },
         )
         return
 
@@ -45,6 +48,7 @@ def enforce_captcha_or_raise(request) -> None:
         extra={"provider": getattr(settings, "CAPTCHA_PROVIDER", ""), "bypass": False},
     )
     raise ValidationError({"captcha": ["Captcha inválido."]})
+
 
 def verify_captcha_with_provider(token: str, remote_ip: Optional[str] = None) -> bool:
     """
@@ -61,7 +65,11 @@ def verify_captcha_with_provider(token: str, remote_ip: Optional[str] = None) ->
     secret = getattr(settings, "CAPTCHA_SECRET", "")
     logger.info(
         "verify_captcha_with_provider (stub)",
-        extra={"provider": provider, "has_secret": bool(secret), "remote_ip": remote_ip is not None},
+        extra={
+            "provider": provider,
+            "has_secret": bool(secret),
+            "remote_ip": remote_ip is not None,
+        },
     )
     # Placeholder até BE-212A: retornar False para explicitar que não há verificação real
     return False

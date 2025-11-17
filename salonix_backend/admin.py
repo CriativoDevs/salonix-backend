@@ -1,15 +1,33 @@
-from django.contrib import admin
 from django.contrib.admin import AdminSite
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.db.models import Count, Q
-from django.utils.html import format_html
 from django.urls import reverse
-from users.models import Tenant, CustomUser, TenantStaffMember
-from users.admin import TenantAdmin, CustomUserAdmin, UserFeatureFlagsAdmin, TenantStaffMemberAdmin
-from core.models import Appointment, Service, Professional
-from notifications.models import Notification, NotificationLog
-from payments.models import Subscription
+from users.models import Tenant, CustomUser, TenantStaffMember, UserFeatureFlags, CommLedger
+from users.admin import (
+    TenantAdmin,
+    CustomUserAdmin,
+    UserFeatureFlagsAdmin,
+    TenantStaffMemberAdmin,
+    CommLedgerAdmin,
+)
+from core.models import Appointment, Service, Professional, ScheduleSlot, AppointmentSeries, SalonCustomer
+from core.admin import (
+    ServiceAdmin,
+    ProfessionalAdmin,
+    ScheduleSlotAdmin,
+    AppointmentAdmin,
+    AppointmentSeriesAdmin,
+    SalonCustomerAdmin,
+)
+from notifications.models import Notification, NotificationLog, NotificationDevice
+from notifications.admin import (
+    NotificationAdmin,
+    NotificationDeviceAdmin,
+    NotificationLogAdmin,
+)
+from payments.models import Subscription, PaymentCustomer
+from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
 from datetime import datetime, timedelta
 
 
@@ -111,7 +129,7 @@ class SalonixAdminSite(AdminSite):
                     sent_at__date=today, status="sent"
                 ).count(),
             }
-        except Exception as e:
+        except Exception:
             # Em caso de erro, retornar estatísticas vazias
             return {
                 "total_tenants": 0,
@@ -138,7 +156,7 @@ class SalonixAdminSite(AdminSite):
                 .filter(is_active=True)
                 .order_by("-appointments_count")[:5]
             )
-        except Exception as e:
+        except Exception:
             return Tenant.objects.none()
 
     def _get_recent_activity(self):
@@ -233,40 +251,12 @@ class SalonixAdminSite(AdminSite):
 # Instância personalizada do admin
 admin_site = SalonixAdminSite(name="salonix_admin")
 
-# Importações dos admins
-from users.admin import TenantAdmin, CustomUserAdmin, UserFeatureFlagsAdmin, CommLedgerAdmin
-from core.admin import (
-    ServiceAdmin,
-    ProfessionalAdmin,
-    ScheduleSlotAdmin,
-    AppointmentAdmin,
-    AppointmentSeriesAdmin,
-    SalonCustomerAdmin,
-)
-from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
-from notifications.admin import (
-    NotificationAdmin,
-    NotificationDeviceAdmin,
-    NotificationLogAdmin,
-)
-
-# Registros dos modelos users
-from users.models import UserFeatureFlags, CommLedger
-
 admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)
 admin_site.register(UserFeatureFlags, UserFeatureFlagsAdmin)
 admin_site.register(TenantStaffMember, TenantStaffMemberAdmin)
 admin_site.register(CommLedger, CommLedgerAdmin)
 
-from core.models import (
-    Service,
-    Professional,
-    ScheduleSlot,
-    Appointment,
-    AppointmentSeries,
-    SalonCustomer,
-)
 
 admin_site.register(Service, ServiceAdmin)
 admin_site.register(Professional, ProfessionalAdmin)
@@ -275,12 +265,9 @@ admin_site.register(Appointment, AppointmentAdmin)
 admin_site.register(AppointmentSeries, AppointmentSeriesAdmin)
 admin_site.register(SalonCustomer, SalonCustomerAdmin)
 
-from payments.models import PaymentCustomer, Subscription
 
 admin_site.register(PaymentCustomer, PaymentCustomerAdmin)
 admin_site.register(Subscription, SubscriptionAdmin)
-
-from notifications.models import Notification, NotificationDevice, NotificationLog
 
 admin_site.register(Notification, NotificationAdmin)
 admin_site.register(NotificationDevice, NotificationDeviceAdmin)

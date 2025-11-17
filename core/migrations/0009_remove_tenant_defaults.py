@@ -5,31 +5,46 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0008_add_tenant_fks_to_core_models'),
-        ('users', '0005_remove_tenant_defaults'),
+        ("core", "0008_add_tenant_fks_to_core_models"),
+        ("users", "0005_remove_tenant_defaults"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='appointment',
-            name='tenant',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='users.tenant'),
+            model_name="appointment",
+            name="tenant",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="appointments",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='professional',
-            name='tenant',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='professionals', to='users.tenant'),
+            model_name="professional",
+            name="tenant",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="professionals",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='scheduleslot',
-            name='tenant',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='schedule_slots', to='users.tenant'),
+            model_name="scheduleslot",
+            name="tenant",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="schedule_slots",
+                to="users.tenant",
+            ),
         ),
         migrations.AlterField(
-            model_name='service',
-            name='tenant',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='services', to='users.tenant'),
+            model_name="service",
+            name="tenant",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="services",
+                to="users.tenant",
+            ),
         ),
     ]
