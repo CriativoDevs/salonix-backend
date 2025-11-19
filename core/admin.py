@@ -11,6 +11,7 @@ from core.models import (
     SalonCustomer,
     ScheduleSlot,
     Service,
+    ProfessionalService,
 )
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -49,6 +50,23 @@ class ProfessionalAdminForm(forms.ModelForm):
         fields = ("staff_member", "name", "bio", "is_active")
 
 
+class ProfessionalServiceInline(admin.TabularInline):
+    model = ProfessionalService
+    fields = ("service", "is_active", "created_at")
+    readonly_fields = ("created_at",)
+    extra = 1
+    can_delete = True
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "service":
+            qs = Service.objects.select_related("tenant")
+            tenant = getattr(request.user, "tenant", None)
+            if tenant and not request.user.is_superuser:
+                qs = qs.filter(tenant=tenant)
+            kwargs["queryset"] = qs
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
 @admin.register(Professional)
 class ProfessionalAdmin(admin.ModelAdmin):
     """Admin para profissionais com filtro por tenant."""
@@ -58,6 +76,7 @@ class ProfessionalAdmin(admin.ModelAdmin):
     list_filter = ("tenant", "is_active")
     search_fields = ("name", "user__username", "tenant__name")
     readonly_fields = ("tenant", "user")
+    inlines = (ProfessionalServiceInline,)
 
     fieldsets = (
         (
@@ -82,6 +101,16 @@ class ProfessionalAdmin(admin.ModelAdmin):
             obj.user = obj.staff_member.user
             obj.tenant = obj.staff_member.tenant
         super().save_model(request, obj, form, change)
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save(commit=False)
+        # Garante que tenant e professional são definidos corretamente nos inlines
+        for inst in instances:
+            if isinstance(inst, ProfessionalService):
+                inst.tenant = form.instance.tenant
+                inst.professional = form.instance
+            inst.save()
+        formset.save_m2m()
 
     def tenant_name(self, obj):
         """Exibe nome do tenant com link."""

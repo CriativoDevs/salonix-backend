@@ -822,6 +822,8 @@ class RealtimeCreditsSSEView(APIView):
         if not tenant:
             raise AuthenticationFailed("tenant_required")
 
+        # SSE acessível a qualquer usuário autenticado do tenant
+
         credit_service = CreditService(tenant)
         # Suporte a reconexão: lê Last-Event-ID do header
         last_ledger_id = None

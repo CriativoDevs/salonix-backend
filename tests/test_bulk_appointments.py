@@ -172,12 +172,12 @@ class TestBulkAppointments(TestCase):
         data = {
             "service_id": self.service.id,
             "professional_id": self.professional.id,
-            "appointments": [{"slot_id": self.slots[0].id}] * 11,  # Máximo é 10
+            "appointments": [{"slot_id": self.slots[0].id}] * 21,  # Máximo é 20
         }
 
         response = self.client_api.post(self.url, data, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Máximo de 10 agendamentos por lote" in str(response.json())
+        assert "Máximo de 20 agendamentos por lote" in str(response.json())
 
     def test_bulk_appointment_duplicate_slots(self):
         """Teste com slots duplicados."""

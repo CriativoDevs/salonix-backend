@@ -24,6 +24,7 @@ from core.models import (
     SalonCustomer,
     Service,
     ScheduleSlot,
+    ProfessionalService,
 )
 from users.models import Tenant, TenantStaffMember
 from notifications.services import send_customer_pwa_invite
@@ -168,6 +169,14 @@ class PublicServiceListView(TenantIsolatedMixin, ListAPIView):
                 tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
                 qs = Service.objects.filter(tenant=tenant)
 
+                # Filtro por professional_id (mapeamento sugerido)
+                professional_id = self.request.GET.get("professional_id")
+                if professional_id and professional_id.isdigit():
+                    links = ProfessionalService.objects.filter(
+                        tenant=tenant, professional_id=int(professional_id), is_active=True
+                    ).values_list("service_id", flat=True)
+                    qs = qs.filter(id__in=list(links))
+
                 # Suporte a ordenação explícita via querystring
                 ordering = self.request.GET.get("ordering")
                 if ordering in {"name", "-name", "price_eur", "-price_eur"}:
@@ -197,7 +206,15 @@ class PublicProfessionalListView(TenantIsolatedMixin, ListAPIView):
                 from users.models import Tenant
 
                 tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
-                return Professional.objects.filter(tenant=tenant, is_active=True)
+                qs = Professional.objects.filter(tenant=tenant, is_active=True)
+                # Filtro por service_id (mapeamento sugerido)
+                service_id = self.request.GET.get("service_id")
+                if service_id and service_id.isdigit():
+                    links = ProfessionalService.objects.filter(
+                        tenant=tenant, service_id=int(service_id), is_active=True
+                    ).values_list("professional_id", flat=True)
+                    qs = qs.filter(id__in=list(links))
+                return qs
             except Tenant.DoesNotExist:
                 pass
         return Professional.objects.none()
@@ -372,22 +389,56 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
         user = request.user
 
         try:
-            # garantir consistência com o tenant resolvido
-            service = Service.objects.get(
-                id=cast(int, data["service_id"]), tenant=tenant
+            # IDs de serviço/profissional podem vir no nível do payload ou por item
+            top_service_id = cast(Optional[int], data.get("service_id"))
+            top_professional_id = cast(Optional[int], data.get("professional_id"))
+
+            appointments_list = cast(List[Dict[str, Any]], data["appointments"])
+            service_ids: List[int] = []
+            professional_ids: List[int] = []
+            for appt in appointments_list:
+                sid = cast(Optional[int], appt.get("service_id")) or top_service_id
+                pid = cast(Optional[int], appt.get("professional_id")) or top_professional_id
+                if sid is None or pid is None:
+                    # segurança extra: o serializer já valida isso
+                    raise ValidationError(
+                        "Cada agendamento deve informar service_id e professional_id."
+                    )
+                service_ids.append(cast(int, sid))
+                professional_ids.append(cast(int, pid))
+
+            # garantir consistência com o tenant resolvido e carregar de uma vez
+            services = list(
+                Service.objects.filter(id__in=set(service_ids), tenant=tenant)
             )
-            professional = Professional.objects.get(
-                id=cast(int, data["professional_id"]), tenant=tenant
+            professionals = list(
+                Professional.objects.filter(id__in=set(professional_ids), tenant=tenant)
             )
+            services_by_id = {s.id: s for s in services}
+            professionals_by_id = {p.id: p for p in professionals}
+
+            if len(services_by_id) != len(set(service_ids)):
+                raise ValidationError("Um ou mais serviços não existem para este tenant.")
+            if len(professionals_by_id) != len(set(professional_ids)):
+                raise ValidationError(
+                    "Um ou mais profissionais não existem para este tenant."
+                )
+
             staff_member = _get_staff_member(user)
             if _is_collaborator(user):
-                allowed = professional.user_id == getattr(user, "id", None)
-                if staff_member and professional.staff_member_id == staff_member.id:
-                    allowed = True
-                if not allowed:
-                    raise PermissionDenied(
-                        "Colaboradores só podem criar agendamentos para si mesmos."
+                # colaboradores só podem criar para si: validar todos os profissionais
+                for pid in set(professional_ids):
+                    prof = professionals_by_id.get(pid)
+                    allowed = prof and (
+                        prof.user_id == getattr(user, "id", None)
+                        or (staff_member and prof.staff_member_id == staff_member.id)
                     )
+                    if not allowed:
+                        raise PermissionDenied(
+                            "Colaboradores só podem criar agendamentos para si mesmos."
+                        )
+
+            # resolver/crear cliente
             customer = None
             customer_id = data.get("customer_id")
             if customer_id is not None:
@@ -395,7 +446,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     id=cast(int, customer_id), tenant=tenant
                 )
             elif tenant is not None:
-                customer_email = data.get("client_email")
+                customer_email = data.get("client_email") or getattr(user, "email", None)
                 customer_name = data.get("client_name") or "Cliente do salão"
                 if customer_email:
                     customer = (
@@ -415,49 +466,172 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     customer = SalonCustomer.objects.create(
                         tenant=tenant,
                         name=customer_name,
-                        email=customer_email,
+                        email=customer_email or "",
                         phone_number=data.get("client_phone") or "",
                         marketing_opt_in=True,
                         is_active=True,
                         notes="Gerado via seed/bulk de agendamentos.",
                     )
 
-            appointments_list = cast(List[Dict[str, Any]], data["appointments"])
+            # pré-carregar slots
             slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
+            slots_by_id = {s.id: s for s in slots}
 
-            with cast(Any, transaction.atomic()):
-                appointments = []
-                for appt_data in appointments_list:
-                    slot = next(s for s in slots if s.id == appt_data["slot_id"])
-                    slot.mark_booked()
-                    appointment = Appointment.objects.create(
-                        client=user,
-                        service=service,
-                        professional=professional,
-                        slot=slot,
-                        notes=str(appt_data.get("notes") or data.get("notes") or ""),
-                        status="scheduled",
-                        tenant=tenant,
-                        customer=customer,
-                    )
-                    appointments.append(appointment)
+            suggest_only = bool(data.get("suggest_only", False))
 
             from decimal import Decimal
+            total_value_dec = Decimal("0")
+
+            # Helper para sugerir próximo slot (mesmo dia; se não, dia seguinte)
+            from django.utils import timezone
+            from datetime import timedelta
+
+            def suggest_next_slot(prof: Professional, ref_slot: ScheduleSlot):
+                try:
+                    # Mesmo dia, após o horário do slot de referência
+                    same_day_qs = (
+                        ScheduleSlot.objects.filter(
+                            tenant=tenant,
+                            professional=prof,
+                            is_available=True,
+                            status="available",
+                        )
+                        .filter(start_time__date=ref_slot.start_time.date())
+                        .filter(start_time__gt=ref_slot.start_time)
+                        .order_by("start_time")
+                    )
+                    next_same = same_day_qs.first()
+                    if next_same:
+                        return {
+                            "slot_id": next_same.id,
+                            "start_time": next_same.start_time,
+                            "end_time": next_same.end_time,
+                            "professional_id": prof.id,
+                        }
+
+                    # Dia seguinte (qualquer horário disponível)
+                    next_day = ref_slot.start_time.date() + timedelta(days=1)
+                    next_day_qs = (
+                        ScheduleSlot.objects.filter(
+                            tenant=tenant,
+                            professional=prof,
+                            is_available=True,
+                            status="available",
+                        )
+                        .filter(start_time__date=next_day)
+                        .order_by("start_time")
+                    )
+                    next_any = next_day_qs.first()
+                    if next_any:
+                        return {
+                            "slot_id": next_any.id,
+                            "start_time": next_any.start_time,
+                            "end_time": next_any.end_time,
+                            "professional_id": prof.id,
+                        }
+                except Exception:
+                    pass
+                return None
+
+            # Processamento item a item
+            appointments: list[Appointment] = []
+            results: list[dict] = []
+
+            for appt_data in appointments_list:
+                sid = cast(int, appt_data.get("service_id") or top_service_id)
+                pid = cast(int, appt_data.get("professional_id") or top_professional_id)
+                service = services_by_id.get(sid)
+                professional = professionals_by_id.get(pid)
+                slot = slots_by_id.get(cast(int, appt_data["slot_id"]))
+
+                error_code = None
+                message = None
+                suggested = None
+
+                if slot is None:
+                    error_code = "slot_not_found"
+                    message = "Slot não encontrado para este tenant."
+                else:
+                    # Compatibilidade com profissional
+                    if slot.professional_id != professional.id:
+                        error_code = "slot_wrong_professional"
+                        message = "Slot não pertence ao profissional informado."
+
+                    # Passado
+                    if error_code is None and slot.start_time <= timezone.now():
+                        error_code = "slot_in_past"
+                        message = "Slot no passado."
+
+                    # Disponibilidade
+                    if error_code is None and (not slot.is_available or getattr(slot, "status", "available") != "available"):
+                        error_code = "slot_unavailable"
+                        message = "Slot indisponível."
+
+                if error_code is None and slot is not None:
+                    if suggest_only:
+                        # Apenas sugerir (não criar/agendar)
+                        suggested = {
+                            "slot_id": slot.id,
+                            "start_time": slot.start_time,
+                            "end_time": slot.end_time,
+                            "professional_id": professional.id,
+                        }
+                        results.append(
+                            {
+                                "slot_id": slot.id,
+                                "status": "ok",
+                                "message": "Slot disponível.",
+                                "suggested_slot": suggested,
+                            }
+                        )
+                    else:
+                        # Criar — deixe exceções propagarem para garantir transação atômica (500)
+                        with transaction.atomic():
+                            slot.mark_booked()
+                            appointment = Appointment.objects.create(
+                                client=user,
+                                service=service,
+                                professional=professional,
+                                slot=slot,
+                                notes=str(appt_data.get("notes") or data.get("notes") or ""),
+                                status="scheduled",
+                                tenant=tenant,
+                                customer=customer,
+                            )
+                        appointments.append(appointment)
+
+                        raw_unit = getattr(service, "price_eur", None) or getattr(service, "price", 0)
+                        try:
+                            unit_price = Decimal(str(raw_unit))
+                        except Exception:
+                            unit_price = Decimal("0")
+                        total_value_dec += unit_price
+
+                        results.append(
+                            {
+                                "slot_id": slot.id,
+                                "status": "created",
+                                "appointment_id": appointment.id,
+                                "message": "Agendamento criado.",
+                            }
+                        )
+                else:
+                    # Item inválido — sugerir próximo slot
+                    if slot is not None and professional is not None:
+                        suggested = suggest_next_slot(professional, slot)
+                    results.append(
+                        {
+                            "slot_id": cast(int, appt_data["slot_id"]),
+                            "status": "error",
+                            "error_code": error_code or "invalid",
+                            "message": message or "Item inválido.",
+                            "suggested_slot": suggested,
+                        }
+                    )
 
             count = len(appointments)
-
-            # use price_eur (fallback para price se existir)
-            raw_unit = getattr(service, "price_eur", None)
-            if raw_unit is None:
-                raw_unit = getattr(service, "price", 0)
-
-            try:
-                unit_price = Decimal(str(raw_unit))
-            except Exception:
-                unit_price = Decimal("0")
-
-            total_value = float(unit_price * count)
+            total_value = float(total_value_dec)
 
             tenant_label = tenant.id if tenant is not None else "unknown"
             BULK_APPOINTMENTS_TOTAL.labels(
@@ -465,21 +639,27 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             ).inc()
             BULK_APPOINTMENTS_SIZE.labels(tenant_id=tenant_label).inc(len(appointments))
 
-            # log estruturado de sucesso (exatamente 1 vez)
+            # log estruturado de sucesso
+            first_service_id = service_ids[0] if service_ids else None
+            first_professional_id = professional_ids[0] if professional_ids else None
             logger.info(
                 "Bulk appointments created successfully",
                 extra={
                     "tenant_id": getattr(tenant, "id", None),
                     "user_id": user.id,
-                    "service_id": service.id,  # <-- necessário
-                    "professional_id": professional.id,  # <-- necessário
-                    "appointments_count": count,  # <-- o teste espera esta chave
+                    # manter compatibilidade mínima com chaves esperadas
+                    "service_id": first_service_id,
+                    "professional_id": first_professional_id,
+                    # novas chaves informativas
+                    "service_ids": list(service_ids),
+                    "professional_ids": list(professional_ids),
+                    "appointments_count": count,
                     "appointment_ids": [a.id for a in appointments],
-                    "total_value": total_value,  # <-- o teste valida 25.0 quando count=1
+                    "total_value": total_value,
                 },
             )
 
-            # payload que os testes esperam
+            # payload
             serialized = AppointmentSerializer(
                 appointments, many=True, context={"request": request}
             ).data
@@ -489,19 +669,66 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                 else "1 agendamento criado com sucesso"
             )
 
-            return Response(
-                {
-                    "success": True,
-                    "appointment_ids": [a.id for a in appointments],
-                    "appointments_created": count,
-                    "total_value": total_value,  # <-- o teste valida 75.0 (3 * 25.00)
-                    "service_name": service.name,
-                    "professional_name": professional.name,
-                    "appointments": serialized,
-                    "message": message,
-                },
-                status=drf_status.HTTP_201_CREATED,
-            )
+            # nomes agregados (primeiro item para compatibilidade)
+            service_names = [services_by_id[sid].name for sid in service_ids]
+            professional_names = [professionals_by_id[pid].name for pid in professional_ids]
+
+            # Envio de e-mail consolidado apenas quando não for sugestão
+            if not suggest_only:
+                try:
+                    if count > 0:
+                        from core.email_utils import send_bulk_appointment_confirmation_email
+                        consolidated_items = [
+                            {
+                                "service_name": a.service.name,
+                                "start_time": a.slot.start_time,
+                                "professional_name": a.professional.name,
+                            }
+                            for a in appointments
+                        ]
+                        client_name = str(data.get("client_name") or getattr(user, "username", "Cliente"))
+                        send_bulk_appointment_confirmation_email(
+                            to_email=(data.get("client_email") or getattr(user, "email", "")),
+                            client_name=client_name,
+                            items=consolidated_items,
+                            salon_name=(tenant.name if tenant else "Salonix"),
+                        )
+                except Exception as e:  # pragma: no cover
+                    logger.warning("Falha ao enviar e-mail consolidado", extra={"error": str(e)})
+
+            response_payload = {
+                "success": count == len(appointments_list),
+                "appointment_ids": [a.id for a in appointments],
+                "appointments_created": count,
+                "total_value": total_value,
+                # compatibilidade mínima
+                "service_name": service_names[0] if service_names else None,
+                "professional_name": professional_names[0] if professional_names else None,
+                # novos campos
+                "service_names": service_names,
+                "professional_names": professional_names,
+                "appointments": serialized,
+                "results": results,
+                "message": message,
+            }
+
+            # Status HTTP
+            if suggest_only:
+                status_code = drf_status.HTTP_200_OK
+            else:
+                # 201 (sucesso total), 207 (sucesso parcial), 400 (todos falharam)
+                if count == len(appointments_list):
+                    status_code = drf_status.HTTP_201_CREATED
+                    BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="success").inc()
+                elif count == 0:
+                    status_code = drf_status.HTTP_400_BAD_REQUEST
+                    BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="validation_error").inc()
+                    BULK_APPOINTMENTS_ERRORS.labels(tenant_id=tenant_label, status="validation_error").inc()
+                else:
+                    status_code = 207  # Multi-Status
+                    BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="partial").inc()
+
+            return Response(response_payload, status=status_code)
 
         except ValidationError as e:
             # se cair aqui por alguma validação de negócio extra
@@ -1177,8 +1404,19 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Filtrar apenas por tenant (TenantIsolatedMixin cuida do escopo)
-        return super().get_queryset()
+        # Filtrar por tenant (TenantIsolatedMixin cuida do escopo) e opcionalmente por professional_id
+        qs = super().get_queryset()
+        professional_id = self.request.query_params.get("professional_id")
+        if professional_id and str(professional_id).isdigit():
+            tenant = getattr(self.request, "tenant", None) or getattr(
+                self.request.user, "tenant", None
+            )
+            if tenant:
+                links = ProfessionalService.objects.filter(
+                    tenant=tenant, professional_id=int(professional_id), is_active=True
+                ).values_list("service_id", flat=True)
+                qs = qs.filter(id__in=list(links))
+        return qs
 
     def perform_create(self, serializer):
         # Preferir tenant do request (usuário autenticado); se ausente (ex.: superuser),
@@ -1248,6 +1486,17 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Filtro opcional por service_id
+        service_id = self.request.query_params.get("service_id")
+        if service_id and str(service_id).isdigit():
+            tenant = getattr(self.request, "tenant", None) or getattr(
+                self.request.user, "tenant", None
+            )
+            if tenant:
+                links = ProfessionalService.objects.filter(
+                    tenant=tenant, service_id=int(service_id), is_active=True
+                ).values_list("professional_id", flat=True)
+                qs = qs.filter(id__in=list(links))
         user = self.request.user
         if user.is_superuser or user.has_staff_role(
             TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
