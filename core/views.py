@@ -4,7 +4,7 @@ from rest_framework import status as drf_status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS, AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -56,7 +56,7 @@ from django.utils.dateparse import parse_datetime, parse_date
 from prometheus_client import Counter, REGISTRY
 
 from users.permissions import IsSalonOwnerOfAppointment
-from core.utils.ics import ICSGenerator
+from core.utils.ics import ICSGenerator, verify_public_ics_token
 
 import csv
 import io
@@ -683,6 +683,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                                 "service_name": a.service.name,
                                 "start_time": a.slot.start_time,
                                 "professional_name": a.professional.name,
+                                "appointment_id": a.id,
                             }
                             for a in appointments
                         ]
@@ -896,6 +897,41 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
             serialized = AppointmentSerializer(
                 appointments, many=True, context={"request": request}
             ).data
+
+            # Envio de e-mail consolidado para o cliente da série
+            try:
+                count = len(appointments)
+                if count > 0:
+                    from core.email_utils import (
+                        send_bulk_appointment_confirmation_email,
+                    )
+                    consolidated_items = [
+                        {
+                            "service_name": a.service.name,
+                            "start_time": a.slot.start_time,
+                            "professional_name": a.professional.name,
+                            "appointment_id": a.id,
+                        }
+                        for a in appointments
+                    ]
+                    client_name = (
+                        (getattr(customer, "name", None) or str(data.get("client_name") or getattr(user, "username", "Cliente")))
+                    )
+                    to_email = (
+                        (getattr(customer, "email", None) or data.get("client_email") or getattr(user, "email", ""))
+                    )
+                    if to_email:
+                        send_bulk_appointment_confirmation_email(
+                            to_email=to_email,
+                            client_name=client_name,
+                            items=consolidated_items,
+                            salon_name=(tenant.name if tenant else "Salonix"),
+                        )
+            except Exception as e:  # pragma: no cover
+                logger.warning(
+                    "Falha ao enviar e-mail consolidado (series)",
+                    extra={"error": str(e)},
+                )
 
             return Response(
                 {
@@ -2619,6 +2655,112 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
             extra={
                 "tenant_id": tenant.id,
                 "user_id": user.id,
+                "appointment_id": appointment.id,
+                "ics_filename": filename,
+            },
+        )
+        return response
+
+
+class AppointmentICSDownloadPublicView(APIView):
+    """
+    GET /api/public/appointments/{id}/ics/?token=...
+
+    Download público de arquivo .ics protegido por token HMAC.
+    Não requer autenticação.
+    """
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                description="ICS calendar file",
+                response=OpenApiTypes.BINARY,
+            )
+        }
+    )
+    def get(self, request, pk):
+        token = request.query_params.get("token")
+        if not token:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id="unknown", status="missing_token").inc()
+            return Response(
+                {"detail": "Token obrigatório."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            appointment = Appointment.objects.select_related(
+                "client",
+                "service",
+                "professional",
+                "professional__staff_member",
+                "slot",
+                "tenant",
+            ).get(pk=pk)
+        except Appointment.DoesNotExist:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id="unknown", status="not_found").inc()
+            return Response(
+                {"detail": "Agendamento não encontrado."},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id="unknown", status="error").inc()
+            logger.error(
+                f"Public ICS download failed with error: {e}",
+                exc_info=True,
+                extra={
+                    "appointment_id": pk,
+                    "error": str(e),
+                },
+            )
+            return Response(
+                {"detail": "Erro interno do servidor."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        tenant_id = str(getattr(appointment, "tenant_id", "unknown"))
+
+        # Verificar token
+        if not verify_public_ics_token(appointment, token):
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant_id, status="invalid_token").inc()
+            return Response(
+                {"detail": "Token inválido."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            ics_content = ICSGenerator.generate_ics(appointment)
+            filename = ICSGenerator.get_filename(appointment)
+        except Exception as e:
+            ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant_id, status="error").inc()
+            logger.error(
+                f"Public ICS generation failed with error: {e}",
+                exc_info=True,
+                extra={
+                    "tenant_id": tenant_id,
+                    "appointment_id": appointment.id,
+                    "error": str(e),
+                },
+            )
+            return Response(
+                {"detail": "Erro ao gerar arquivo ICS."},
+                status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        response = HttpResponse(
+            ics_content.encode("utf-8"), content_type="text/calendar; charset=utf-8"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+
+        ICS_DOWNLOADS_TOTAL.labels(tenant_id=tenant_id, status="success").inc()
+        logger.info(
+            f"Public ICS download successful for appointment {appointment.id}",
+            extra={
+                "tenant_id": tenant_id,
                 "appointment_id": appointment.id,
                 "ics_filename": filename,
             },
