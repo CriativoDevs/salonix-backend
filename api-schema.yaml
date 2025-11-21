@@ -127,6 +127,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkAppointmentResponse'
           description: ''
+  /api/appointments/bulk/mixed/:
+    post:
+      operationId: appointments_bulk_mixed_create
+      description: |-
+        POST /api/appointments/bulk/mixed/
+
+        Criar múltiplos agendamentos com itens de serviços e profissionais variados.
+        Sucesso parcial é possível; cada item retorna seu resultado.
+      tags:
+      - appointments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixedBulkAppointmentResponse'
+          description: ''
   /api/appointments/series/:
     post:
       operationId: appointments_series_create
@@ -3884,6 +3915,122 @@ components:
       - message
       - professional_name
       - service_name
+      - success
+      - total_value
+    MixedBulkAppointmentItem:
+      type: object
+      description: Item de agendamento contendo slot, serviço e profissional.
+      properties:
+        slot_id:
+          type: integer
+        service_id:
+          type: integer
+        professional_id:
+          type: integer
+        notes:
+          type: string
+          maxLength: 500
+      required:
+      - slot_id
+      - service_id
+      - professional_id
+    MixedBulkAppointmentRequest:
+      type: object
+      description: |-
+        Request para criação mista de múltiplos agendamentos.
+
+        Estrutura esperada:
+        {
+            "customer_id": 123,
+            "client_name": "João Silva",
+            "client_email": "joao@email.com",
+            "client_phone": "+351912345678",
+            "items": [
+                {"slot_id": 10, "service_id": 1, "professional_id": 2, "notes": "..."},
+                {"slot_id": 15, "service_id": 3, "professional_id": 5},
+                {"slot_id": 20, "service_id": 1, "professional_id": 4}
+            ]
+        }
+      properties:
+        customer_id:
+          type: integer
+          nullable: true
+        client_name:
+          type: string
+          maxLength: 100
+        client_email:
+          type: string
+          format: email
+        client_phone:
+          type: string
+          maxLength: 20
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MixedBulkAppointmentItem'
+      required:
+      - items
+    MixedBulkItemSuggestedSlot:
+      type: object
+      description: Slot sugerido quando o slot solicitado está indisponível.
+      properties:
+        slot_id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        professional_id:
+          type: integer
+    MixedBulkItemResult:
+      type: object
+      description: Resultado individual por item do mixed bulk.
+      properties:
+        slot_id:
+          type: integer
+        status:
+          type: string
+          description: created ou error
+        message:
+          type: string
+        appointment_id:
+          type: integer
+          nullable: true
+        suggested_slot:
+          allOf:
+          - $ref: '#/components/schemas/MixedBulkItemSuggestedSlot'
+          nullable: true
+      required:
+      - message
+      - slot_id
+      - status
+    MixedBulkAppointmentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        appointment_ids:
+          type: array
+          items:
+            type: integer
+        appointments_created:
+          type: integer
+        total_value:
+          type: number
+          format: double
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MixedBulkItemResult'
+        message:
+          type: string
+      required:
+      - appointment_ids
+      - appointments_created
+      - message
+      - results
       - success
       - total_value
     BulkAppointmentSlotRequest:

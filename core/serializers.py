@@ -713,6 +713,99 @@ class BulkAppointmentResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class MixedBulkAppointmentItemSerializer(serializers.Serializer):
+    """Item para criação mista: requer service_id e professional_id por slot."""
+
+    slot_id = serializers.IntegerField()
+    service_id = serializers.IntegerField()
+    professional_id = serializers.IntegerField()
+    notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate_slot_id(self, value):
+        if value is None or int(value) <= 0:
+            raise serializers.ValidationError("slot_id inválido.")
+        return int(value)
+
+
+class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
+    """
+    Payload para POST /appointments/bulk/mixed/.
+
+    Estrutura esperada:
+    {
+        "customer_id": 123,  # opcional
+        "client_name": "João Silva",  # opcional
+        "client_email": "joao@email.com",  # opcional
+        "client_phone": "+351912345678",  # opcional
+        "items": [
+            {"slot_id": 10, "service_id": 1, "professional_id": 2, "notes": "..."},
+            {"slot_id": 15, "service_id": 3, "professional_id": 5},
+            {"slot_id": 20, "service_id": 1, "professional_id": 4}
+        ]
+    }
+    """
+
+    customer_id = serializers.IntegerField(required=False, allow_null=True)
+    client_name = serializers.CharField(max_length=100, required=False)
+    client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+    client_phone = serializers.CharField(max_length=20, required=False)
+    items = MixedBulkAppointmentItemSerializer(many=True)
+
+    def _resolve_tenant(self):
+        request = self.context.get("request")
+        if request is not None:
+            user = getattr(request, "user", None)
+            if (
+                user
+                and getattr(user, "is_authenticated", False)
+                and hasattr(user, "tenant")
+            ):
+                return user.tenant
+            if hasattr(request, "tenant"):
+                return request.tenant
+        return None
+
+    def validate_client_phone(self, value):
+        import re
+        if not re.fullmatch(r"(?:\+?351)?[29]\d{8}", (value or "").strip()):
+            raise serializers.ValidationError("Formato de telefone inválido.")
+        return value
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Pelo menos um agendamento é obrigatório.")
+        if len(value) > 20:
+            raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
+
+        # slots duplicados são erro de validação
+        try:
+            slot_ids = [int(item["slot_id"]) for item in value]
+        except Exception:
+            raise serializers.ValidationError("Itens devem conter slot_id válido.")
+        if len(slot_ids) != len(set(slot_ids)):
+            raise serializers.ValidationError("Slots duplicados não são permitidos.")
+
+        # Demais validações (existência, disponibilidade, compatibilidades) serão tratadas item a item na view
+        return value
+
+
+class MixedBulkItemResultSerializer(serializers.Serializer):
+    slot_id = serializers.IntegerField()
+    status = serializers.CharField()
+    message = serializers.CharField()
+    appointment_id = serializers.IntegerField(required=False)
+    suggested_slot = serializers.JSONField(required=False)
+
+
+class MixedBulkAppointmentResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    appointment_ids = serializers.ListField(child=serializers.IntegerField())
+    appointments_created = serializers.IntegerField()
+    total_value = serializers.FloatField()
+    results = MixedBulkItemResultSerializer(many=True)
+    message = serializers.CharField()
+
+
 class AppointmentSeriesCreateResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     series_id = serializers.IntegerField()

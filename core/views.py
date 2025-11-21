@@ -38,6 +38,8 @@ from core.serializers import (
     AppointmentSeriesOccurrenceCancelResponseSerializer,
     BulkAppointmentResponseSerializer,
     BulkAppointmentSerializer,
+    MixedBulkAppointmentRequestSerializer,
+    MixedBulkAppointmentResponseSerializer,
     ProfessionalSerializer,
     SalonCustomerSerializer,
     ServiceSerializer,
@@ -771,6 +773,276 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                 {"detail": "Erro interno do servidor."},
                 status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=MixedBulkAppointmentRequestSerializer,
+        responses={201: MixedBulkAppointmentResponseSerializer},
+    )
+    def post(self, request):
+        serializer = MixedBulkAppointmentRequestSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = request.user
+        tenant = getattr(user, "tenant", None) or getattr(request, "tenant", None)
+
+        # Resolver/gerar cliente
+        customer = None
+        customer_id = data.get("customer_id")
+        if customer_id:
+            try:
+                customer = SalonCustomer.objects.get(id=int(customer_id), tenant=tenant)
+            except SalonCustomer.DoesNotExist:
+                raise ValidationError({"customer_id": "Cliente não encontrado para este tenant."})
+        else:
+            name = (data.get("client_name") or "").strip()
+            email = (data.get("client_email") or "").strip()
+            phone = (data.get("client_phone") or "").strip()
+            if name or email or phone:
+                customer = SalonCustomer.objects.create(
+                    tenant=tenant,
+                    name=name or (getattr(user, "username", "Cliente") or "Cliente"),
+                    email=email or getattr(user, "email", ""),
+                    phone_number=phone,
+                    marketing_opt_in=True,
+                    is_active=True,
+                    notes="Gerado via mixed bulk de agendamentos.",
+                )
+
+        # Pré-carregar slots/serviços/profissionais
+        item_list = cast(List[Dict[str, Any]], data.get("items") or [])
+        slot_ids = [int(item["slot_id"]) for item in item_list]
+        service_ids = [int(item["service_id"]) for item in item_list]
+        professional_ids = [int(item["professional_id"]) for item in item_list]
+
+        slots = list(ScheduleSlot.objects.filter(id__in=set(slot_ids), tenant=tenant))
+        services = list(Service.objects.filter(id__in=set(service_ids), tenant=tenant))
+        professionals = list(Professional.objects.filter(id__in=set(professional_ids), tenant=tenant))
+        slots_by_id = {s.id: s for s in slots}
+        services_by_id = {s.id: s for s in services}
+        professionals_by_id = {p.id: p for p in professionals}
+
+        from decimal import Decimal
+        total_value_dec = Decimal("0")
+        appointments: List[Appointment] = []
+        results: List[Dict[str, Any]] = []
+
+        # Helper local para sugerir próximo slot
+        from datetime import timedelta
+        from django.utils import timezone
+
+        def _suggest_next_slot(prof: Professional, ref_slot: ScheduleSlot):
+            try:
+                same_day_qs = (
+                    ScheduleSlot.objects.filter(
+                        tenant=tenant,
+                        professional=prof,
+                        is_available=True,
+                        status="available",
+                    )
+                    .filter(start_time__date=ref_slot.start_time.date())
+                    .filter(start_time__gt=ref_slot.start_time)
+                    .order_by("start_time")
+                )
+                next_same = same_day_qs.first()
+                if next_same:
+                    return {
+                        "slot_id": next_same.id,
+                        "start_time": next_same.start_time,
+                        "end_time": next_same.end_time,
+                        "professional_id": prof.id,
+                    }
+
+                next_day = ref_slot.start_time.date() + timedelta(days=1)
+                next_day_qs = (
+                    ScheduleSlot.objects.filter(
+                        tenant=tenant,
+                        professional=prof,
+                        is_available=True,
+                        status="available",
+                    )
+                    .filter(start_time__date=next_day)
+                    .order_by("start_time")
+                )
+                next_any = next_day_qs.first()
+                if next_any:
+                    return {
+                        "slot_id": next_any.id,
+                        "start_time": next_any.start_time,
+                        "end_time": next_any.end_time,
+                        "professional_id": prof.id,
+                    }
+            except Exception:
+                pass
+            return None
+
+        # Processar itens com sucesso parcial
+        for item in item_list:
+            slot = slots_by_id.get(int(item["slot_id"]))
+            service = services_by_id.get(int(item["service_id"]))
+            professional = professionals_by_id.get(int(item["professional_id"]))
+            suggested = None
+
+            error_code = None
+            message = None
+
+            if slot is None or service is None or professional is None:
+                error_code = "not_found"
+                message = "Item inválido: recurso não encontrado."
+            else:
+                if slot.professional_id != professional.id:
+                    error_code = "wrong_professional"
+                    message = "Slot não pertence ao profissional informado."
+                elif slot.start_time <= timezone.now():
+                    error_code = "slot_in_past"
+                    message = "Slot no passado."
+                elif not slot.is_available or getattr(slot, "status", "available") != "available":
+                    error_code = "slot_unavailable"
+                    message = "Slot indisponível."
+                else:
+                    # serviço cabe no slot
+                    try:
+                        duration = int(getattr(service, "duration_minutes", 0) or 0)
+                    except Exception:
+                        duration = 0
+                    slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
+                    if duration > 0 and duration > slot_minutes:
+                        error_code = "incompatible_service"
+                        message = "Serviço não cabe no slot."
+                    # profissional oferece serviço
+                    elif not ProfessionalService.objects.filter(
+                        tenant=tenant, service_id=service.id, professional_id=professional.id
+                    ).exists():
+                        error_code = "not_offered"
+                        message = "Profissional não oferece o serviço."
+
+            if error_code is None and slot is not None and service is not None and professional is not None:
+                try:
+                    with transaction.atomic():
+                        slot.mark_booked()
+                        appointment = Appointment.objects.create(
+                            client=user,
+                            service=service,
+                            professional=professional,
+                            slot=slot,
+                            notes=str(item.get("notes") or ""),
+                            status="scheduled",
+                            tenant=tenant,
+                            customer=customer,
+                        )
+                    appointments.append(appointment)
+                    raw_unit = getattr(service, "price_eur", None) or getattr(service, "price", 0)
+                    try:
+                        unit_price = Decimal(str(raw_unit))
+                    except Exception:
+                        unit_price = Decimal("0")
+                    total_value_dec += unit_price
+                    results.append(
+                        {
+                            "slot_id": slot.id,
+                            "status": "created",
+                            "appointment_id": appointment.id,
+                            "message": "Agendamento criado.",
+                        }
+                    )
+                except Exception as e:
+                    suggested = _suggest_next_slot(professional, slot)
+                    results.append(
+                        {
+                            "slot_id": slot.id,
+                            "status": "error",
+                            "message": f"Falha ao criar agendamento: {str(e)}",
+                            "suggested_slot": suggested,
+                        }
+                    )
+            else:
+                if slot is not None and professional is not None:
+                    suggested = _suggest_next_slot(professional, slot)
+                results.append(
+                    {
+                        "slot_id": int(item.get("slot_id")),
+                        "status": "error",
+                        "message": message or "Item inválido.",
+                        "suggested_slot": suggested,
+                    }
+                )
+
+        count = len(appointments)
+        total_value = float(total_value_dec)
+
+        tenant_label = tenant.id if tenant is not None else "unknown"
+        if count == len(item_list):
+            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="success").inc()
+        elif count == 0:
+            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="validation_error").inc()
+            BULK_APPOINTMENTS_ERRORS.labels(tenant_id=tenant_label, status="validation_error").inc()
+        else:
+            BULK_APPOINTMENTS_TOTAL.labels(tenant_id=tenant_label, status="partial").inc()
+        BULK_APPOINTMENTS_SIZE.labels(tenant_id=tenant_label).inc(count)
+
+        logger.info(
+            "Mixed bulk appointments processed",
+            extra={
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": user.id,
+                "appointments_count": count,
+                "appointment_ids": [a.id for a in appointments],
+                "total_value": total_value,
+            },
+        )
+
+        # Enviar e-mail consolidado
+        try:
+            if count > 0:
+                from core.email_utils import send_bulk_appointment_confirmation_email
+                consolidated_items = [
+                    {
+                        "service_name": a.service.name,
+                        "start_time": a.slot.start_time,
+                        "professional_name": a.professional.name,
+                        "appointment_id": a.id,
+                    }
+                    for a in appointments
+                ]
+                client_name = str(data.get("client_name") or getattr(user, "username", "Cliente"))
+                send_bulk_appointment_confirmation_email(
+                    to_email=(data.get("client_email") or getattr(user, "email", "")),
+                    client_name=client_name,
+                    items=consolidated_items,
+                    salon_name=(tenant.name if tenant else "Salonix"),
+                )
+        except Exception as e:  # pragma: no cover
+            logger.warning("Falha ao enviar e-mail consolidado (mixed)", extra={"error": str(e)})
+
+        message = (
+            f"{count} agendamentos criados com sucesso"
+            if count != 1
+            else "1 agendamento criado com sucesso"
+        )
+
+        response_payload = {
+            "success": count == len(item_list),
+            "appointment_ids": [a.id for a in appointments],
+            "appointments_created": count,
+            "total_value": total_value,
+            "results": results,
+            "message": message,
+        }
+
+        if count == len(item_list):
+            status_code = drf_status.HTTP_201_CREATED
+        elif count == 0:
+            status_code = drf_status.HTTP_400_BAD_REQUEST
+        else:
+            status_code = 207
+
+        return Response(response_payload, status=status_code)
 
 
 class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
