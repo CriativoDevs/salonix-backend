@@ -689,10 +689,22 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             }
                             for a in appointments
                         ]
-                        client_name = str(data.get("client_name") or getattr(user, "username", "Cliente"))
+                        # Priorizar dados do cliente resolvido
+                        recipient_email = (
+                            (customer.email if customer and customer.email else None)
+                            or data.get("client_email")
+                            or getattr(user, "email", "")
+                        )
+                        client_display_name = (
+                            (customer.name if customer and customer.name else None)
+                            or data.get("client_name")
+                            or (getattr(user, "get_full_name", lambda: None)() or None)
+                            or getattr(user, "username", None)
+                            or (getattr(user, "email", "").split("@")[0])
+                        )
                         send_bulk_appointment_confirmation_email(
-                            to_email=(data.get("client_email") or getattr(user, "email", "")),
-                            client_name=client_name,
+                            to_email=recipient_email,
+                            client_name=str(client_display_name or "Cliente"),
                             items=consolidated_items,
                             salon_name=(tenant.name if tenant else "Salonix"),
                         )
@@ -1010,10 +1022,22 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     }
                     for a in appointments
                 ]
-                client_name = str(data.get("client_name") or getattr(user, "username", "Cliente"))
+                # Priorizar dados do cliente resolvido
+                recipient_email = (
+                    (customer.email if customer and customer.email else None)
+                    or data.get("client_email")
+                    or getattr(user, "email", "")
+                )
+                client_display_name = (
+                    (customer.name if customer and customer.name else None)
+                    or data.get("client_name")
+                    or (getattr(user, "get_full_name", lambda: None)() or None)
+                    or getattr(user, "username", None)
+                    or (getattr(user, "email", "").split("@")[0])
+                )
                 send_bulk_appointment_confirmation_email(
-                    to_email=(data.get("client_email") or getattr(user, "email", "")),
-                    client_name=client_name,
+                    to_email=recipient_email,
+                    client_name=str(client_display_name or "Cliente"),
                     items=consolidated_items,
                     salon_name=(tenant.name if tenant else "Salonix"),
                 )
