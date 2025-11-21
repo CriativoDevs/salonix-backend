@@ -32,7 +32,18 @@ class ICSGenerator:
 
         # Dados do agendamento
         start_time = appointment.slot.start_time
+        # Ajustar término para refletir a duração do serviço
         end_time = appointment.slot.end_time
+        try:
+            dur = int(getattr(appointment.service, "duration_minutes", 0) or 0)
+        except Exception:
+            dur = 0
+        if dur and hasattr(start_time, "__add"):
+            try:
+                from datetime import timedelta as _td
+                end_time = start_time + _td(minutes=dur)
+            except Exception:
+                pass
 
         # Garantir que temos datetime objects (não strings dos testes)
         if isinstance(start_time, str):

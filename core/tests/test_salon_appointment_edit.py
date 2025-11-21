@@ -6,8 +6,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from core.models import Appointment, Service, Professional, ScheduleSlot
-from users.models import CustomUser
+from core.models import Appointment, Service, Professional, ScheduleSlot, AppointmentReservedSlot
+from users.models import CustomUser, Tenant
 
 
 @pytest.fixture
@@ -189,3 +189,128 @@ def test_cancel_already_cancelled_returns_400(base_setup):
         f"/api/salon/appointments/{appt.id}/", {"status": "cancelled"}, format="json"
     )
     assert r2.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_cancel_long_service_frees_all_reserved_slots():
+    tenant = Tenant.objects.create(name="Salon Test", slug="salon-test")
+    salon_owner = CustomUser.objects.create_user(
+        username="salon", password="pass", email="salon@example.com", tenant=tenant
+    )
+    client_user = CustomUser.objects.create_user(
+        username="client", password="pass", email="client@example.com", tenant=tenant
+    )
+
+    service = Service.objects.create(
+        tenant=tenant, user=salon_owner, name="Tratamento", duration_minutes=90, price_eur="50.00"
+    )
+    prof = Professional.objects.create(tenant=tenant, user=salon_owner, name="Maria", is_active=True)
+    now = timezone.now()
+    a = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=1, hours=9),
+        end_time=now + timedelta(days=1, hours=9, minutes=45),
+        is_available=True,
+        status="available",
+    )
+    b = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=1, hours=9, minutes=45),
+        end_time=now + timedelta(days=1, hours=10, minutes=30),
+        is_available=True,
+        status="available",
+    )
+    a.mark_booked(); b.mark_booked()
+    appt = Appointment.objects.create(
+        tenant=tenant, client=client_user, service=service, professional=prof, slot=a, status="scheduled"
+    )
+    AppointmentReservedSlot.objects.create(tenant=tenant, appointment=appt, slot=b)
+
+    c = auth_client(salon_owner)
+    resp = c.patch(
+        f"/api/salon/appointments/{appt.id}/", {"status": "cancelled"}, format="json"
+    )
+    assert resp.status_code == status.HTTP_200_OK
+    appt.refresh_from_db(); a.refresh_from_db(); b.refresh_from_db()
+    assert appt.status == "cancelled"
+    assert a.is_available is True and a.status == "available"
+    assert b.is_available is True and b.status == "available"
+    assert AppointmentReservedSlot.objects.filter(appointment=appt).count() == 0
+
+
+@pytest.mark.django_db
+def test_reschedule_long_service_reserves_new_block_and_releases_old():
+    tenant = Tenant.objects.create(name="Salon Test 2", slug="salon-test-2")
+    salon_owner = CustomUser.objects.create_user(
+        username="salon", password="pass", email="salon@example.com", tenant=tenant
+    )
+    client_user = CustomUser.objects.create_user(
+        username="client", password="pass", email="client@example.com", tenant=tenant
+    )
+
+    service = Service.objects.create(
+        tenant=tenant, user=salon_owner, name="SPA", duration_minutes=90, price_eur="120.00"
+    )
+    prof = Professional.objects.create(tenant=tenant, user=salon_owner, name="Helena", is_active=True)
+    now = timezone.now()
+    # bloco antigo
+    a = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=2, hours=9),
+        end_time=now + timedelta(days=2, hours=9, minutes=45),
+        is_available=True,
+        status="available",
+    )
+    b = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=2, hours=9, minutes=45),
+        end_time=now + timedelta(days=2, hours=10, minutes=30),
+        is_available=True,
+        status="available",
+    )
+    a.mark_booked(); b.mark_booked()
+    appt = Appointment.objects.create(
+        tenant=tenant, client=client_user, service=service, professional=prof, slot=a, status="scheduled"
+    )
+    AppointmentReservedSlot.objects.create(tenant=tenant, appointment=appt, slot=b)
+
+    # novo bloco
+    c = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=3, hours=9),
+        end_time=now + timedelta(days=3, hours=9, minutes=45),
+        is_available=True,
+        status="available",
+    )
+    d = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now + timedelta(days=3, hours=9, minutes=45),
+        end_time=now + timedelta(days=3, hours=10, minutes=30),
+        is_available=True,
+        status="available",
+    )
+
+    cli = auth_client(salon_owner)
+    resp = cli.patch(
+        f"/api/salon/appointments/{appt.id}/", {"slot": c.id}, format="json"
+    )
+    assert resp.status_code == status.HTTP_200_OK
+
+    # antigos liberados
+    a.refresh_from_db(); b.refresh_from_db(); appt.refresh_from_db()
+    assert a.is_available is True and a.status == "available"
+    assert b.is_available is True and b.status == "available"
+    assert AppointmentReservedSlot.objects.filter(appointment=appt, slot=b).count() == 0
+
+    # novos reservados e vínculo criado
+    c.refresh_from_db(); d.refresh_from_db()
+    assert appt.slot_id == c.id
+    assert c.is_available is False and c.status == "booked"
+    assert d.is_available is False and d.status == "booked"
+    assert AppointmentReservedSlot.objects.filter(appointment=appt, slot=d).count() == 1

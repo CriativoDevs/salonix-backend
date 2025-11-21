@@ -172,6 +172,56 @@ class TestICSGenerator:
         assert filename.endswith(".ics")
         assert len(filename.split("_")) >= 3  # agendamento_service_date.ics
 
+    def test_dtend_uses_service_duration(self, tenant_fixture, user_fixture):
+        """DTEND deve refletir duration_minutes do serviço, não o fim do slot."""
+        service = Service.objects.create(
+            tenant=tenant_fixture,
+            user=user_fixture,
+            name="Longo",
+            duration_minutes=90,
+            price_eur=50.0,
+        )
+        professional = Professional.objects.create(
+            tenant=tenant_fixture,
+            user=user_fixture,
+            name="Pro",
+            bio="",
+        )
+        start = timezone.now() + timedelta(days=1)
+        # slot de 90 min e serviço com 90 min
+        slot = ScheduleSlot.objects.create(
+            tenant=tenant_fixture,
+            professional=professional,
+            start_time=start,
+            end_time=start + timedelta(minutes=90),
+            is_available=False,
+        )
+        appt = Appointment.objects.create(
+            tenant=tenant_fixture,
+            client=user_fixture,
+            service=service,
+            professional=professional,
+            slot=slot,
+            status="scheduled",
+        )
+
+        ics = ICSGenerator.generate_ics(appt)
+        # Validar que DTEND - DTSTART == 90 minutos
+        def _extract(field: str) -> str:
+            for line in ics.split("\r\n"):
+                if line.startswith(field + ":"):
+                    return line.split(":", 1)[1]
+            return ""
+
+        dtstart_s = _extract("DTSTART")
+        dtend_s = _extract("DTEND")
+        assert dtstart_s and dtend_s
+        from datetime import datetime as _dt
+        fmt = "%Y%m%dT%H%M%SZ"
+        dtstart = _dt.strptime(dtstart_s, fmt)
+        dtend = _dt.strptime(dtend_s, fmt)
+        assert (dtend - dtstart) == timedelta(minutes=90)
+
     def test_ics_status_mapping(self):
         """Teste mapeamento de status do agendamento para .ics."""
         assert ICSGenerator._get_ics_status("scheduled") == "CONFIRMED"

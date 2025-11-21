@@ -292,3 +292,32 @@ class Appointment(models.Model):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"
         customer_name = self.customer.name if self.customer else "Sem cliente"
         return f"{customer_name} - {self.service.name} com {self.professional.name} ({tenant_name})"
+
+
+class AppointmentReservedSlot(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="appointment_reserved_slots",
+    )
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name="reserved_slots",
+    )
+    slot = models.ForeignKey(
+        ScheduleSlot,
+        on_delete=models.CASCADE,
+        related_name="reserved_by_appointments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_appres_tenant_idx"),
+            models.Index(fields=["tenant", "appointment"], name="core_appres_app_idx"),
+        ]
+        ordering = ("appointment_id", "slot_id")
+
+    def __str__(self):
+        return f"Appointment {self.appointment_id} -> Slot {self.slot_id}"

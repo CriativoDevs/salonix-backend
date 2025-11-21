@@ -25,6 +25,7 @@ from core.models import (
     Service,
     ScheduleSlot,
     ProfessionalService,
+    AppointmentReservedSlot,
 )
 from users.models import Tenant, TenantStaffMember
 from notifications.services import send_customer_pwa_invite
@@ -130,6 +131,65 @@ APPOINTMENT_SERIES_SIZE_TOTAL = _get_or_create_counter(
 
 logger = logging.getLogger(__name__)
 
+
+def _release_reserved_slots(appointment: Appointment) -> None:
+    """Libera todos os slots extras vinculados a um agendamento longo.
+
+    - Marca cada slot extra como disponível
+    - Remove o vínculo AppointmentReservedSlot
+    """
+    # Evita N+1 ao carregar slot
+    for link in appointment.reserved_slots.select_related("slot").all():
+        try:
+            # mark_available já persiste alterações de disponibilidade/estado
+            link.slot.mark_available()
+        finally:
+            link.delete()
+
+def _find_contiguous_block_for(
+    *,
+    tenant: Tenant,
+    professional: Professional,
+    start_slot: ScheduleSlot,
+    required_minutes: int,
+) -> List[ScheduleSlot]:
+    """Encontra um bloco contíguo de slots disponíveis suficiente para a duração requerida.
+
+    - Considera apenas slots do mesmo `tenant` e `professional`
+    - Exige contiguidade: o próximo slot deve iniciar exatamente no `end_time` do anterior
+    - Retorna lista vazia se não houver slots suficientes
+    """
+    block: List[ScheduleSlot] = []
+    if start_slot.professional_id != professional.id:
+        return []
+    if not start_slot.is_available or start_slot.status != "available":
+        return []
+
+    block.append(start_slot)
+    accumulated = int((start_slot.end_time - start_slot.start_time).total_seconds() // 60)
+    if accumulated >= required_minutes:
+        return block
+
+    cursor_end = start_slot.end_time
+    while accumulated < required_minutes:
+        next_slot = (
+            ScheduleSlot.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                is_available=True,
+                status="available",
+                start_time=cursor_end,
+            )
+            .order_by("start_time")
+            .first()
+        )
+        if not next_slot:
+            break
+        block.append(next_slot)
+        accumulated += int((next_slot.end_time - next_slot.start_time).total_seconds() // 60)
+        cursor_end = next_slot.end_time
+
+    return block if accumulated >= required_minutes else []
 
 def _user_has_staff_role(user, *roles: str) -> bool:
     checker = getattr(user, "has_staff_role", None)
@@ -904,6 +964,58 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                 pass
             return None
 
+        # Helper para encontrar blocos contíguos suficientes para a duração
+        from datetime import timedelta as _td
+
+        def _find_contiguous_block(start_slot: ScheduleSlot, required_minutes: int) -> List[ScheduleSlot]:
+            block: List[ScheduleSlot] = [start_slot]
+            accumulated = int((start_slot.end_time - start_slot.start_time).total_seconds() // 60)
+            if accumulated >= required_minutes:
+                return block
+            cursor_end = start_slot.end_time
+            while accumulated < required_minutes:
+                next_slot = (
+                    ScheduleSlot.objects.filter(
+                        tenant=tenant,
+                        professional=start_slot.professional,
+                        is_available=True,
+                        status="available",
+                        start_time=cursor_end,
+                    )
+                    .order_by("start_time")
+                    .first()
+                )
+                if not next_slot:
+                    break
+                block.append(next_slot)
+                accumulated += int((next_slot.end_time - next_slot.start_time).total_seconds() // 60)
+                cursor_end = next_slot.end_time
+            return block if accumulated >= required_minutes else []
+
+        def _suggest_next_contiguous_block(prof: Professional, required_minutes: int, from_time):
+            qs = (
+                ScheduleSlot.objects.filter(
+                    tenant=tenant,
+                    professional=prof,
+                    is_available=True,
+                    status="available",
+                    start_time__gte=from_time,
+                )
+                .order_by("start_time")
+            )
+            for candidate in qs[:50]:  # limitar busca
+                block = _find_contiguous_block(candidate, required_minutes)
+                if block:
+                    first = block[0]
+                    last = block[-1]
+                    return {
+                        "slot_id": first.id,
+                        "start_time": first.start_time,
+                        "end_time": last.end_time,
+                        "professional_id": prof.id,
+                    }
+            return None
+
         # Processar itens com sucesso parcial
         for item in item_list:
             slot = slots_by_id.get(int(item["slot_id"]))
@@ -928,15 +1040,17 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     error_code = "slot_unavailable"
                     message = "Slot indisponível."
                 else:
-                    # serviço cabe no slot
+                    # serviço cabe no slot (ou requer bloco contínuo)
                     try:
                         duration = int(getattr(service, "duration_minutes", 0) or 0)
                     except Exception:
                         duration = 0
                     slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
                     if duration > 0 and duration > slot_minutes:
-                        error_code = "incompatible_service"
-                        message = "Serviço não cabe no slot."
+                        block = _find_contiguous_block(slot, duration)
+                        if not block:
+                            error_code = "continuous_block_unavailable"
+                            message = "Bloco contínuo indisponível para a duração do serviço."
                     # profissional oferece serviço
                     elif not ProfessionalService.objects.filter(
                         tenant=tenant, service_id=service.id, professional_id=professional.id
@@ -947,6 +1061,19 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             if error_code is None and slot is not None and service is not None and professional is not None:
                 try:
                     with transaction.atomic():
+                        # Reservar bloco contínuo se necessário
+                        try:
+                            duration = int(getattr(service, "duration_minutes", 0) or 0)
+                        except Exception:
+                            duration = 0
+                        slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
+                        extra_slots: List[ScheduleSlot] = []
+                        if duration > slot_minutes:
+                            block = _find_contiguous_block(slot, duration)
+                            # Neste ponto, já validado; reservar todos
+                            for s in block[1:]:  # primeiro é o slot atual
+                                s.mark_booked()
+                                extra_slots.append(s)
                         slot.mark_booked()
                         appointment = Appointment.objects.create(
                             client=user,
@@ -958,6 +1085,15 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             tenant=tenant,
                             customer=customer,
                         )
+                        # Persistir vínculo para slots extras
+                        if extra_slots:
+                            from core.models import AppointmentReservedSlot
+                            for s in extra_slots:
+                                AppointmentReservedSlot.objects.create(
+                                    tenant=tenant,
+                                    appointment=appointment,
+                                    slot=s,
+                                )
                     appointments.append(appointment)
                     raw_unit = getattr(service, "price_eur", None) or getattr(service, "price", 0)
                     try:
@@ -985,7 +1121,15 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     )
             else:
                 if slot is not None and professional is not None:
-                    suggested = _suggest_next_slot(professional, slot)
+                    try:
+                        duration = int(getattr(service, "duration_minutes", 0) or 0)
+                    except Exception:
+                        duration = 0
+                    suggested = (
+                        _suggest_next_contiguous_block(professional, duration, slot.end_time)
+                        if duration and duration > int((slot.end_time - slot.start_time).total_seconds() // 60)
+                        else _suggest_next_slot(professional, slot)
+                    )
                 results.append(
                     {
                         "slot_id": int(item.get("slot_id")),
@@ -1427,6 +1571,8 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
             # Liberar slot independentemente do status atual
             if appointment.slot:
                 appointment.slot.mark_available()
+            # Libera também slots extras reservados para serviços longos
+            _release_reserved_slots(appointment)
 
             if appointment.status != "cancelled":
                 appointment.status = "cancelled"
@@ -1539,12 +1685,42 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
                             }
                         )
 
+                    if desired_slot.start_time <= timezone.now():
+                        raise ValidationError(
+                            {"slot_ids": [f"Slot {desired_slot_id} está no passado."]}
+                        )
+
+                    # Encontrar bloco contínuo suficiente para a duração do serviço da série
+                    duration = int(getattr(series.service, "duration_minutes", 0) or 0)
+                    block = _find_contiguous_block_for(
+                        tenant=tenant,
+                        professional=series.professional,
+                        start_slot=desired_slot,
+                        required_minutes=duration,
+                    )
+                    if not block:
+                        raise ValidationError(
+                            {"slot_ids": [
+                                f"Bloco contínuo indisponível para o slot {desired_slot_id}."
+                            ]}
+                        )
+
+                    # Libera slot antigo e quaisquer extras, reserva novo bloco contínuo
                     if appointment.slot:
                         appointment.slot.mark_available()
+                    _release_reserved_slots(appointment)
 
-                    appointment.slot = desired_slot
+                    for j, s in enumerate(block):
+                        s.mark_booked()
+                        if j > 0:
+                            AppointmentReservedSlot.objects.create(
+                                tenant=tenant,
+                                appointment=appointment,
+                                slot=s,
+                            )
+
+                    appointment.slot = block[0]
                     fields_to_update.append("slot")
-                    desired_slot.mark_booked()
 
             if fields_to_update:
                 appointment.save(update_fields=list(set(fields_to_update)))
@@ -1629,6 +1805,8 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
         with transaction.atomic():
             if appointment.slot:
                 appointment.slot.mark_available()
+            # Libera slots extras vinculados
+            _release_reserved_slots(appointment)
             appointment.status = "cancelled"
             appointment.cancelled_by = request.user
             appointment.save(update_fields=["status", "cancelled_by"])
@@ -1701,6 +1879,8 @@ class AppointmentCancelView(APIView):
             appointment.status = "cancelled"
             appointment.cancelled_by = request.user
             appointment.slot.mark_available()  # já salva o slot
+            # Libera todos os slots extras reservados
+            _release_reserved_slots(appointment)
             appointment.save()
 
         # E-mail para cliente e salão (não bloqueia a resposta)
@@ -2452,18 +2632,50 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             if new_slot.id == instance.slot_id:
                 raise ValidationError({"slot": "O novo horário é igual ao atual."})
 
-            if (not new_slot.is_available) or (new_slot.status != "available"):
-                raise ValidationError(
-                    {"slot": "Horário selecionado não está disponível."}
-                )
+            if new_slot.professional_id != instance.professional_id:
+                raise ValidationError({"slot": "Slot não pertence ao mesmo profissional."})
 
+            if (not new_slot.is_available) or (new_slot.status != "available"):
+                raise ValidationError({"slot": "Horário selecionado não está disponível."})
+
+            if new_slot.start_time <= timezone.now():
+                raise ValidationError({"slot": "Não é possível reagendar para horário passado."})
+
+            # Encontrar bloco contínuo suficiente para a duração do serviço
+            duration = int(getattr(instance.service, "duration_minutes", 0) or 0)
+            tenant = getattr(instance, "tenant", None)
+            professional = getattr(instance, "professional", None)
+
+            block: List[ScheduleSlot] = _find_contiguous_block_for(
+                tenant=tenant,
+                professional=professional,
+                start_slot=new_slot,
+                required_minutes=duration,
+            )
+            if not block:
+                raise ValidationError({
+                    "slot": "Bloco contínuo indisponível para a duração do serviço."
+                })
+
+            # Aplicar reagendamento atômico: libera todos os slots antigos (incl. extras) e reserva novo bloco
             with cast(Any, transaction.atomic()):
-                old_slot = ScheduleSlot.objects.select_for_update().get(
-                    pk=instance.slot_id
-                )
+                old_slot = ScheduleSlot.objects.select_for_update().get(pk=instance.slot_id)
+                # Libera slot principal antigo e quaisquer slots extras vinculados
                 old_slot.mark_available()
-                new_slot.mark_booked()
-                instance.slot = new_slot
+                _release_reserved_slots(instance)
+
+                # Reserva novo bloco contínuo
+                for idx, s in enumerate(block):
+                    s.mark_booked()
+                    if idx > 0:
+                        AppointmentReservedSlot.objects.create(
+                            tenant=tenant,
+                            appointment=instance,
+                            slot=s,
+                        )
+
+                # Atualiza slot principal do agendamento
+                instance.slot = block[0]
                 instance.save(update_fields=["slot", "notes"])  # status inalterado aqui
 
         # Alteração de status
@@ -2481,6 +2693,8 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                     instance.status = "cancelled"
                     instance.cancelled_by = request.user
                     instance.slot.mark_available()
+                    # Libera slots extras vinculados a este agendamento
+                    _release_reserved_slots(instance)
                     instance.save(update_fields=["status", "cancelled_by", "notes"])
 
                 # e-mail (não bloqueia a resposta)

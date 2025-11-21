@@ -11,6 +11,7 @@ from core.models import (
     Professional,
     ScheduleSlot,
     ProfessionalService,
+    AppointmentReservedSlot,
 )
 from users.models import CustomUser, Tenant
 
@@ -210,3 +211,64 @@ class TestMixedBulkAppointments(TestCase):
         resp = self.client_api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "Slots duplicados" in str(resp.json())
+
+    def test_mixed_bulk_long_service_reserves_contiguous_block(self):
+        """Reserva bloco contíguo e cria vínculos de slots extras para serviço longo."""
+        # Criar serviço longo (90 min) para prof1
+        long_service = Service.objects.create(
+            name="Alisamento",
+            price_eur=80.00,
+            duration_minutes=90,
+            user=self.salon_user,
+            tenant=self.tenant,
+        )
+        ProfessionalService.objects.create(
+            tenant=self.tenant, professional=self.prof1, service=long_service, is_active=True
+        )
+
+        # Criar dois slots contíguos de 45min no mesmo dia para prof1
+        base = timezone.now() + timedelta(days=2, hours=9)
+        s1 = ScheduleSlot.objects.create(
+            professional=self.prof1,
+            start_time=base,
+            end_time=base + timedelta(minutes=45),
+            is_available=True,
+            tenant=self.tenant,
+        )
+        s2 = ScheduleSlot.objects.create(
+            professional=self.prof1,
+            start_time=base + timedelta(minutes=45),
+            end_time=base + timedelta(minutes=90),
+            is_available=True,
+            tenant=self.tenant,
+        )
+
+        data = {
+            "items": [
+                {
+                    "slot_id": s1.id,
+                    "service_id": long_service.id,
+                    "professional_id": self.prof1.id,
+                    "notes": "Serviço longo",
+                }
+            ]
+        }
+
+        resp = self.client_api.post(self.url, data, format="json")
+        assert resp.status_code in (status.HTTP_201_CREATED, 207)
+        body = resp.json()
+        # Deve criar 1 agendamento
+        assert body["appointments_created"] == 1
+        appt_id = body["appointment_ids"][0]
+
+        # Banco: slots contíguos devem estar reservados
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        assert s1.is_available is False and s1.status == "booked"
+        assert s2.is_available is False and s2.status == "booked"
+
+        # Deve existir vínculo de slot extra
+        appt = Appointment.objects.get(id=appt_id)
+        extras = AppointmentReservedSlot.objects.filter(appointment=appt)
+        assert extras.count() == 1
+        assert extras.first().slot_id == s2.id
