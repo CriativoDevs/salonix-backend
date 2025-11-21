@@ -817,15 +817,25 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             email = (data.get("client_email") or "").strip()
             phone = (data.get("client_phone") or "").strip()
             if name or email or phone:
-                customer = SalonCustomer.objects.create(
-                    tenant=tenant,
-                    name=name or (getattr(user, "username", "Cliente") or "Cliente"),
-                    email=email or getattr(user, "email", ""),
-                    phone_number=phone,
-                    marketing_opt_in=True,
-                    is_active=True,
-                    notes="Gerado via mixed bulk de agendamentos.",
-                )
+                # Primeiro tenta localizar cliente existente por e-mail (case-insensitive)
+                existing = None
+                if email:
+                    existing = (
+                        SalonCustomer.objects.filter(tenant=tenant, email__iexact=email).first()
+                    )
+                if existing:
+                    customer = existing
+                else:
+                    # Cria sem fallback para e-mail do usuário; se não informado, deixa vazio
+                    customer = SalonCustomer.objects.create(
+                        tenant=tenant,
+                        name=name or (getattr(user, "username", "Cliente") or "Cliente"),
+                        email=email or None,
+                        phone_number=phone,
+                        marketing_opt_in=True,
+                        is_active=True,
+                        notes="Gerado via mixed bulk de agendamentos.",
+                    )
 
         # Pré-carregar slots/serviços/profissionais
         item_list = cast(List[Dict[str, Any]], data.get("items") or [])
