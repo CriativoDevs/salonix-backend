@@ -513,6 +513,16 @@ class BillingService:
         ):
             next_billing_amount = current_subscription.get("price_monthly")
 
+        # Elegibilidade de trial
+        trial_days_cfg = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
+        if trial_days_cfg is None:
+            trial_days_cfg = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
+        has_any_subscription = Subscription.objects.filter(user=user).exists()
+        trial_eligible = bool(trial_days_cfg) and not has_any_subscription
+        trial_exhausted = bool(has_any_subscription) and not (
+            current_subscription and current_subscription.get("status") == "trialing"
+        )
+
         return {
             "current_subscription": current_subscription,
             "available_plans": available_plans,
@@ -520,6 +530,9 @@ class BillingService:
             "can_purchase_credits": can_purchase_credits,
             "has_auto_renewal": has_auto_renewal,
             "next_billing_amount": next_billing_amount,
+            "trial_eligible": trial_eligible,
+            "trial_days": int(trial_days_cfg or 0),
+            "trial_exhausted": trial_exhausted,
         }
 
     @classmethod
