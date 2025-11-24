@@ -14,6 +14,7 @@ from .views import (
     ImprovedCheckoutSessionView,
     ImprovedPortalSessionView,
     StripeSettingsView,
+    StripeWebhookView as StripeWebhookApiView,
 )
 from .webhooks import StripeWebhookView
 
@@ -35,6 +36,12 @@ urlpatterns = [
         "webhook/",
         StripeWebhookView.as_view(),
         name="stripe_webhook",
+    ),
+    # Alias explícito para rota de webhooks Stripe em staging (v2)
+    path(
+        "webhooks/stripe/",
+        StripeWebhookApiView.as_view(),
+        name="stripe_webhook_v2",
     ),
     path(
         "credits/packages/",
