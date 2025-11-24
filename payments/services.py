@@ -318,6 +318,24 @@ class SubscriptionService:
         customer_id = get_or_create_customer(user)
 
         try:
+            # Dados de assinatura com trial condicionado a ausência de assinatura prévia
+            has_existing = Subscription.objects.filter(
+                user=user, status__in=["active", "trialing", "past_due"]
+            ).exists()
+            trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
+            if trial_days is None:
+                trial_days = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
+
+            subscription_data = {
+                "metadata": {
+                    "user_id": user.id,
+                    "tenant_id": user.tenant.id if user.tenant else None,
+                    "plan": plan,
+                },
+            }
+            if trial_days and not has_existing:
+                subscription_data["trial_period_days"] = trial_days
+
             # Criar checkout session
             session = stripe.checkout.Session.create(
                 customer=customer_id,
@@ -336,14 +354,7 @@ class SubscriptionService:
                     "tenant_id": user.tenant.id if user.tenant else None,
                     "plan": plan,
                 },
-                subscription_data={
-                    "trial_period_days": getattr(settings, "STRIPE_TRIAL_DAYS", 14),
-                    "metadata": {
-                        "user_id": user.id,
-                        "tenant_id": user.tenant.id if user.tenant else None,
-                        "plan": plan,
-                    },
-                },
+                subscription_data=subscription_data,
             )
 
             logger.info(

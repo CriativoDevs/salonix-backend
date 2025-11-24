@@ -122,6 +122,59 @@ def test_create_checkout_session_basic_plan(monkeypatch, settings, auth_client):
 
 
 @pytest.mark.django_db
+def test_checkout_trial_suppressed_for_existing_subscription(
+    monkeypatch, settings, auth_client
+):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_TRIAL_PERIOD_DAYS = 14
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    c, user = auth_client()
+
+    Subscription.objects.create(
+        user=user,
+        stripe_subscription_id="sub_existing_123",
+        status="active",
+    )
+
+    url = "/api/payments/stripe/create-checkout-session/"
+    resp = c.post(url, {"plan": "standard"}, format="json")
+    assert resp.status_code == 200
+
+    created_kwargs = _StripeCheckoutSession.last_kwargs
+    assert created_kwargs["line_items"][0]["price"] == "price_standard_123"
+    assert "trial_period_days" not in created_kwargs["subscription_data"]
+
+
+@pytest.mark.django_db
+def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_client):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_TRIAL_PERIOD_DAYS = 14
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    c, _user = auth_client()
+    url = "/api/payments/stripe/create-checkout-session/"
+    resp = c.post(url, {"plan": "pro"}, format="json")
+    assert resp.status_code == 200
+
+    created_kwargs = _StripeCheckoutSession.last_kwargs
+    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
+    assert created_kwargs["subscription_data"].get("trial_period_days") == 14
+
+
+@pytest.mark.django_db
 def test_billing_portal_session(monkeypatch, settings, auth_client):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.FRONTEND_BASE_URL = "http://localhost:5173"

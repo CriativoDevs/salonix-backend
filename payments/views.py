@@ -108,8 +108,13 @@ class CreateCheckoutSession(APIView):
 
         subscription_data = {}
 
+        has_existing_subscription = Subscription.objects.filter(
+            user=request.user,
+            status__in=["active", "trialing", "past_due"],
+        ).exists()
+
         trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
-        if trial_days:
+        if trial_days and not has_existing_subscription:
             subscription_data["trial_period_days"] = trial_days
 
         subscription_data["metadata"] = metadata
