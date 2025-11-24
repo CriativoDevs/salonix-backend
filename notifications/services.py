@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Any
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from users.models import Tenant
+from core.models import CustomerCommunicationConsent
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
 
@@ -80,6 +81,41 @@ class NotificationService:
                 continue
 
             try:
+                purpose = (metadata or {}).get("purpose")
+                customer_id = (metadata or {}).get("customer_id")
+                if purpose == "marketing" and customer_id:
+                    consent = CustomerCommunicationConsent.objects.filter(
+                        tenant=tenant,
+                        customer_id=customer_id,
+                        channel=(
+                            channel
+                            if channel
+                            in (
+                                "sms",
+                                "whatsapp",
+                                "push",
+                                "push_web",
+                                "push_mobile",
+                                "in_app",
+                            )
+                            else "email"
+                        ),
+                        purpose="marketing",
+                        status="consented",
+                    ).exists()
+                    if not consent:
+                        results[channel] = False
+                        self._log_notification(
+                            tenant=tenant,
+                            user=user,
+                            channel=channel,
+                            notification_type=notification_type,
+                            title=title,
+                            message=message,
+                            status="skipped",
+                            metadata=metadata,
+                        )
+                        continue
                 driver = self.drivers[channel]
                 success = driver.send(
                     tenant=tenant,

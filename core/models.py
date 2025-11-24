@@ -162,9 +162,7 @@ class ProfessionalService(models.Model):
             models.Index(
                 fields=["tenant", "professional"], name="core_profsvc_prof_idx"
             ),
-            models.Index(
-                fields=["tenant", "service"], name="core_profsvc_service_idx"
-            ),
+            models.Index(fields=["tenant", "service"], name="core_profsvc_service_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -321,3 +319,77 @@ class AppointmentReservedSlot(models.Model):
 
     def __str__(self):
         return f"Appointment {self.appointment_id} -> Slot {self.slot_id}"
+
+
+class CustomerCommunicationConsent(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="communication_consents",
+    )
+    customer = models.ForeignKey(
+        SalonCustomer,
+        on_delete=models.PROTECT,
+        related_name="communication_consents",
+    )
+    CHANNEL_CHOICES = [
+        ("email", "Email"),
+        ("sms", "SMS"),
+        ("whatsapp", "WhatsApp"),
+        ("push", "Push"),
+    ]
+    PURPOSE_CHOICES = [
+        ("marketing", "Marketing"),
+        ("transactional", "Transactional"),
+    ]
+    STATUS_CHOICES = [
+        ("consented", "Consented"),
+        ("withdrawn", "Withdrawn"),
+        ("pending", "Pending"),
+    ]
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES)
+    purpose = models.CharField(max_length=16, choices=PURPOSE_CHOICES)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    consented_at = models.DateTimeField(blank=True, null=True)
+    withdrawn_at = models.DateTimeField(blank=True, null=True)
+    source = models.CharField(
+        max_length=16,
+        blank=True,
+        null=True,
+        choices=[
+            ("admin", "Admin"),
+            ("self_service", "Self Service"),
+            ("import", "Import"),
+        ],
+    )
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.CharField(max_length=256, blank=True, null=True)
+    version = models.CharField(max_length=32, blank=True, null=True)
+    locale = models.CharField(max_length=16, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_commconsent_tenant_idx"),
+            models.Index(
+                fields=["tenant", "customer", "channel"],
+                name="core_commconsent_tc_chan_idx",
+            ),
+            models.Index(
+                fields=["tenant", "customer", "purpose"],
+                name="core_commconsent_tc_purp_idx",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "customer", "channel", "purpose"],
+                name="core_commconsent_unique",
+            )
+        ]
+        ordering = ("customer_id", "channel", "purpose")
+
+    def __str__(self):
+        return (
+            f"Consent {self.customer_id} {self.channel}/{self.purpose} ({self.status})"
+        )

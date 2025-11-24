@@ -12,6 +12,7 @@ from core.models import (
     ScheduleSlot,
     Service,
     ProfessionalService,
+    CustomerCommunicationConsent,
 )
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -432,6 +433,26 @@ class AppointmentSeriesAdmin(admin.ModelAdmin):
     updated_at_display.short_description = "Última ocorrência"
 
 
+class CommunicationConsentInline(admin.TabularInline):
+    model = CustomerCommunicationConsent
+    fields = (
+        "channel",
+        "purpose",
+        "status",
+        "consented_at",
+        "withdrawn_at",
+        "source",
+        "ip_address",
+        "user_agent",
+        "version",
+        "locale",
+        "created_at",
+        "updated_at",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    extra = 1
+
+
 @admin.register(SalonCustomer)
 class SalonCustomerAdmin(admin.ModelAdmin):
     """Admin do Django para clientes do salão."""
@@ -459,6 +480,26 @@ class SalonCustomerAdmin(admin.ModelAdmin):
         ("Notas", {"fields": ("notes",)}),
         ("Metadados", {"fields": ("created_at", "updated_at")}),
     )
+    inlines = (CommunicationConsentInline,)
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save(commit=False)
+        for inst in instances:
+            if isinstance(inst, CustomerCommunicationConsent):
+                inst.tenant = form.instance.tenant
+                inst.customer = form.instance
+                if inst.status == "consented":
+                    if not inst.consented_at:
+                        inst.consented_at = timezone.now()
+                    inst.withdrawn_at = None
+                elif inst.status == "withdrawn":
+                    if not inst.withdrawn_at:
+                        inst.withdrawn_at = timezone.now()
+                elif inst.status == "pending":
+                    inst.consented_at = None
+                    # mantém withdrawn_at conforme histórico, salvo alteração explícita
+            inst.save()
+        formset.save_m2m()
 
     def tenant_name(self, obj):
         if obj.tenant:
@@ -468,3 +509,49 @@ class SalonCustomerAdmin(admin.ModelAdmin):
 
     tenant_name.short_description = "Tenant"
     tenant_name.admin_order_field = "tenant__name"
+
+
+@admin.register(CustomerCommunicationConsent)
+class CustomerCommunicationConsentAdmin(admin.ModelAdmin):
+    list_display = (
+        "customer",
+        "tenant_name",
+        "channel",
+        "purpose",
+        "status",
+        "consented_at",
+        "withdrawn_at",
+        "source",
+        "created_at",
+    )
+    list_filter = ("tenant", "channel", "purpose", "status", "source", "created_at")
+    search_fields = ("customer__name", "customer__email", "tenant__name")
+    readonly_fields = ("created_at", "updated_at")
+    date_hierarchy = "created_at"
+    actions = ("withdraw_selected",)
+
+    def tenant_name(self, obj):
+        if obj.tenant:
+            url = reverse("admin:users_tenant_change", args=[obj.tenant.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.tenant.name)
+        return "-"
+
+    tenant_name.short_description = "Tenant"
+    tenant_name.admin_order_field = "tenant__name"
+
+    def withdraw_selected(self, request, queryset):
+        now = timezone.now()
+        updated = queryset.update(
+            status="withdrawn", withdrawn_at=now, consented_at=None
+        )
+        self.message_user(
+            request, f"Consentimento retirado para {updated} registro(s)."
+        )
+
+    withdraw_selected.short_description = "Retirar consentimento (selecionados)"
+
+    def get_inline_instances(self, request, obj=None):
+        return []
+
+
+SalonCustomerAdmin.inlines = (CommunicationConsentInline,)

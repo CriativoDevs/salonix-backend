@@ -7,6 +7,9 @@ from .views import (
     NotificationTestView,
     NotificationStatsView,
     NotificationLogListView,
+    CommunicationConsentListView,
+    CommunicationConsentCreateView,
+    CommunicationConsentWithdrawView,
 )
 
 urlpatterns = [
@@ -33,4 +36,20 @@ urlpatterns = [
     path("test/", NotificationTestView.as_view(), name="notification-test"),
     # Logs (debug)
     path("logs/", NotificationLogListView.as_view(), name="notification-logs"),
+    # Comunicação RGPD - consentimentos
+    path(
+        "consent/",
+        CommunicationConsentListView.as_view(),
+        name="communication-consent-list",
+    ),
+    path(
+        "consent/create/",
+        CommunicationConsentCreateView.as_view(),
+        name="communication-consent-create",
+    ),
+    path(
+        "consent/withdraw/",
+        CommunicationConsentWithdrawView.as_view(),
+        name="communication-consent-withdraw",
+    ),
 ]

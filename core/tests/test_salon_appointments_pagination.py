@@ -108,9 +108,7 @@ def test_ordering_by_start_time(user_fixture):
     a1 = _create_apt(
         user_fixture, svc, prof, now + timedelta(hours=1), note_prefix="A1"
     )
-    _create_apt(
-        user_fixture, svc, prof, now + timedelta(hours=2), note_prefix="A2"
-    )
+    _create_apt(user_fixture, svc, prof, now + timedelta(hours=2), note_prefix="A2")
     a3 = _create_apt(
         user_fixture, svc, prof, now + timedelta(hours=3), note_prefix="A3"
     )

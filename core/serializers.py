@@ -139,7 +139,9 @@ class ProfessionalSerializer(serializers.ModelSerializer):
             )
         return data
 
-    def _sync_services(self, *, professional: Professional, tenant, service_ids: list[int]):
+    def _sync_services(
+        self, *, professional: Professional, tenant, service_ids: list[int]
+    ):
         """Sincroniza mapeamento de serviços ofertados pelo profissional.
 
         - Valida que todos `service_ids` pertencem ao mesmo tenant
@@ -483,7 +485,9 @@ class BulkAppointmentSerializer(serializers.Serializer):
     professional_id = serializers.IntegerField(required=False)
     customer_id = serializers.IntegerField(required=False, allow_null=True)
     client_name = serializers.CharField(max_length=100, required=False)
-    client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+    client_email = serializers.EmailField(
+        required=False, allow_null=True, allow_blank=True
+    )
     client_phone = serializers.CharField(max_length=20, required=False)
     appointments = BulkAppointmentSlotSerializer(many=True)
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
@@ -590,7 +594,10 @@ class BulkAppointmentSerializer(serializers.Serializer):
                 wrong_professional.append(slot.id)
 
             # disponibilidade
-            if slot and (not slot.is_available or getattr(slot, "status", "available") != "available"):
+            if slot and (
+                not slot.is_available
+                or getattr(slot, "status", "available") != "available"
+            ):
                 unavailable.append(slot.id)
 
             # passado
@@ -598,9 +605,7 @@ class BulkAppointmentSerializer(serializers.Serializer):
                 past.append(slot.id)
 
         if unavailable:
-            raise serializers.ValidationError(
-                f"Slots não disponíveis: {unavailable}"
-            )
+            raise serializers.ValidationError(f"Slots não disponíveis: {unavailable}")
         if wrong_professional:
             raise serializers.ValidationError(
                 f"Slots não pertencem ao profissional informado: {wrong_professional}"
@@ -629,7 +634,9 @@ class BulkAppointmentSerializer(serializers.Serializer):
         # Validar dados obrigatórios mínimos
         if not user or not user.is_authenticated:
             if not data.get("client_name"):
-                raise serializers.ValidationError({"client_name": ["Campo obrigatório."]})
+                raise serializers.ValidationError(
+                    {"client_name": ["Campo obrigatório."]}
+                )
         # BLINDA a validação quando o campo estiver presente no payload
         import re
 
@@ -747,7 +754,9 @@ class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
 
     customer_id = serializers.IntegerField(required=False, allow_null=True)
     client_name = serializers.CharField(max_length=100, required=False)
-    client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+    client_email = serializers.EmailField(
+        required=False, allow_null=True, allow_blank=True
+    )
     client_phone = serializers.CharField(max_length=20, required=False)
     items = MixedBulkAppointmentItemSerializer(many=True)
 
@@ -767,13 +776,16 @@ class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
 
     def validate_client_phone(self, value):
         import re
+
         if not re.fullmatch(r"(?:\+?351)?[29]\d{8}", (value or "").strip()):
             raise serializers.ValidationError("Formato de telefone inválido.")
         return value
 
     def validate_items(self, value):
         if not value:
-            raise serializers.ValidationError("Pelo menos um agendamento é obrigatório.")
+            raise serializers.ValidationError(
+                "Pelo menos um agendamento é obrigatório."
+            )
         if len(value) > 20:
             raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
 

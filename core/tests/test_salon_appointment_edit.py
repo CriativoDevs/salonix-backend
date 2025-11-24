@@ -6,7 +6,13 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from core.models import Appointment, Service, Professional, ScheduleSlot, AppointmentReservedSlot
+from core.models import (
+    Appointment,
+    Service,
+    Professional,
+    ScheduleSlot,
+    AppointmentReservedSlot,
+)
 from users.models import CustomUser, Tenant
 
 
@@ -202,9 +208,15 @@ def test_cancel_long_service_frees_all_reserved_slots():
     )
 
     service = Service.objects.create(
-        tenant=tenant, user=salon_owner, name="Tratamento", duration_minutes=90, price_eur="50.00"
+        tenant=tenant,
+        user=salon_owner,
+        name="Tratamento",
+        duration_minutes=90,
+        price_eur="50.00",
     )
-    prof = Professional.objects.create(tenant=tenant, user=salon_owner, name="Maria", is_active=True)
+    prof = Professional.objects.create(
+        tenant=tenant, user=salon_owner, name="Maria", is_active=True
+    )
     now = timezone.now()
     a = ScheduleSlot.objects.create(
         tenant=tenant,
@@ -222,9 +234,15 @@ def test_cancel_long_service_frees_all_reserved_slots():
         is_available=True,
         status="available",
     )
-    a.mark_booked(); b.mark_booked()
+    a.mark_booked()
+    b.mark_booked()
     appt = Appointment.objects.create(
-        tenant=tenant, client=client_user, service=service, professional=prof, slot=a, status="scheduled"
+        tenant=tenant,
+        client=client_user,
+        service=service,
+        professional=prof,
+        slot=a,
+        status="scheduled",
     )
     AppointmentReservedSlot.objects.create(tenant=tenant, appointment=appt, slot=b)
 
@@ -233,7 +251,9 @@ def test_cancel_long_service_frees_all_reserved_slots():
         f"/api/salon/appointments/{appt.id}/", {"status": "cancelled"}, format="json"
     )
     assert resp.status_code == status.HTTP_200_OK
-    appt.refresh_from_db(); a.refresh_from_db(); b.refresh_from_db()
+    appt.refresh_from_db()
+    a.refresh_from_db()
+    b.refresh_from_db()
     assert appt.status == "cancelled"
     assert a.is_available is True and a.status == "available"
     assert b.is_available is True and b.status == "available"
@@ -251,9 +271,15 @@ def test_reschedule_long_service_reserves_new_block_and_releases_old():
     )
 
     service = Service.objects.create(
-        tenant=tenant, user=salon_owner, name="SPA", duration_minutes=90, price_eur="120.00"
+        tenant=tenant,
+        user=salon_owner,
+        name="SPA",
+        duration_minutes=90,
+        price_eur="120.00",
     )
-    prof = Professional.objects.create(tenant=tenant, user=salon_owner, name="Helena", is_active=True)
+    prof = Professional.objects.create(
+        tenant=tenant, user=salon_owner, name="Helena", is_active=True
+    )
     now = timezone.now()
     # bloco antigo
     a = ScheduleSlot.objects.create(
@@ -272,9 +298,15 @@ def test_reschedule_long_service_reserves_new_block_and_releases_old():
         is_available=True,
         status="available",
     )
-    a.mark_booked(); b.mark_booked()
+    a.mark_booked()
+    b.mark_booked()
     appt = Appointment.objects.create(
-        tenant=tenant, client=client_user, service=service, professional=prof, slot=a, status="scheduled"
+        tenant=tenant,
+        client=client_user,
+        service=service,
+        professional=prof,
+        slot=a,
+        status="scheduled",
     )
     AppointmentReservedSlot.objects.create(tenant=tenant, appointment=appt, slot=b)
 
@@ -303,13 +335,16 @@ def test_reschedule_long_service_reserves_new_block_and_releases_old():
     assert resp.status_code == status.HTTP_200_OK
 
     # antigos liberados
-    a.refresh_from_db(); b.refresh_from_db(); appt.refresh_from_db()
+    a.refresh_from_db()
+    b.refresh_from_db()
+    appt.refresh_from_db()
     assert a.is_available is True and a.status == "available"
     assert b.is_available is True and b.status == "available"
     assert AppointmentReservedSlot.objects.filter(appointment=appt, slot=b).count() == 0
 
     # novos reservados e vínculo criado
-    c.refresh_from_db(); d.refresh_from_db()
+    c.refresh_from_db()
+    d.refresh_from_db()
     assert appt.slot_id == c.id
     assert c.is_available is False and c.status == "booked"
     assert d.is_available is False and d.status == "booked"

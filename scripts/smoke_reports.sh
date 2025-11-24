@@ -23,10 +23,10 @@ source "$(dirname "$0")/lib.sh"
 
 # Auth sempre via lib.sh (mais robusto). Se falhar, roda seed e tenta novamente.
 LOGIN_EMAIL="${LOGIN_EMAIL:-pro_smoke@demo.local}"  # Email padrão para pro_smoke
-if ! TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL"); then
+if ! TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ); then
   log "Token falhou. Rodando seed_demo para recriar usuários/staff/profissionais…"
   "$(dirname "$0")/seed.sh" || fail "Seed falhou"
-  TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL") || fail "Falha ao autenticar mesmo após seed"
+ TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ) || fail "Falha ao autenticar mesmo após seed"
 fi
 AUTH_HEADER="Authorization: Bearer $TOK"
 
@@ -105,6 +105,57 @@ get_with_backoff_csv() {
 
 main() {
   log "Base URL: $BASE_URL"
+
+  log "Preparando consentimento RGPD (customer + marketing/email)"
+  req GET "$BASE_URL/api/salon/customers/" 200
+  cust_id=$(FILE="$curl_body_file" python3 - <<'PY'
+import json, os
+from pathlib import Path
+data = json.loads(Path(os.environ["FILE"]).read_text() or "[]")
+print(data[0]["id"] if isinstance(data, list) and data else "")
+PY
+)
+  if [[ -z "$cust_id" ]]; then
+    log "Nenhum cliente encontrado, criando um cliente para smoke…"
+    code=$(curl -s -X POST "$BASE_URL/api/salon/customers/" \
+      -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+      -d '{"name":"Smoke Customer","email":"smoke_customer@demo.local","phone_number":"+351910000000","marketing_opt_in":true}' \
+      -o "$curl_body_file" -D "$curl_headers_file" -w "%{http_code}" || true)
+    [[ "$code" == "201" || "$code" == "200" ]] || { echo "--- Headers ---"; cat "$curl_headers_file"; echo "--- Body ---"; head -n 50 "$curl_body_file"; fail "Falha ao criar cliente (HTTP $code)"; }
+    cust_id=$(python3 - <<'PY'
+import json, sys
+print(json.load(sys.stdin).get("id", ""))
+PY
+ < "$curl_body_file")
+    [[ -n "$cust_id" ]] || fail "Cliente criado mas ID vazio"
+    ok "Cliente criado (id=$cust_id)"
+  else
+    ok "Cliente existente (id=$cust_id)"
+  fi
+
+  log "Criando/atualizando consentimento: marketing/email"
+  code=$(curl -s -X POST "$BASE_URL/api/notifications/consent/create/" \
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+    -d "{\"customer_id\":$cust_id,\"channel\":\"email\",\"purpose\":\"marketing\",\"source\":\"admin\"}" \
+    -o "$curl_body_file" -D "$curl_headers_file" -w "%{http_code}" || true)
+  [[ "$code" == "201" || "$code" == "200" ]] || { echo "--- Headers ---"; cat "$curl_headers_file"; echo "--- Body ---"; head -n 50 "$curl_body_file"; fail "Falha ao registrar consentimento (HTTP $code)"; }
+  ok "Consentimento marketing/email OK"
+
+  log "Criando/atualizando consentimento: marketing/sms"
+  code=$(curl -s -X POST "$BASE_URL/api/notifications/consent/create/" \
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+    -d "{\"customer_id\":$cust_id,\"channel\":\"sms\",\"purpose\":\"marketing\",\"source\":\"admin\"}" \
+    -o "$curl_body_file" -D "$curl_headers_file" -w "%{http_code}" || true)
+  [[ "$code" == "201" || "$code" == "200" ]] || { echo "--- Headers ---"; cat "$curl_headers_file"; echo "--- Body ---"; head -n 50 "$curl_body_file"; fail "Falha ao registrar consentimento SMS (HTTP $code)"; }
+  ok "Consentimento marketing/sms OK"
+
+  log "Criando/atualizando consentimento: marketing/whatsapp"
+  code=$(curl -s -X POST "$BASE_URL/api/notifications/consent/create/" \
+    -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+    -d "{\"customer_id\":$cust_id,\"channel\":\"whatsapp\",\"purpose\":\"marketing\",\"source\":\"admin\"}" \
+    -o "$curl_body_file" -D "$curl_headers_file" -w "%{http_code}" || true)
+  [[ "$code" == "201" || "$code" == "200" ]] || { echo "--- Headers ---"; cat "$curl_headers_file"; echo "--- Body ---"; head -n 50 "$curl_body_file"; fail "Falha ao registrar consentimento WhatsApp (HTTP $code)"; }
+  ok "Consentimento marketing/whatsapp OK"
 
   log "GET /api/users/staff/"
   req GET "$BASE_URL/api/users/staff/" 200

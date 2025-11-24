@@ -73,10 +73,16 @@ class TestMixedBulkAppointments(TestCase):
 
         # Mapear ofertas de serviços
         ProfessionalService.objects.create(
-            tenant=self.tenant, professional=self.prof1, service=self.service1, is_active=True
+            tenant=self.tenant,
+            professional=self.prof1,
+            service=self.service1,
+            is_active=True,
         )
         ProfessionalService.objects.create(
-            tenant=self.tenant, professional=self.prof2, service=self.service2, is_active=True
+            tenant=self.tenant,
+            professional=self.prof2,
+            service=self.service2,
+            is_active=True,
         )
 
         # Criar slots para cada profissional
@@ -223,7 +229,10 @@ class TestMixedBulkAppointments(TestCase):
             tenant=self.tenant,
         )
         ProfessionalService.objects.create(
-            tenant=self.tenant, professional=self.prof1, service=long_service, is_active=True
+            tenant=self.tenant,
+            professional=self.prof1,
+            service=long_service,
+            is_active=True,
         )
 
         # Criar dois slots contíguos de 45min no mesmo dia para prof1
