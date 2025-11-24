@@ -86,6 +86,32 @@ class TestTenantFeatureFlags:
         assert tenant.can_use_native_apps()
         assert tenant.can_use_advanced_notifications()
 
+    def test_basic_notifications_with_credits(self):
+        tenant = Tenant.objects.create(
+            name="Basic Credits Salon",
+            slug="basic-credits-salon",
+            plan_tier=Tenant.PLAN_BASIC,
+            sms_enabled=True,
+            comm_extra_allowed=True,
+        )
+        tenant.comm_credit_eur = 10
+        tenant.save()
+
+        assert tenant.can_use_advanced_notifications() is True
+
+    def test_basic_notifications_without_credits(self):
+        tenant = Tenant.objects.create(
+            name="Basic No Credits",
+            slug="basic-no-credits",
+            plan_tier=Tenant.PLAN_BASIC,
+            whatsapp_enabled=True,
+            comm_extra_allowed=True,
+        )
+        tenant.comm_credit_eur = 0
+        tenant.save()
+
+        assert tenant.can_use_advanced_notifications() is False
+
     def test_feature_flags_override(self):
         """Teste que feature flags específicas sobrescrevem lógica de plano."""
         tenant = Tenant.objects.create(

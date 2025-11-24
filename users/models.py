@@ -205,10 +205,10 @@ class Tenant(models.Model):
         )
 
     def can_use_advanced_notifications(self):
-        """Verifica se pode usar SMS/WhatsApp (Pro + configuração)"""
-        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE) and (
-            self.sms_enabled or self.whatsapp_enabled
-        )
+        allowed_by_plan = self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
+        has_channel_flag = self.sms_enabled or self.whatsapp_enabled
+        has_extra_credit = bool(self.comm_extra_allowed) and (self.comm_credit_eur or 0) > 0
+        return (allowed_by_plan and has_channel_flag) or (has_channel_flag and has_extra_credit)
 
     def get_enabled_notification_channels(self):
         """Retorna lista de canais de notificação habilitados"""
