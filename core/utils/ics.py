@@ -3,8 +3,11 @@ Utilitário para geração de arquivos .ics (iCalendar) para agendamentos.
 """
 
 import hashlib
+import hmac
+import base64
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.utils import timezone
+from django.conf import settings
 from typing import cast
 
 from core.models import Appointment
@@ -29,7 +32,18 @@ class ICSGenerator:
 
         # Dados do agendamento
         start_time = appointment.slot.start_time
+        # Ajustar término para refletir a duração do serviço
         end_time = appointment.slot.end_time
+        try:
+            dur = int(getattr(appointment.service, "duration_minutes", 0) or 0)
+        except Exception:
+            dur = 0
+        if dur and hasattr(start_time, "__add"):
+            try:
+                from datetime import timedelta as _td
+                end_time = start_time + _td(minutes=dur)
+            except Exception:
+                pass
 
         # Garantir que temos datetime objects (não strings dos testes)
         if isinstance(start_time, str):
@@ -190,3 +204,32 @@ class ICSGenerator:
         service_name = appointment.service.name.replace(" ", "_").replace("/", "_")
 
         return f"agendamento_{service_name}_{date_str}.ics"
+
+# --- Tokens para endpoint público de ICS ---
+TOKEN_SALT = "ics-public-v1"
+
+
+def _normalize_dt(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = timezone.make_aware(dt)
+    return dt.astimezone(dt_timezone.utc)
+
+
+def compute_public_ics_token(appointment_id: int, start_time: datetime) -> str:
+    """Gera token HMAC baseado no id e data/hora do agendamento.
+
+    Token stateless, verificável no servidor sem persistência.
+    """
+    start_utc = _normalize_dt(start_time)
+    payload = f"{appointment_id}|{start_utc.strftime('%Y%m%dT%H%M%SZ')}|{TOKEN_SALT}"
+    key = (getattr(settings, "SECRET_KEY", "") + "|" + TOKEN_SALT).encode()
+    digest = hmac.new(key, payload.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def verify_public_ics_token(appointment: Appointment, token: str) -> bool:
+    try:
+        expected = compute_public_ics_token(appointment.id, appointment.slot.start_time)
+        return hmac.compare_digest(expected, token)
+    except Exception:
+        return False

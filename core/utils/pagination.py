@@ -62,6 +62,14 @@ def set_pagination_headers(
     response["X-Limit"] = str(limit)
     response["X-Offset"] = str(offset)
 
+    # Garantir que o frontend possa ler estes headers em ambiente CORS
+    expose = response.get("Access-Control-Expose-Headers")
+    expose_list = [] if not expose else [h.strip() for h in expose.split(",") if h.strip()]
+    for h in ["X-Total-Count", "X-Limit", "X-Offset", "Link"]:
+        if h not in expose_list:
+            expose_list.append(h)
+    response["Access-Control-Expose-Headers"] = ", ".join(expose_list)
+
     links: List[str] = []
     base_url = request.build_absolute_uri()
 

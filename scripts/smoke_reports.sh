@@ -21,9 +21,13 @@ trap cleanup EXIT
 
 source "$(dirname "$0")/lib.sh"
 
-# Auth sempre via lib.sh (mais robusto)
+# Auth sempre via lib.sh (mais robusto). Se falhar, roda seed e tenta novamente.
 LOGIN_EMAIL="${LOGIN_EMAIL:-pro_smoke@demo.local}"  # Email padrão para pro_smoke
-TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL")
+if ! TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL"); then
+  log "Token falhou. Rodando seed_demo para recriar usuários/staff/profissionais…"
+  "$(dirname "$0")/seed.sh" || fail "Seed falhou"
+  TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL") || fail "Falha ao autenticar mesmo após seed"
+fi
 AUTH_HEADER="Authorization: Bearer $TOK"
 
 # --- HTTP helper ---

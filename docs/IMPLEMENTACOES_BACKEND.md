@@ -319,12 +319,14 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `core/serializers.py` - `BulkAppointmentSerializer`
 
 **Características**:
-- ✅ Criação de múltiplos agendamentos em uma só operação
-- ✅ Transação atômica (todos ou nenhum)
-- ✅ Validações em lote: disponibilidade, profissional único, sem duplicidade, datas futuras
-- ✅ Limite de 10 agendamentos por lote
-- ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`
-- ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
+ - ✅ Criação de múltiplos agendamentos em uma só operação
+ - ✅ Transação atômica (todos ou nenhum)
+ - ✅ Validações em lote: disponibilidade, sem duplicidade, datas futuras, compatibilidade do slot com o profissional informado por item
+ - ✅ Suporte a `service_id` e `professional_id` por item (fallback opcional do payload nível raiz)
+ - ✅ Limite de 20 agendamentos por lote
+ - ✅ E-mail obrigatório para criação de novos clientes; no bulk, obrigatório para usuários não autenticados
+ - ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`, `service_names[]`, `professional_names[]`
+ - ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
 
 #### **Atualização de Séries (BE-191)**
 **Status**: ✅ Implementado  

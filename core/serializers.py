@@ -2,7 +2,14 @@ from rest_framework import serializers
 from typing import Any, cast
 from django.utils import timezone
 
-from core.models import Service, Professional, ScheduleSlot, Appointment, SalonCustomer
+from core.models import (
+    Service,
+    Professional,
+    ScheduleSlot,
+    Appointment,
+    SalonCustomer,
+    ProfessionalService,
+)
 from users.models import TenantStaffMember
 from salonix_backend.validators import (
     validate_appointment_data,
@@ -49,10 +56,21 @@ class ProfessionalSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=False,
     )
+    service_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True
+    )
 
     class Meta:
         model = Professional
-        fields = ["id", "user", "name", "bio", "is_active", "staff_member"]
+        fields = [
+            "id",
+            "user",
+            "name",
+            "bio",
+            "is_active",
+            "staff_member",
+            "service_ids",
+        ]
         read_only_fields = ["user"]
 
     def validate_name(self, value):
@@ -121,6 +139,77 @@ class ProfessionalSerializer(serializers.ModelSerializer):
             )
         return data
 
+    def _sync_services(self, *, professional: Professional, tenant, service_ids: list[int]):
+        """Sincroniza mapeamento de serviços ofertados pelo profissional.
+
+        - Valida que todos `service_ids` pertencem ao mesmo tenant
+        - Remove vínculos existentes e recria os informados
+        """
+        if service_ids is None:
+            return
+        if tenant is None:
+            # tenta resolver tenant do professional
+            tenant = getattr(professional, "tenant", None)
+        if tenant is None:
+            return
+
+        # valida serviços do tenant
+        if service_ids:
+            services = list(
+                Service.objects.filter(id__in=set(service_ids), tenant=tenant)
+            )
+            if len(services) != len(set(service_ids)):
+                raise serializers.ValidationError(
+                    {"service_ids": "Serviços inválidos para este tenant."}
+                )
+
+        # replace-all simplificado
+        ProfessionalService.objects.filter(
+            tenant=tenant, professional=professional
+        ).delete()
+        bulk = [
+            ProfessionalService(
+                tenant=tenant, professional=professional, service_id=sid, is_active=True
+            )
+            for sid in set(service_ids or [])
+        ]
+        if bulk:
+            ProfessionalService.objects.bulk_create(bulk, ignore_conflicts=True)
+
+    def create(self, validated_data):
+        service_ids = validated_data.pop("service_ids", None)
+        professional = Professional.objects.create(**validated_data)
+        self._sync_services(
+            professional=professional,
+            tenant=getattr(professional, "tenant", None),
+            service_ids=service_ids or [],
+        )
+        return professional
+
+    def update(self, instance, validated_data):
+        service_ids = validated_data.pop("service_ids", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        if service_ids is not None:
+            tenant = getattr(instance, "tenant", None)
+            self._sync_services(
+                professional=instance, tenant=tenant, service_ids=service_ids
+            )
+        return instance
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        tenant = getattr(instance, "tenant", None)
+        if tenant:
+            links = ProfessionalService.objects.filter(
+                tenant=tenant, professional=instance, is_active=True
+            ).values_list("service_id", flat=True)
+            data["service_ids"] = list(links)
+        else:
+            data["service_ids"] = []
+        return data
+
 
 class SalonCustomerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -169,15 +258,22 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
     def validate(self, data):
         email = data.get("email")
         phone = data.get("phone_number")
-        if self.instance:
+        # Criação: exigir pelo menos um contato (email ou telefone)
+        if self.instance is None:
+            if not email and not phone:
+                raise serializers.ValidationError(
+                    "Informe pelo menos email ou telefone para o cliente."
+                )
+        else:
+            # Em edição, manter comportamento atual (exigir pelo menos um dos dois)
             if email is None:
                 email = self.instance.email
             if phone is None:
                 phone = self.instance.phone_number
-        if not email and not phone:
-            raise serializers.ValidationError(
-                "Informe pelo menos email ou telefone para o cliente."
-            )
+            if not email and not phone:
+                raise serializers.ValidationError(
+                    "Informe pelo menos email ou telefone para o cliente."
+                )
         return data
 
 
@@ -346,6 +442,8 @@ class BulkAppointmentSlotSerializer(serializers.Serializer):
     """Serializer para cada slot individual em um agendamento múltiplo."""
 
     slot_id = serializers.IntegerField()
+    service_id = serializers.IntegerField(required=False)
+    professional_id = serializers.IntegerField(required=False)
     date = serializers.DateField(
         required=False, help_text="Data do agendamento (YYYY-MM-DD)"
     )
@@ -381,11 +479,11 @@ class BulkAppointmentSerializer(serializers.Serializer):
     }
     """
 
-    service_id = serializers.IntegerField()
-    professional_id = serializers.IntegerField()
+    service_id = serializers.IntegerField(required=False)
+    professional_id = serializers.IntegerField(required=False)
     customer_id = serializers.IntegerField(required=False, allow_null=True)
     client_name = serializers.CharField(max_length=100, required=False)
-    client_email = serializers.EmailField(required=False)
+    client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     client_phone = serializers.CharField(max_length=20, required=False)
     appointments = BulkAppointmentSlotSerializer(many=True)
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
@@ -435,8 +533,8 @@ class BulkAppointmentSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Pelo menos um agendamento é obrigatório."
             )
-        if len(value) > 10:
-            raise serializers.ValidationError("Máximo de 10 agendamentos por lote.")
+        if len(value) > 20:
+            raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
 
         slot_ids = [appt["slot_id"] for appt in value]
 
@@ -444,7 +542,7 @@ class BulkAppointmentSerializer(serializers.Serializer):
         if len(slot_ids) != len(set(slot_ids)):
             raise serializers.ValidationError("Slots duplicados não são permitidos.")
 
-        # tenant consistente (use o mesmo helper que você já incluiu)
+        # tenant consistente
         request = self.context.get("request")
         tenant = getattr(getattr(request, "user", None), "tenant", None) or getattr(
             request, "tenant", None
@@ -455,37 +553,58 @@ class BulkAppointmentSerializer(serializers.Serializer):
             if tenant
             else ScheduleSlot.objects.filter(id__in=slot_ids)
         )
+        slots_by_id = {s.id: s for s in slots_qs}
 
-        found_ids = {s.id for s in slots_qs}
-        missing = set(slot_ids) - found_ids
+        # inexistentes
+        missing = set(slot_ids) - set(slots_by_id.keys())
         if missing:
-            # atende o teste: "Slots não encontrados: {99999}"
             raise serializers.ValidationError(f"Slots não encontrados: {missing}")
 
-        # indisponíveis
-        unavailable = [
-            s.id
-            for s in slots_qs
-            if (not s.is_available) or getattr(s, "status", "available") != "available"
-        ]
-        if unavailable:
-            raise serializers.ValidationError(f"Slots não disponíveis: {unavailable}")
+        # profissional esperado: topo ou por item
+        top_professional_id = None
+        try:
+            raw_top_pid = (self.initial_data or {}).get("professional_id")
+            if raw_top_pid is not None:
+                top_professional_id = int(raw_top_pid)
+        except Exception:
+            top_professional_id = None
 
-        # profissional errado
-        professional_id = self.initial_data.get("professional_id")
-        if professional_id:
-            wrong_prof = [
-                s.id for s in slots_qs if s.professional_id != int(professional_id)
-            ]
-            if wrong_prof:
-                raise serializers.ValidationError(
-                    f"Slots não pertencem ao profissional informado: {wrong_prof}"
-                )
-
-        # passado
         from django.utils import timezone
 
-        past = [s.id for s in slots_qs if s.start_time <= timezone.now()]
+        wrong_professional: list[int] = []
+        unavailable: list[int] = []
+        past: list[int] = []
+
+        for appt in value:
+            slot = slots_by_id.get(int(appt["slot_id"]))
+            eff_pid = appt.get("professional_id")
+            if eff_pid is None:
+                eff_pid = top_professional_id
+            try:
+                eff_pid_int = int(eff_pid) if eff_pid is not None else None
+            except Exception:
+                eff_pid_int = None
+
+            # compatibilidade com profissional
+            if eff_pid_int is not None and slot and slot.professional_id != eff_pid_int:
+                wrong_professional.append(slot.id)
+
+            # disponibilidade
+            if slot and (not slot.is_available or getattr(slot, "status", "available") != "available"):
+                unavailable.append(slot.id)
+
+            # passado
+            if slot and slot.start_time <= timezone.now():
+                past.append(slot.id)
+
+        if unavailable:
+            raise serializers.ValidationError(
+                f"Slots não disponíveis: {unavailable}"
+            )
+        if wrong_professional:
+            raise serializers.ValidationError(
+                f"Slots não pertencem ao profissional informado: {wrong_professional}"
+            )
         if past:
             raise serializers.ValidationError(
                 f"Não é possível agendar slots no passado: {past}"
@@ -498,25 +617,19 @@ class BulkAppointmentSerializer(serializers.Serializer):
         request = self.context.get("request")
         user = request.user if request else None
 
-        # Se usuário autenticado, usar seus dados como padrão
+        # Se usuário autenticado, usar seus dados como padrão apenas para nome/telefone
         if user and user.is_authenticated:
             if not data.get("client_name"):
                 data["client_name"] = (
                     user.get_full_name() or user.username or user.email.split("@")[0]
                 )
-            if not data.get("client_email"):
-                data["client_email"] = user.email
             if not data.get("client_phone") and hasattr(user, "phone_number"):
                 data["client_phone"] = user.phone_number
 
-        # Validar dados obrigatórios para usuários não autenticados
+        # Validar dados obrigatórios mínimos
         if not user or not user.is_authenticated:
-            required_fields = ["client_name", "client_email"]
-            missing_fields = [field for field in required_fields if not data.get(field)]
-            if missing_fields:
-                raise serializers.ValidationError(
-                    f"Campos obrigatórios: {missing_fields}"
-                )
+            if not data.get("client_name"):
+                raise serializers.ValidationError({"client_name": ["Campo obrigatório."]})
         # BLINDA a validação quando o campo estiver presente no payload
         import re
 
@@ -597,6 +710,99 @@ class BulkAppointmentResponseSerializer(serializers.Serializer):
     service_name = serializers.CharField()
     professional_name = serializers.CharField()
     appointments = AppointmentSerializer(many=True)
+    message = serializers.CharField()
+
+
+class MixedBulkAppointmentItemSerializer(serializers.Serializer):
+    """Item para criação mista: requer service_id e professional_id por slot."""
+
+    slot_id = serializers.IntegerField()
+    service_id = serializers.IntegerField()
+    professional_id = serializers.IntegerField()
+    notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate_slot_id(self, value):
+        if value is None or int(value) <= 0:
+            raise serializers.ValidationError("slot_id inválido.")
+        return int(value)
+
+
+class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
+    """
+    Payload para POST /appointments/bulk/mixed/.
+
+    Estrutura esperada:
+    {
+        "customer_id": 123,  # opcional
+        "client_name": "João Silva",  # opcional
+        "client_email": "joao@email.com",  # opcional
+        "client_phone": "+351912345678",  # opcional
+        "items": [
+            {"slot_id": 10, "service_id": 1, "professional_id": 2, "notes": "..."},
+            {"slot_id": 15, "service_id": 3, "professional_id": 5},
+            {"slot_id": 20, "service_id": 1, "professional_id": 4}
+        ]
+    }
+    """
+
+    customer_id = serializers.IntegerField(required=False, allow_null=True)
+    client_name = serializers.CharField(max_length=100, required=False)
+    client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+    client_phone = serializers.CharField(max_length=20, required=False)
+    items = MixedBulkAppointmentItemSerializer(many=True)
+
+    def _resolve_tenant(self):
+        request = self.context.get("request")
+        if request is not None:
+            user = getattr(request, "user", None)
+            if (
+                user
+                and getattr(user, "is_authenticated", False)
+                and hasattr(user, "tenant")
+            ):
+                return user.tenant
+            if hasattr(request, "tenant"):
+                return request.tenant
+        return None
+
+    def validate_client_phone(self, value):
+        import re
+        if not re.fullmatch(r"(?:\+?351)?[29]\d{8}", (value or "").strip()):
+            raise serializers.ValidationError("Formato de telefone inválido.")
+        return value
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Pelo menos um agendamento é obrigatório.")
+        if len(value) > 20:
+            raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
+
+        # slots duplicados são erro de validação
+        try:
+            slot_ids = [int(item["slot_id"]) for item in value]
+        except Exception:
+            raise serializers.ValidationError("Itens devem conter slot_id válido.")
+        if len(slot_ids) != len(set(slot_ids)):
+            raise serializers.ValidationError("Slots duplicados não são permitidos.")
+
+        # Demais validações (existência, disponibilidade, compatibilidades) serão tratadas item a item na view
+        return value
+
+
+class MixedBulkItemResultSerializer(serializers.Serializer):
+    slot_id = serializers.IntegerField()
+    status = serializers.CharField()
+    message = serializers.CharField()
+    appointment_id = serializers.IntegerField(required=False)
+    suggested_slot = serializers.JSONField(required=False)
+
+
+class MixedBulkAppointmentResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    appointment_ids = serializers.ListField(child=serializers.IntegerField())
+    appointments_created = serializers.IntegerField()
+    total_value = serializers.FloatField()
+    results = MixedBulkItemResultSerializer(many=True)
     message = serializers.CharField()
 
 

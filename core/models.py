@@ -130,6 +130,54 @@ class Professional(models.Model):
         return f"{self.name} - {tenant_name}"
 
 
+class ProfessionalService(models.Model):
+    """Mapeia os serviços oferecidos por um profissional.
+
+    - Isolado por tenant
+    - Cada par (professional, service) é único por tenant
+    - Campo de ativação para permitir futura desativação sem perder histórico
+    """
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="professional_services",
+    )
+    professional = models.ForeignKey(
+        Professional,
+        on_delete=models.CASCADE,
+        related_name="service_links",
+    )
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name="professional_links",
+    )
+    is_active = models.BooleanField(default=cast(Any, True))
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_profsvc_tenant_idx"),
+            models.Index(
+                fields=["tenant", "professional"], name="core_profsvc_prof_idx"
+            ),
+            models.Index(
+                fields=["tenant", "service"], name="core_profsvc_service_idx"
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "professional", "service"],
+                name="core_profsvc_unique",
+            )
+        ]
+        ordering = ("professional_id", "service_id")
+
+    def __str__(self):
+        return f"{self.professional_id}:{self.service_id} (tenant={self.tenant_id})"
+
+
 class ScheduleSlot(models.Model):
     tenant = models.ForeignKey(
         Tenant,
@@ -244,3 +292,32 @@ class Appointment(models.Model):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"
         customer_name = self.customer.name if self.customer else "Sem cliente"
         return f"{customer_name} - {self.service.name} com {self.professional.name} ({tenant_name})"
+
+
+class AppointmentReservedSlot(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="appointment_reserved_slots",
+    )
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name="reserved_slots",
+    )
+    slot = models.ForeignKey(
+        ScheduleSlot,
+        on_delete=models.CASCADE,
+        related_name="reserved_by_appointments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_appres_tenant_idx"),
+            models.Index(fields=["tenant", "appointment"], name="core_appres_app_idx"),
+        ]
+        ordering = ("appointment_id", "slot_id")
+
+    def __str__(self):
+        return f"Appointment {self.appointment_id} -> Slot {self.slot_id}"
