@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("core", "0021_professionalservice"),
         ("users", "0021_add_app_name_and_favicon_url"),

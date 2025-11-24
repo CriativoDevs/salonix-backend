@@ -3,7 +3,13 @@ from django.template.response import TemplateResponse
 from django.urls import path
 from django.db.models import Count, Q
 from django.urls import reverse
-from users.models import Tenant, CustomUser, TenantStaffMember, UserFeatureFlags, CommLedger
+from users.models import (
+    Tenant,
+    CustomUser,
+    TenantStaffMember,
+    UserFeatureFlags,
+    CommLedger,
+)
 from users.admin import (
     TenantAdmin,
     CustomUserAdmin,
@@ -11,7 +17,14 @@ from users.admin import (
     TenantStaffMemberAdmin,
     CommLedgerAdmin,
 )
-from core.models import Appointment, Service, Professional, ScheduleSlot, AppointmentSeries, SalonCustomer
+from core.models import (
+    Appointment,
+    Service,
+    Professional,
+    ScheduleSlot,
+    AppointmentSeries,
+    SalonCustomer,
+)
 from core.admin import (
     ServiceAdmin,
     ProfessionalAdmin,

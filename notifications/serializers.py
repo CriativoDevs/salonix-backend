@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Notification, NotificationDevice, NotificationLog
+from core.models import CustomerCommunicationConsent, SalonCustomer
 
 
 class NotificationDeviceSerializer(serializers.ModelSerializer):
@@ -146,3 +147,90 @@ class NotificationStatsResponseSerializer(serializers.Serializer):
     unread_notifications = serializers.IntegerField()
     read_notifications = serializers.IntegerField()
     registered_devices = serializers.IntegerField()
+
+
+class CommunicationConsentSerializer(serializers.ModelSerializer):
+    customer_id = serializers.IntegerField(source="customer.id", read_only=True)
+
+    class Meta:
+        model = CustomerCommunicationConsent
+        fields = [
+            "id",
+            "tenant",
+            "customer_id",
+            "channel",
+            "purpose",
+            "status",
+            "consented_at",
+            "withdrawn_at",
+            "source",
+            "ip_address",
+            "user_agent",
+            "version",
+            "locale",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "tenant",
+            "status",
+            "consented_at",
+            "withdrawn_at",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class CommunicationConsentCreateSerializer(serializers.Serializer):
+    customer_id = serializers.IntegerField()
+    channel = serializers.ChoiceField(
+        choices=CustomerCommunicationConsent.CHANNEL_CHOICES
+    )
+    purpose = serializers.ChoiceField(
+        choices=CustomerCommunicationConsent.PURPOSE_CHOICES
+    )
+    source = serializers.ChoiceField(
+        choices=[
+            ("admin", "Admin"),
+            ("self_service", "Self Service"),
+            ("import", "Import"),
+        ],
+        required=False,
+        allow_null=True,
+    )
+    ip_address = serializers.IPAddressField(required=False, allow_null=True)
+    user_agent = serializers.CharField(required=False, allow_null=True, max_length=256)
+    version = serializers.CharField(required=False, allow_null=True, max_length=32)
+    locale = serializers.CharField(required=False, allow_null=True, max_length=16)
+
+    def validate_customer_id(self, value):
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None)
+        customer = SalonCustomer.objects.filter(id=value).first()
+        if not customer:
+            raise serializers.ValidationError("Cliente não encontrado.")
+        if tenant and customer.tenant_id != tenant.id:
+            raise serializers.ValidationError("Cliente não pertence ao tenant.")
+        return value
+
+
+class CommunicationConsentWithdrawSerializer(serializers.Serializer):
+    customer_id = serializers.IntegerField()
+    channel = serializers.ChoiceField(
+        choices=CustomerCommunicationConsent.CHANNEL_CHOICES
+    )
+    purpose = serializers.ChoiceField(
+        choices=CustomerCommunicationConsent.PURPOSE_CHOICES
+    )
+    source = serializers.ChoiceField(
+        choices=[
+            ("admin", "Admin"),
+            ("self_service", "Self Service"),
+            ("import", "Import"),
+        ],
+        required=False,
+        allow_null=True,
+    )
+    ip_address = serializers.IPAddressField(required=False, allow_null=True)
+    user_agent = serializers.CharField(required=False, allow_null=True, max_length=256)

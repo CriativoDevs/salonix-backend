@@ -41,6 +41,7 @@ class ICSGenerator:
         if dur and hasattr(start_time, "__add"):
             try:
                 from datetime import timedelta as _td
+
                 end_time = start_time + _td(minutes=dur)
             except Exception:
                 pass
@@ -204,6 +205,7 @@ class ICSGenerator:
         service_name = appointment.service.name.replace(" ", "_").replace("/", "_")
 
         return f"agendamento_{service_name}_{date_str}.ics"
+
 
 # --- Tokens para endpoint público de ICS ---
 TOKEN_SALT = "ics-public-v1"

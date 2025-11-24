@@ -11,7 +11,9 @@ from core.models import Service, Professional, ScheduleSlot
 
 @pytest.mark.django_db
 @patch("core.email_utils.send_bulk_appointment_confirmation_email")
-def test_series_create_sends_consolidated_email(mock_send, tenant_fixture, user_fixture):
+def test_series_create_sends_consolidated_email(
+    mock_send, tenant_fixture, user_fixture
+):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 
@@ -86,8 +88,13 @@ def test_series_create_sends_consolidated_email(mock_send, tenant_fixture, user_
 
 
 @pytest.mark.django_db
-@patch("core.email_utils.send_bulk_appointment_confirmation_email", side_effect=Exception("SMTP down"))
-def test_series_create_email_failure_does_not_break_flow(mock_send, tenant_fixture, user_fixture):
+@patch(
+    "core.email_utils.send_bulk_appointment_confirmation_email",
+    side_effect=Exception("SMTP down"),
+)
+def test_series_create_email_failure_does_not_break_flow(
+    mock_send, tenant_fixture, user_fixture
+):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
 
@@ -99,7 +106,11 @@ def test_series_create_email_failure_does_not_break_flow(mock_send, tenant_fixtu
         price_eur="35.00",
     )
     professional = Professional.objects.create(
-        tenant=tenant_fixture, user=user_fixture, name="Ian Pinto", bio="Bio", is_active=True
+        tenant=tenant_fixture,
+        user=user_fixture,
+        name="Ian Pinto",
+        bio="Bio",
+        is_active=True,
     )
 
     tz = pytz.timezone("Europe/Lisbon")

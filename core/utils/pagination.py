@@ -64,7 +64,9 @@ def set_pagination_headers(
 
     # Garantir que o frontend possa ler estes headers em ambiente CORS
     expose = response.get("Access-Control-Expose-Headers")
-    expose_list = [] if not expose else [h.strip() for h in expose.split(",") if h.strip()]
+    expose_list = (
+        [] if not expose else [h.strip() for h in expose.split(",") if h.strip()]
+    )
     for h in ["X-Total-Count", "X-Limit", "X-Offset", "Link"]:
         if h not in expose_list:
             expose_list.append(h)

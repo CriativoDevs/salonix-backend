@@ -10,6 +10,7 @@ from drf_spectacular.views import (
 
 # Import admin completo
 from salonix_backend.admin import admin_site
+from notifications.views import PublicUnsubscribeView
 
 urlpatterns = [
     path("", include("django_prometheus.urls")),
@@ -20,6 +21,11 @@ urlpatterns = [
     path("api/ops/", include("ops.urls")),
     path("api/reports/", include("reports.urls")),
     path("api/notifications/", include("notifications.urls")),
+    path(
+        "api/public/unsubscribe",
+        PublicUnsubscribeView.as_view(),
+        name="public-unsubscribe",
+    ),
     # OpenAPI JSON/YAML
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # UIs

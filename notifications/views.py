@@ -1,13 +1,15 @@
 import logging
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from typing import Any, Dict, cast
 from rest_framework.views import APIView
 from core.mixins import TenantIsolatedMixin
 from drf_spectacular.utils import extend_schema
 from .models import Notification, NotificationDevice, NotificationLog
+from core.models import CustomerCommunicationConsent, SalonCustomer
 from .serializers import (
     NotificationSerializer,
     NotificationDeviceSerializer,
@@ -17,8 +19,12 @@ from .serializers import (
     NotificationMarkAllReadResponseSerializer,
     NotificationTestResponseSerializer,
     NotificationStatsResponseSerializer,
+    CommunicationConsentSerializer,
+    CommunicationConsentCreateSerializer,
+    CommunicationConsentWithdrawSerializer,
 )
 from .services import notification_service
+from django.core import signing
 
 logger = logging.getLogger(__name__)
 
@@ -302,3 +308,218 @@ class NotificationLogListView(TenantIsolatedMixin, generics.ListAPIView):
             queryset = queryset.filter(status=status_filter)
 
         return queryset.order_by("-created_at")
+
+
+class CommunicationConsentListView(TenantIsolatedMixin, generics.ListAPIView):
+    """
+    GET /api/notifications/consent/
+
+    Lista consents de comunicação por cliente (e filtros opcionais).
+    Retorno: 200 com lista de consentimentos.
+    Erros: 400 para parâmetros inválidos.
+    """
+
+    serializer_class = CommunicationConsentSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = CustomerCommunicationConsent.objects.all()
+
+    @extend_schema(parameters=[])
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        customer_id = self.request.query_params.get("customer_id")
+        if customer_id:
+            qs = qs.filter(customer_id=int(customer_id))
+        channel = self.request.query_params.get("channel")
+        if channel:
+            qs = qs.filter(channel=channel)
+        purpose = self.request.query_params.get("purpose")
+        if purpose:
+            qs = qs.filter(purpose=purpose)
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
+        return qs.order_by("customer_id", "channel", "purpose")
+
+
+class CommunicationConsentCreateView(TenantIsolatedMixin, APIView):
+    """
+    POST /api/notifications/consent/
+
+    Cria/atualiza consentimento: status=consented e consented_at=agora.
+    Retorno: 201 com consentimento atualizado/criado.
+    Erros: 400 (validação de campos), 404 (cliente não encontrado).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=CommunicationConsentCreateSerializer,
+        responses=CommunicationConsentSerializer,
+    )
+    def post(self, request):
+        s = CommunicationConsentCreateSerializer(
+            data=request.data, context={"request": request}
+        )
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
+        tenant = getattr(request, "tenant", None) or getattr(
+            request.user, "tenant", None
+        )
+        customer_id = v["customer_id"]
+        channel = v["channel"]
+        purpose = v["purpose"]
+
+        instance = CustomerCommunicationConsent.objects.filter(
+            tenant=tenant, customer_id=customer_id, channel=channel, purpose=purpose
+        ).first()
+
+        now = timezone.now()
+        payload = {
+            "source": v.get("source"),
+            "ip_address": v.get("ip_address"),
+            "user_agent": v.get("user_agent"),
+            "version": v.get("version"),
+            "locale": v.get("locale"),
+        }
+
+        if instance:
+            instance.status = "consented"
+            instance.consented_at = now
+            instance.withdrawn_at = None
+            for k, val in payload.items():
+                setattr(instance, k, val)
+            instance.save()
+        else:
+            customer = SalonCustomer.objects.get(id=customer_id)
+            instance = CustomerCommunicationConsent.objects.create(
+                tenant=tenant,
+                customer=customer,
+                channel=channel,
+                purpose=purpose,
+                status="consented",
+                consented_at=now,
+                **payload,
+            )
+
+        return Response(
+            CommunicationConsentSerializer(instance).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CommunicationConsentWithdrawView(TenantIsolatedMixin, APIView):
+    """
+    POST /api/notifications/consent/withdraw/
+
+    Registra retirada de consentimento: status=withdrawn e withdrawn_at=agora.
+    Retorno: 200 com consentimento atualizado/criado.
+    Erros: 400 (validação de campos), 404 (cliente não encontrado).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=CommunicationConsentWithdrawSerializer,
+        responses=CommunicationConsentSerializer,
+    )
+    def post(self, request):
+        s = CommunicationConsentWithdrawSerializer(
+            data=request.data, context={"request": request}
+        )
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
+        tenant = getattr(request, "tenant", None) or getattr(
+            request.user, "tenant", None
+        )
+        customer_id = v["customer_id"]
+        channel = v["channel"]
+        purpose = v["purpose"]
+
+        instance = CustomerCommunicationConsent.objects.filter(
+            tenant=tenant, customer_id=customer_id, channel=channel, purpose=purpose
+        ).first()
+
+        now = timezone.now()
+        payload = {
+            "source": v.get("source"),
+            "ip_address": v.get("ip_address"),
+            "user_agent": v.get("user_agent"),
+        }
+
+        if instance:
+            instance.status = "withdrawn"
+            instance.withdrawn_at = now
+            for k, val in payload.items():
+                setattr(instance, k, val)
+            instance.save()
+        else:
+            customer = SalonCustomer.objects.get(id=customer_id)
+            instance = CustomerCommunicationConsent.objects.create(
+                tenant=tenant,
+                customer=customer,
+                channel=channel,
+                purpose=purpose,
+                status="withdrawn",
+                withdrawn_at=now,
+                **payload,
+            )
+
+        return Response(CommunicationConsentSerializer(instance).data)
+
+
+UNSUBSCRIBE_TOKEN_SALT = "comm-consent-unsub"
+
+
+class PublicUnsubscribeView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(parameters=[], responses=CommunicationConsentSerializer)
+    def get(self, request):
+        token = request.query_params.get("token")
+        if not token:
+            return Response(
+                {"error": _("token ausente")}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            payload = signing.loads(token, salt=UNSUBSCRIBE_TOKEN_SALT)
+        except Exception:
+            return Response(
+                {"error": _("token inválido")}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        tenant_id = payload.get("tenant_id")
+        customer_id = payload.get("customer_id")
+        channel = payload.get("channel")
+        purpose = payload.get("purpose")
+        if not all([tenant_id, customer_id, channel, purpose]):
+            return Response(
+                {"error": _("token incompleto")}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        instance = CustomerCommunicationConsent.objects.filter(
+            tenant_id=tenant_id,
+            customer_id=customer_id,
+            channel=channel,
+            purpose=purpose,
+        ).first()
+
+        now = timezone.now()
+        if instance:
+            instance.status = "withdrawn"
+            instance.withdrawn_at = now
+            instance.save()
+        else:
+            customer = SalonCustomer.objects.get(id=customer_id)
+            instance = CustomerCommunicationConsent.objects.create(
+                tenant_id=tenant_id,
+                customer=customer,
+                channel=channel,
+                purpose=purpose,
+                status="withdrawn",
+                withdrawn_at=now,
+            )
+
+        return Response(CommunicationConsentSerializer(instance).data)

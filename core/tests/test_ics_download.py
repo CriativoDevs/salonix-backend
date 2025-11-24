@@ -206,6 +206,7 @@ class TestICSGenerator:
         )
 
         ics = ICSGenerator.generate_ics(appt)
+
         # Validar que DTEND - DTSTART == 90 minutos
         def _extract(field: str) -> str:
             for line in ics.split("\r\n"):
@@ -217,6 +218,7 @@ class TestICSGenerator:
         dtend_s = _extract("DTEND")
         assert dtstart_s and dtend_s
         from datetime import datetime as _dt
+
         fmt = "%Y%m%dT%H%M%SZ"
         dtstart = _dt.strptime(dtstart_s, fmt)
         dtend = _dt.strptime(dtend_s, fmt)
