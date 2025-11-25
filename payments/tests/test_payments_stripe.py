@@ -106,7 +106,18 @@ def test_create_checkout_session_basic_plan(monkeypatch, settings, auth_client):
 
     monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
 
+    from users.models import Tenant, TenantStaffMember
+
     c, user = auth_client()
+    tenant = Tenant.objects.create(name="T1", slug="t1")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
     url = "/api/payments/stripe/create-checkout-session/"
     resp = c.post(url, {"plan": "basic"}, format="json")
     assert resp.status_code == 200
@@ -135,7 +146,18 @@ def test_checkout_trial_suppressed_for_existing_subscription(
 
     monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
 
+    from users.models import Tenant, TenantStaffMember
+
     c, user = auth_client()
+    tenant = Tenant.objects.create(name="T2", slug="t2")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
 
     Subscription.objects.create(
         user=user,
@@ -153,6 +175,56 @@ def test_checkout_trial_suppressed_for_existing_subscription(
 
 
 @pytest.mark.django_db
+def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
+    monkeypatch, settings, auth_client
+):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_TRIAL_PERIOD_DAYS = 14
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    from users.models import Tenant, TenantStaffMember
+
+    c, owner = auth_client()
+    tenant = Tenant.objects.create(name="T4", slug="t4")
+    owner.tenant = tenant
+    owner.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=owner,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    other = CustomUser.objects.create_user(
+        username="other",
+        email="other@test.com",
+        password="pass",
+        tenant=tenant,
+    )
+
+    Subscription.objects.create(
+        user=other,
+        stripe_subscription_id="sub_existing_tenant_123",
+        status="active",
+    )
+
+    url = "/api/payments/stripe/create-checkout-session/"
+    resp = c.post(url, {"plan": "standard"}, format="json")
+    assert resp.status_code == 200
+
+    created_kwargs = _StripeCheckoutSession.last_kwargs
+    assert created_kwargs["line_items"][0]["price"] == "price_standard_123"
+    assert "trial_period_days" not in created_kwargs["subscription_data"]
+    assert created_kwargs["subscription_data"].get("trial_from_plan") is False
+
+
+@pytest.mark.django_db
 def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_client):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
@@ -164,7 +236,18 @@ def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_cli
 
     monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
 
-    c, _user = auth_client()
+    from users.models import Tenant, TenantStaffMember
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(name="T3", slug="t3")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
     url = "/api/payments/stripe/create-checkout-session/"
     resp = c.post(url, {"plan": "pro"}, format="json")
     assert resp.status_code == 200
@@ -280,3 +363,41 @@ def test_webhook_checkout_session_completed_creates_subscription(
     tenant = user.tenant
     tenant.refresh_from_db()
     assert tenant.plan_tier == "pro"
+
+
+@pytest.mark.django_db
+def test_checkout_requires_owner_role(monkeypatch, settings):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_TRIAL_PERIOD_DAYS = 14
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+    from users.models import Tenant, CustomUser, TenantStaffMember
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    tenant = Tenant.objects.create(name="T", slug="t")
+
+    # Usuário manager, não OWNER
+    user = CustomUser.objects.create_user(
+        username="mgr",
+        email="mgr@test.com",
+        password="pass",
+        tenant=tenant,
+    )
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.MANAGER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    c = APIClient()
+    c.force_authenticate(user=user)
+
+    url = "/api/payments/stripe/create-checkout-session/"
+    resp = c.post(url, {"plan": "standard"}, format="json")
+    assert resp.status_code == 403
+    assert "Somente OWNER" in resp.data.get("detail", "")

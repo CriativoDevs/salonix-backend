@@ -318,9 +318,8 @@ class SubscriptionService:
         customer_id = get_or_create_customer(user)
 
         try:
-            # Dados de assinatura com trial condicionado a ausência de assinatura prévia
             has_existing = Subscription.objects.filter(
-                user=user, status__in=["active", "trialing", "past_due"]
+                user__tenant=user.tenant
             ).exists()
             trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
             if trial_days is None:
@@ -335,6 +334,8 @@ class SubscriptionService:
             }
             if trial_days and not has_existing:
                 subscription_data["trial_period_days"] = trial_days
+            else:
+                subscription_data["trial_from_plan"] = False
 
             # Criar checkout session
             session = stripe.checkout.Session.create(
@@ -517,7 +518,9 @@ class BillingService:
         trial_days_cfg = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
         if trial_days_cfg is None:
             trial_days_cfg = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
-        has_any_subscription = Subscription.objects.filter(user=user).exists()
+        has_any_subscription = Subscription.objects.filter(
+            user__tenant=user.tenant
+        ).exists()
         trial_eligible = bool(trial_days_cfg) and not has_any_subscription
         trial_exhausted = bool(has_any_subscription) and not (
             current_subscription and current_subscription.get("status") == "trialing"

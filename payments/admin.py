@@ -165,7 +165,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "price_id",
         "user__tenant__name",
     )
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("tenant_name", "created_at", "updated_at")
     date_hierarchy = "current_period_end"
 
     fieldsets = (
@@ -188,6 +188,8 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
     def tenant_name(self, obj):
         """Exibe nome do tenant com link."""
+        if not obj:
+            return "-"
         if obj.user and obj.user.tenant:
             tenant = obj.user.tenant
             url = reverse("admin:users_tenant_change", args=[tenant.pk])

@@ -37,7 +37,7 @@ from .serializers import (
     StripeSettingsResponseSerializer,
 )
 from .observability import PAYMENTS_SETTINGS_UPDATED_TOTAL
-from users.models import Tenant
+from users.models import Tenant, TenantStaffMember
 
 
 class CreateCheckoutSession(APIView):
@@ -75,10 +75,25 @@ class CreateCheckoutSession(APIView):
         if requested_plan in {"monthly", "yearly"}:
             canonical_plan = "pro"
 
-        # 3) Customer
+        # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
+        staff = getattr(request.user, "staff_member", None)
+        tenant = getattr(request.user, "tenant", None)
+        if not tenant:
+            return Response({"detail": "Tenant não associado."}, status=403)
+        if (
+            not staff
+            or staff.role != TenantStaffMember.Role.OWNER
+            or staff.status != TenantStaffMember.Status.ACTIVE
+        ):
+            return Response(
+                {"detail": "Somente OWNER ativo do tenant pode criar checkout."},
+                status=403,
+            )
+
+        # 4) Customer
         customer_id = stripe_utils.get_or_create_customer(request.user)
 
-        # 4) URLs (com FRONTEND_BASE_URL como fallback)
+        # 5) URLs (com FRONTEND_BASE_URL como fallback)
         base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip(
             "/"
         )
@@ -93,7 +108,7 @@ class CreateCheckoutSession(APIView):
             f"{base}/billing/cancel",
         )
 
-        # 5) Params da Checkout Session
+        # 6) Params da Checkout Session
         metadata = {"user_id": str(request.user.id), "plan_code": canonical_plan}
 
         params = {
@@ -109,13 +124,14 @@ class CreateCheckoutSession(APIView):
         subscription_data = {}
 
         has_existing_subscription = Subscription.objects.filter(
-            user=request.user,
-            status__in=["active", "trialing", "past_due"],
+            user__tenant=request.user.tenant,
         ).exists()
 
         trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
         if trial_days and not has_existing_subscription:
             subscription_data["trial_period_days"] = trial_days
+        else:
+            subscription_data["trial_from_plan"] = False
 
         subscription_data["metadata"] = metadata
         params["subscription_data"] = subscription_data
