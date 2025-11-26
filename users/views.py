@@ -41,6 +41,7 @@ from .serializers import (
     CreditBalanceSerializer,
     ConsumeCreditsSerializer,
     PurchaseCreditsSerializer,
+    TenantNotificationsUpdateSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -958,3 +959,64 @@ class RealtimeCreditsSSEView(APIView):
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
         return response
+
+
+class TenantNotificationsSettingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description=(
+            "Atualiza toggles de canais de notificação (SMS, WhatsApp, Push Mobile). "
+            "Push Mobile só pode ser ativado no plano Enterprise."
+        ),
+        request=TenantNotificationsUpdateSerializer,
+        responses={200: OpenApiResponse(description="ok")},
+    )
+    def patch(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise AuthenticationFailed("tenant_required")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        serializer = TenantNotificationsUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        v = serializer.validated_data
+
+        updates = set()
+        if "sms_enabled" in v:
+            tenant.sms_enabled = bool(v["sms_enabled"])
+            updates.add("sms_enabled")
+        if "whatsapp_enabled" in v:
+            tenant.whatsapp_enabled = bool(v["whatsapp_enabled"])
+            updates.add("whatsapp_enabled")
+        if "push_mobile_enabled" in v:
+            desired = bool(v["push_mobile_enabled"])
+            if desired and tenant.plan_tier != Tenant.PLAN_ENTERPRISE:
+                return Response(
+                    {
+                        "detail": (
+                            "Push Mobile só disponível para plano Enterprise. "
+                            "Atualize seu plano para ativar."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            tenant.push_mobile_enabled = desired
+            updates.add("push_mobile_enabled")
+
+        if updates:
+            tenant.save(update_fields=list(updates) + ["updated_at"])
+
+        return Response(
+            {
+                "sms_enabled": tenant.sms_enabled,
+                "whatsapp_enabled": tenant.whatsapp_enabled,
+                "push_mobile_enabled": tenant.push_mobile_enabled,
+            },
+            status=status.HTTP_200_OK,
+        )

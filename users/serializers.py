@@ -733,3 +733,12 @@ class PurchaseCreditsSerializer(serializers.Serializer):
                 f"Valor deve ser um dos seguintes: {', '.join(map(str, allowed_amounts))} EUR"
             )
         return value
+
+
+class TenantNotificationsUpdateSerializer(serializers.Serializer):
+    sms_enabled = serializers.BooleanField(required=False)
+    whatsapp_enabled = serializers.BooleanField(required=False)
+    push_mobile_enabled = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        return attrs

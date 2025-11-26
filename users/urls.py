@@ -18,6 +18,7 @@ from .views import (
     ConsumeCreditsView,
     PurchaseCreditsView,
     RealtimeCreditsSSEView,
+    TenantNotificationsSettingsView,
 )
 
 urlpatterns = [
@@ -48,5 +49,10 @@ urlpatterns = [
     # Realtime SSE
     path(
         "realtime/credits/", RealtimeCreditsSSEView.as_view(), name="realtime_credits"
+    ),
+    path(
+        "tenant/notifications/",
+        TenantNotificationsSettingsView.as_view(),
+        name="tenant_notifications_settings",
     ),
 ]
