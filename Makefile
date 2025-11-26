@@ -11,6 +11,7 @@ PIP ?= pip
 MANAGE = $(PY) manage.py
 DJANGO_ENV ?= dev
 ROLE ?= ops_admin
+PORT ?= 8010
 
 # ---- Ajuda ----
 .PHONY: help
@@ -34,6 +35,7 @@ help:
 > echo "  make cache-clear    - limpa o cache do Django (cuidado!)"
 > echo "  make lint           - (opcional) ruff check ."
 > echo "  make format         - (opcional) ruff format . && black ."
+> echo "  make e2e-stripe-webhook - inicia servidor (porta $(PORT)) e ouve webhooks Stripe"
 
 # ---- Env helpers ----
 .PHONY: env-example env-local
@@ -175,3 +177,10 @@ lint:
 format:
 > -ruff format .
 > -black .
+
+.PHONY: e2e-stripe-webhook
+e2e-stripe-webhook:
+> PORT=$(PORT); \
+> DJANGO_ENV=$(DJANGO_ENV) $(MANAGE) runserver 0.0.0.0:$$PORT & \
+> sleep 2; \
+> stripe listen --forward-to http://localhost:$$PORT/api/payments/stripe/webhook/

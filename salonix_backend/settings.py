@@ -159,6 +159,10 @@ except Exception:
         "x-requested-with",
     ]
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://5d67412c0245.ngrok-free.app",
+]
+
 # opcional: flag ligada por padrão
 OBSERVABILITY_ENABLED = str(env_get("OBSERVABILITY_ENABLED", "true")).lower() == "true"
 

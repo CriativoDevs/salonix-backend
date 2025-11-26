@@ -5,6 +5,7 @@ from .views import (
     CreatePortalSession,
     AvailableCreditPackagesView,
     CreateCreditPaymentIntentView,
+    CreateCreditCheckoutSessionView,
     # Novas views para sistema completo de assinaturas
     AvailablePlansView,
     CurrentSubscriptionView,
@@ -34,7 +35,7 @@ urlpatterns = [
     ),
     path(
         "webhook/",
-        StripeWebhookView.as_view(),
+        StripeWebhookApiView.as_view(),
         name="stripe_webhook",
     ),
     # Alias explícito para rota de webhooks Stripe em staging (v2)
@@ -52,6 +53,11 @@ urlpatterns = [
         "credits/purchase/",
         CreateCreditPaymentIntentView.as_view(),
         name="create_credit_payment_intent",
+    ),
+    path(
+        "credits/checkout/",
+        CreateCreditCheckoutSessionView.as_view(),
+        name="create_credit_checkout_session",
     ),
     # Novas URLs para sistema completo de assinaturas
     path(
