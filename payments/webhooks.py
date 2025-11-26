@@ -85,15 +85,71 @@ class StripeWebhookView(View):
         return HttpResponse("Webhook processed successfully", status=200)
 
     def _handle_checkout_session_completed(self, session):
-        """Processa checkout session completed e cria/atualiza subscription."""
+        """Processa checkout session completed para assinatura ou compra de créditos."""
         try:
             # Buscar o customer
             customer_id = session.get("customer")
             subscription_id = session.get("subscription")
+            payment_intent_id = session.get("payment_intent")
 
             if not customer_id or not subscription_id:
+                # Pode ser um checkout de créditos (mode=payment)
+                meta = session.get("metadata") or {}
+                if meta.get("type") == "credit_purchase":
+                    price_id = meta.get("price_id")
+                    credits_amount = meta.get("credits_amount")
+                    if not payment_intent_id or not price_id:
+                        logger.warning(
+                            f"Missing fields for credit purchase in session: {session}"
+                        )
+                        return
+                    # Upsert PaymentCustomer
+                    payment_customer = PaymentCustomer.objects.filter(
+                        stripe_customer_id=customer_id
+                    ).first()
+                    if not payment_customer:
+                        logger.warning(
+                            f"PaymentCustomer not found for customer_id: {customer_id}"
+                        )
+                        return
+                    # Criar registro de CreditPayment (se não existir)
+                    cp, created = CreditPayment.objects.get_or_create(
+                        stripe_payment_intent_id=payment_intent_id,
+                        defaults={
+                            "user": payment_customer.user,
+                            "tenant": payment_customer.user.tenant,
+                            "stripe_customer_id": customer_id,
+                            "stripe_price_id": price_id,
+                            "amount": Decimal(str(credits_amount or "0")),
+                            "currency": "EUR",
+                            "status": "pending",
+                            "credits_purchased": Decimal(str(credits_amount or "0")),
+                            "metadata": {"created_via": "checkout_session"},
+                        },
+                    )
+                    # Se pago, aplicar créditos imediatamente
+                    if session.get("payment_status") == "paid":
+                        try:
+                            cs = CreditService(payment_customer.user.tenant)
+                            cs.add_credits(
+                                amount=cp.credits_purchased,
+                                transaction_type="purchase",
+                                description="Compra de créditos via Stripe Checkout",
+                                reference_id=payment_intent_id,
+                                created_by=payment_customer.user,
+                            )
+                            cp.status = "succeeded"
+                            cp.completed_at = timezone.now()
+                            cp.credits_applied = True
+                            cp.save()
+                        except Exception as ce:
+                            logger.error(
+                                f"Failed to apply credits for session {session.get('id')}: {ce}"
+                            )
+                    return
+                # Senão, não é assinatura nem compra de crédito
                 logger.warning(
-                    f"Missing customer or subscription in session: {session}"
+                    f"Missing customer/subscription for non-credit session: {session}"
                 )
                 return
 

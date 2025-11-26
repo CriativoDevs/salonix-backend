@@ -28,6 +28,7 @@ from .serializers import (
     CheckoutSessionResponseSerializer,
     PortalSessionResponseSerializer,
     CreditPurchaseRequestSerializer,
+    CheckoutSessionResponseSerializer as CreditCheckoutSessionResponseSerializer,
     CreditPurchaseResponseSerializer,
     AvailableCreditPackagesResponseSerializer,
     AvailablePlansSerializer,
@@ -396,6 +397,56 @@ class StripeWebhookView(APIView):
                                 "previous subscription cancellation failed",
                                 exc_info=exc,
                             )
+                else:
+                    # Fluxo de compra de créditos via Checkout (mode=payment)
+                    meta = data.get("metadata") or {}
+                    if meta.get("type") == "credit_purchase" and customer_id:
+                        payment_intent_id = data.get("payment_intent")
+                        price_id = meta.get("price_id")
+                        credits_amount = meta.get("credits_amount")
+                        pc = (
+                            PaymentCustomer.objects.filter(stripe_customer_id=customer_id)
+                            .select_related("user")
+                            .first()
+                        )
+                        if pc and payment_intent_id and price_id:
+                            cp, created = CreditPayment.objects.get_or_create(
+                                stripe_payment_intent_id=payment_intent_id,
+                                defaults={
+                                    "user": pc.user,
+                                    "tenant": pc.user.tenant,
+                                    "stripe_customer_id": customer_id,
+                                    "stripe_price_id": price_id,
+                                    "amount": Decimal(str(credits_amount or "0")),
+                                    "currency": "EUR",
+                                    "status": "pending",
+                                    "credits_purchased": Decimal(str(credits_amount or "0")),
+                                    "metadata": {"created_via": "checkout_session"},
+                                },
+                            )
+                            if data.get("payment_status") == "paid":
+                                try:
+                                    cs = CreditService(pc.user.tenant)
+                                    cs.add_credits(
+                                        amount=cp.credits_purchased,
+                                        transaction_type="purchase",
+                                        description="Compra de créditos via Stripe Checkout",
+                                        reference_id=payment_intent_id,
+                                        created_by=pc.user,
+                                    )
+                                    cp.status = "succeeded"
+                                    cp.completed_at = timezone.now()
+                                    cp.credits_applied = True
+                                    cp.save()
+                                except Exception:
+                                    logger.exception(
+                                        "Failed to apply credits for checkout session",
+                                        extra={
+                                            "session_id": data.get("id"),
+                                            "payment_intent_id": payment_intent_id,
+                                            "customer_id": customer_id,
+                                        },
+                                    )
 
             elif etype in {
                 "customer.subscription.created",
@@ -593,6 +644,75 @@ class AvailablePlansView(APIView):
 
         except Exception as e:
             return Response({"detail": f"Erro ao buscar planos: {str(e)}"}, status=500)
+
+
+class CreateCreditCheckoutSessionView(APIView):
+    """Cria uma Stripe Checkout Session (mode=payment) para compra de créditos."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=CreditPurchaseRequestSerializer,
+        responses={200: CreditCheckoutSessionResponseSerializer},
+    )
+    def post(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+
+        if tenant is None:
+            return Response({"detail": "Usuário sem tenant"}, status=403)
+
+        staff_member = getattr(user, "staff_member", None)
+        if (
+            staff_member is None
+            or staff_member.role != TenantStaffMember.Role.OWNER
+            or staff_member.status != TenantStaffMember.Status.ACTIVE
+        ):
+            return Response({"detail": "Apenas OWNER ativo pode comprar créditos."}, status=403)
+
+        serializer = CreditPurchaseRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        amount_eur = serializer.validated_data["amount_eur"]
+        amount_to_price_id = {
+            Decimal("5.00"): settings.STRIPE_PRICE_CREDITS_5_ID,
+            Decimal("10.00"): settings.STRIPE_PRICE_CREDITS_10_ID,
+            Decimal("25.00"): settings.STRIPE_PRICE_CREDITS_25_ID,
+            Decimal("50.00"): settings.STRIPE_PRICE_CREDITS_50_ID,
+            Decimal("100.00"): settings.STRIPE_PRICE_CREDITS_100_ID,
+        }
+
+        price_id = amount_to_price_id.get(amount_eur)
+        if not price_id:
+            return Response({"detail": f"Valor não suportado: {amount_eur}"}, status=400)
+
+        stripe_client = stripe_utils.get_stripe()
+        customer_id = stripe_utils.get_or_create_customer(user)
+
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
+        success_url = getattr(settings, "STRIPE_SUCCESS_URL", f"{base}/billing/success")
+        cancel_url = getattr(settings, "STRIPE_CANCEL_URL", f"{base}/billing/cancel")
+
+        metadata = {
+            "type": "credit_purchase",
+            "user_id": str(user.id),
+            "tenant_id": str(getattr(tenant, "id", "")),
+            "price_id": price_id,
+            "credits_amount": str(amount_eur),
+        }
+
+        params = {
+            "mode": "payment",
+            "customer": customer_id,
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "allow_promotion_codes": True,
+            "metadata": metadata,
+        }
+
+        session = stripe_client.checkout.Session.create(**params)
+        return Response({"checkout_url": session.url, "session_id": session.id}, status=200)
 
 
 class CurrentSubscriptionView(APIView):
