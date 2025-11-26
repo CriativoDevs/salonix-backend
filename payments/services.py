@@ -10,6 +10,7 @@ from users.models import Tenant
 from .stripe_utils import (
     get_or_create_customer,
     get_price_id_for_plan,
+    get_plan_code_from_price,
 )
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,7 @@ class SubscriptionService:
     # Definição dos planos disponíveis
     AVAILABLE_PLANS = {
         "basic": {
-            "name": "Básico",
+            "name": "Basic",
             "price_monthly": Decimal("29.00"),
             "features": [
                 "Até 100 agendamentos/mês",
@@ -235,7 +236,7 @@ class SubscriptionService:
             "credits_included": Decimal("5.00"),
         },
         "standard": {
-            "name": "Padrão",
+            "name": "Standard",
             "price_monthly": Decimal("59.00"),
             "features": [
                 "Até 500 agendamentos/mês",
@@ -247,7 +248,7 @@ class SubscriptionService:
             "credits_included": Decimal("15.00"),
         },
         "pro": {
-            "name": "Profissional",
+            "name": "Pro",
             "price_monthly": Decimal("99.00"),
             "features": [
                 "Agendamentos ilimitados",
@@ -260,16 +261,15 @@ class SubscriptionService:
             "credits_included": Decimal("30.00"),
         },
         "enterprise": {
-            "name": "Empresarial",
+            "name": "Enterprise",
             "price_monthly": Decimal("199.00"),
             "features": [
-                "Tudo do Profissional",
-                "75 EUR créditos inclusos",
-                "Integração personalizada",
-                "Gerente de conta dedicado",
-                "SLA garantido",
+                "Recursos enterprise e SLA",
+                "White‑label completo",
+                "Apps nativos e integrações custom",
+                "Suporte dedicado",
             ],
-            "credits_included": Decimal("75.00"),
+            "credits_included": Decimal("50.00"),
         },
     }
 
@@ -329,7 +329,7 @@ class SubscriptionService:
                 "metadata": {
                     "user_id": user.id,
                     "tenant_id": user.tenant.id if user.tenant else None,
-                    "plan": plan,
+                    "plan_code": plan,
                 },
             }
             if trial_days and not has_existing:
@@ -353,7 +353,7 @@ class SubscriptionService:
                 metadata={
                     "user_id": user.id,
                     "tenant_id": user.tenant.id if user.tenant else None,
-                    "plan": plan,
+                    "plan_code": plan,
                 },
                 subscription_data=subscription_data,
             )
@@ -389,25 +389,43 @@ class SubscriptionService:
 
     @classmethod
     def get_current_subscription(cls, user: User) -> Optional[Dict[str, Any]]:
-        """Obtém informações da assinatura atual do usuário."""
         try:
-            subscription = Subscription.objects.filter(
-                user=user, status__in=["active", "trialing", "past_due"]
-            ).first()
+            subscription = (
+                Subscription.objects.filter(
+                    user__tenant=user.tenant,
+                    status__in=["active", "trialing", "past_due"],
+                )
+                .order_by("-updated_at", "-created_at")
+                .first()
+            )
 
             if not subscription:
                 return None
 
-            # Buscar dados atualizados no Stripe
             stripe_sub = stripe.Subscription.retrieve(
                 subscription.stripe_subscription_id
             )
 
-            plan_info = cls.AVAILABLE_PLANS.get(subscription.plan, {})
+            price_id = None
+            try:
+                price_id = stripe_sub.items.data[0].price.id
+            except Exception:
+                price_id = None
+
+            plan_code = None
+            try:
+                md = getattr(stripe_sub, "metadata", {})
+                plan_code = md.get("plan_code") or md.get("plan")
+            except Exception:
+                plan_code = None
+            if not plan_code:
+                plan_code = get_plan_code_from_price(price_id)
+
+            plan_info = cls.AVAILABLE_PLANS.get(plan_code or "", {})
 
             return {
-                "plan_code": subscription.plan,
-                "plan_name": plan_info.get("name", subscription.plan.title()),
+                "plan_code": plan_code,
+                "plan_name": plan_info.get("name", (plan_code or "").title()),
                 "status": stripe_sub.status,
                 "current_period_end": datetime.fromtimestamp(
                     stripe_sub.current_period_end, tz=timezone.utc
@@ -425,7 +443,7 @@ class SubscriptionService:
 
         except Subscription.DoesNotExist:
             return None
-        except stripe.error.StripeError as e:
+        except Exception as e:
             logger.error(f"Stripe error getting subscription: {str(e)}")
             return None
 

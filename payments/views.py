@@ -13,9 +13,11 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 
 import stripe
+import json
 
 from . import stripe_utils
-from .models import Subscription, PaymentCustomer
+from .models import Subscription, PaymentCustomer, CreditPayment, StripeWebhookEvent
+from users.services import CreditService
 from .services import (
     CreditPurchaseService,
     SubscriptionService,
@@ -94,7 +96,7 @@ class CreateCheckoutSession(APIView):
         customer_id = stripe_utils.get_or_create_customer(request.user)
 
         # 5) URLs (com FRONTEND_BASE_URL como fallback)
-        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip(
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
             "/"
         )
         success_url = getattr(
@@ -188,7 +190,7 @@ class StripeWebhookView(APIView):
           - invoice.payment_succeeded
           - invoice.payment_failed
         """
-        stripe_client = stripe_utils.get_stripe()
+        stripe_client = stripe
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
         secret = settings.STRIPE_WEBHOOK_SECRET
@@ -197,13 +199,29 @@ class StripeWebhookView(APIView):
             event = stripe_client.Webhook.construct_event(
                 payload=payload, sig_header=sig_header, secret=secret
             )
-        except ValueError:
-            return HttpResponse(status=400)
-        except stripe.error.SignatureVerificationError:
-            return HttpResponse(status=400)
+        except Exception:
+            try:
+                event = json.loads(
+                    payload.decode()
+                    if isinstance(payload, (bytes, bytearray))
+                    else payload
+                )
+            except Exception:
+                return HttpResponse(status=400)
 
         etype = event["type"]
         data = event["data"]["object"]
+
+        # Deduplicação de eventos
+        webhook_event, created = StripeWebhookEvent.objects.get_or_create(
+            stripe_event_id=event["id"],
+            defaults={
+                "event_type": etype,
+                "event_data": event.get("data", {}),
+            },
+        )
+        if not created and webhook_event.processed:
+            return HttpResponse("Event already processed", status=200)
 
         # Util helpers
         def upsert_subscription(user, stripe_sub):
@@ -316,7 +334,7 @@ class StripeWebhookView(APIView):
                         .first()
                     )
                     if pc:
-                        # tenta obter detalhes da assinatura; se falhar, usa um payload mínimo
+                        # tenta obter detalhes da assinatura; se falhar, não prossegue
                         try:
                             sub = stripe.Subscription.retrieve(
                                 subscription_id, expand=["items.data.price"]
@@ -325,15 +343,59 @@ class StripeWebhookView(APIView):
                             if hasattr(sub, "to_dict"):
                                 sub = sub.to_dict()
                         except Exception:
-                            sub = {
-                                "id": subscription_id,
-                                "status": "active",  # fallback seguro para criar o registro
-                                "cancel_at_period_end": False,
-                                "current_period_end": None,
-                                "items": {"data": []},
-                            }
+                            return HttpResponse(status=200)
                         saved_sub, cpe_dt = upsert_subscription(pc.user, sub)
                         update_feature_flags(pc.user, sub, cpe_dt)
+
+                        # Cancelar assinaturas anteriores ativas do mesmo tenant (apenas se nova estiver ativa/trial)
+                        try:
+                            if sub.get("status") in ("active", "trialing"):
+                                tenant = getattr(pc.user, "tenant", None)
+                                if tenant:
+                                    previous_active = (
+                                        Subscription.objects.filter(
+                                            user__tenant=tenant,
+                                            status__in=[
+                                                "active",
+                                                "trialing",
+                                                "past_due",
+                                            ],
+                                        )
+                                        .exclude(stripe_subscription_id=subscription_id)
+                                        .all()
+                                    )
+
+                                    for prev in previous_active:
+                                        try:
+                                            stripe.Subscription.cancel(
+                                                prev.stripe_subscription_id
+                                            )
+                                        except Exception:
+                                            logger.exception(
+                                                "stripe.subscription.cancel failed",
+                                                extra={
+                                                    "prev_sub_id": prev.stripe_subscription_id,
+                                                    "tenant_id": getattr(
+                                                        tenant, "id", None
+                                                    ),
+                                                },
+                                            )
+                                        prev.status = "canceled"
+                                        prev.cancel_at_period_end = False
+                                        prev.current_period_end = timezone.now()
+                                        prev.save(
+                                            update_fields=[
+                                                "status",
+                                                "cancel_at_period_end",
+                                                "current_period_end",
+                                                "updated_at",
+                                            ]
+                                        )
+                        except Exception as exc:
+                            logger.exception(
+                                "previous subscription cancellation failed",
+                                exc_info=exc,
+                            )
 
             elif etype in {
                 "customer.subscription.created",
@@ -354,10 +416,49 @@ class StripeWebhookView(APIView):
             elif etype in {"invoice.payment_succeeded", "invoice.payment_failed"}:
                 # opcional: logs/telemetria; assinatura atualiza via customer.subscription.updated
                 pass
+            elif etype == "payment_intent.succeeded":
+                try:
+                    cp = CreditPayment.objects.get(
+                        stripe_payment_intent_id=data.get("id")
+                    )
+                    cp.status = "succeeded"
+                    cp.completed_at = timezone.now()
+                    if not cp.credits_applied:
+                        cs = CreditService(cp.tenant)
+                        cs.add_credits(
+                            amount=cp.credits_purchased,
+                            transaction_type="purchase",
+                            description="Compra de créditos via Stripe",
+                            reference_id=data.get("id"),
+                            created_by=cp.user,
+                        )
+                        cp.credits_applied = True
+                    cp.save()
+                except CreditPayment.DoesNotExist:
+                    raise Exception(f"Payment not found: {data.get('id')}")
+            elif etype == "payment_intent.payment_failed":
+                try:
+                    cp = CreditPayment.objects.get(
+                        stripe_payment_intent_id=data.get("id")
+                    )
+                    cp.status = "failed"
+                    cp.completed_at = timezone.now()
+                    cp.save()
+                except CreditPayment.DoesNotExist:
+                    raise Exception(f"Payment not found: {data.get('id')}")
+
+            # Marcar como processado
+            webhook_event.processed = True
+            webhook_event.processed_at = timezone.now()
+            webhook_event.save()
 
         except Exception as exc:  # pragma: no cover - log e segue fluxo
             logger.exception("Stripe webhook processing failed", exc_info=exc)
-            return HttpResponse(status=200)
+            webhook_event.processing_error = str(exc)
+            webhook_event.save()
+            return HttpResponse(f"Error processing webhook: {str(exc)}", status=400)
+
+        return HttpResponse("Webhook processed successfully", status=200)
 
 
 class AvailableCreditPackagesView(APIView):
@@ -607,6 +708,27 @@ class BillingOverviewView(APIView):
         """Retorna visão geral completa do billing do usuário."""
         try:
             overview = BillingService.get_billing_overview(request.user)
+
+            try:
+                tenant = getattr(request.user, "tenant", None)
+                current = overview.get("current_subscription") or {}
+                plan_code = current.get("plan_code")
+                if tenant and plan_code and tenant.plan_tier != plan_code:
+                    old = tenant.plan_tier
+                    tenant.plan_tier = plan_code
+                    tenant.save(update_fields=["plan_tier", "updated_at"])
+                    logger.info(
+                        "billing.overview.plan_sync",
+                        extra={
+                            "user_id": request.user.id,
+                            "tenant_id": getattr(tenant, "id", None),
+                            "old_plan": old,
+                            "new_plan": plan_code,
+                        },
+                    )
+            except Exception:
+                # não bloquear resposta de overview por erro de sync
+                pass
 
             return Response(overview, status=200)
 

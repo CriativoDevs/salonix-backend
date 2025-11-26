@@ -199,6 +199,31 @@ class TenantMetaView(APIView):
         # TenantError será tratado automaticamente pelo custom_exception_handler
         tenant = self.get_tenant(request)
 
+        try:
+            from django.contrib.auth import get_user_model
+            from payments.services import SubscriptionService
+
+            User = get_user_model()
+            any_user = User.objects.filter(tenant=tenant).order_by("id").first()
+            if any_user:
+                current = SubscriptionService.get_current_subscription(any_user) or {}
+                plan_code = current.get("plan_code")
+                if plan_code and tenant.plan_tier != plan_code:
+                    old = tenant.plan_tier
+                    tenant.plan_tier = plan_code
+                    tenant.save(update_fields=["plan_tier", "updated_at"])
+                    bootstrap_logger.info(
+                        "tenant.meta.plan_sync",
+                        extra={
+                            "tenant_id": tenant.id,
+                            "tenant_slug": tenant.slug,
+                            "old_plan": old,
+                            "new_plan": plan_code,
+                        },
+                    )
+        except Exception:
+            pass
+
         # Serializar dados do tenant
         serializer = TenantMetaSerializer(tenant)
         return Response(serializer.data, status=status.HTTP_200_OK)

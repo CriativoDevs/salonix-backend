@@ -34,7 +34,7 @@ urlpatterns = [
     ),
     path(
         "webhook/",
-        StripeWebhookView.as_view(),
+        StripeWebhookApiView.as_view(),
         name="stripe_webhook",
     ),
     # Alias explícito para rota de webhooks Stripe em staging (v2)

@@ -61,6 +61,11 @@ class StripeWebhookView(View):
                 self._handle_payment_succeeded(event["data"]["object"])
             elif event["type"] == "payment_intent.payment_failed":
                 self._handle_payment_failed(event["data"]["object"])
+            elif event["type"] in (
+                "customer.subscription.created",
+                "customer.subscription.updated",
+            ):
+                self._handle_subscription_upsert(event["data"]["object"])
             elif event["type"] == "checkout.session.completed":
                 self._handle_checkout_session_completed(event["data"]["object"])
             else:
@@ -109,8 +114,8 @@ class StripeWebhookView(View):
             )
             price_id = subscription["items"]["data"][0]["price"]["id"]
 
-            # Criar ou atualizar subscription
-            Subscription.objects.update_or_create(
+            # Criar ou atualizar subscription principal para o usuário
+            sub_obj, _ = Subscription.objects.update_or_create(
                 user=payment_customer.user,
                 defaults={
                     "stripe_subscription_id": subscription_id,
@@ -118,6 +123,57 @@ class StripeWebhookView(View):
                     "status": subscription["status"],
                 },
             )
+
+            # Cancelar quaisquer outras assinaturas ativas do mesmo tenant
+            if payment_customer.user and payment_customer.user.tenant:
+                tenant = payment_customer.user.tenant
+                others = Subscription.objects.filter(
+                    user__tenant=tenant,
+                    status__in=["active", "trialing", "past_due"],
+                ).exclude(stripe_subscription_id=subscription_id)
+
+                for old in others:
+                    try:
+                        stripe.Subscription.cancel(old.stripe_subscription_id)
+                        old.status = "canceled"
+                        old.cancel_at_period_end = False
+                        old.save(update_fields=["status", "cancel_at_period_end"])
+                        logger.info(
+                            f"Cancelled previous subscription {old.stripe_subscription_id} for tenant {tenant.id}"
+                        )
+                    except Exception as ce:
+                        logger.error(
+                            f"Failed to cancel previous subscription {old.stripe_subscription_id}: {ce}"
+                        )
+
+            # Cancelar no Stripe todas as assinaturas ativas do mesmo customer, exceto a atual
+            try:
+                subs = stripe.Subscription.list(customer=customer_id)
+                for item in subs.get("data", []):
+                    sid = item.get("id")
+                    status = item.get("status")
+                    if (
+                        sid
+                        and sid != subscription_id
+                        and status
+                        in [
+                            "active",
+                            "trialing",
+                            "past_due",
+                        ]
+                    ):
+                        try:
+                            stripe.Subscription.delete(sid)
+                            logger.info(
+                                f"Cancelled previous Stripe subscription {sid} for customer {customer_id}"
+                            )
+                        except Exception as ce:
+                            logger.error(
+                                f"Failed to cancel Stripe subscription {sid}: {ce}"
+                            )
+            except Exception:
+                # Ignorar falha de list/cancel para manter fluxo principal
+                pass
 
             # Atualizar feature flags do usuário
             plan_code = stripe_utils.get_plan_code_from_price(price_id)
@@ -149,6 +205,102 @@ class StripeWebhookView(View):
 
         except Exception as e:
             logger.error(f"Error handling checkout session completed: {str(e)}")
+            raise
+
+    def _handle_subscription_upsert(self, subscription_obj):
+        try:
+            customer_id = subscription_obj.get("customer")
+            subscription_id = subscription_obj.get("id")
+            items = subscription_obj.get("items", {}).get("data", [])
+            price_id = None
+            if items:
+                price = items[0].get("price")
+                price_id = price.get("id") if isinstance(price, dict) else price
+
+            if not customer_id or not subscription_id or not price_id:
+                logger.warning(
+                    f"Missing fields in subscription update: {subscription_obj}"
+                )
+                return
+
+            payment_customer = PaymentCustomer.objects.filter(
+                stripe_customer_id=customer_id
+            ).first()
+            if not payment_customer:
+                logger.warning(
+                    f"PaymentCustomer not found for customer_id: {customer_id}"
+                )
+                return
+
+            Subscription.objects.update_or_create(
+                user=payment_customer.user,
+                defaults={
+                    "stripe_subscription_id": subscription_id,
+                    "price_id": price_id,
+                    "status": subscription_obj.get("status", "active"),
+                },
+            )
+
+            plan_code = stripe_utils.get_plan_code_from_price(price_id)
+            if plan_code:
+                flags = payment_customer.user.featureflags
+                flags.is_basic = plan_code == "basic"
+                flags.is_standard = plan_code == "standard"
+                flags.is_pro = plan_code == "pro"
+                flags.is_enterprise = plan_code == "enterprise"
+                flags.basic_plan = "basic" if flags.is_basic else None
+                flags.standard_plan = "standard" if flags.is_standard else None
+                flags.pro_plan = "pro" if flags.is_pro else None
+                flags.enterprise_plan = "enterprise" if flags.is_enterprise else None
+                flags.save()
+
+                tenant = payment_customer.user.tenant
+                if tenant:
+                    tenant.plan_tier = plan_code
+                    tenant.save()
+
+            # Cancelar outras assinaturas do tenant
+            if payment_customer.user and payment_customer.user.tenant:
+                tenant = payment_customer.user.tenant
+                others = Subscription.objects.filter(
+                    user__tenant=tenant,
+                    status__in=["active", "trialing", "past_due"],
+                ).exclude(stripe_subscription_id=subscription_id)
+                for old in others:
+                    try:
+                        stripe.Subscription.delete(old.stripe_subscription_id)
+                        old.status = "canceled"
+                        old.cancel_at_period_end = False
+                        old.save(update_fields=["status", "cancel_at_period_end"])
+                    except Exception as ce:
+                        logger.error(
+                            f"Failed to cancel previous subscription {old.stripe_subscription_id}: {ce}"
+                        )
+
+            # Cancelar diretamente no Stripe todas as assinaturas do customer, exceto a atual
+            subs = stripe.Subscription.list(customer=customer_id)
+            for item in subs.get("data", []):
+                sid = item.get("id")
+                status = item.get("status")
+                if (
+                    sid
+                    and sid != subscription_id
+                    and status
+                    in [
+                        "active",
+                        "trialing",
+                        "past_due",
+                    ]
+                ):
+                    try:
+                        stripe.Subscription.delete(sid)
+                    except Exception as ce:
+                        logger.error(
+                            f"Failed to cancel Stripe subscription {sid}: {ce}"
+                        )
+
+        except Exception as e:
+            logger.error(f"Error handling subscription upsert: {str(e)}")
             raise
 
     def _handle_payment_succeeded(self, payment_intent):
