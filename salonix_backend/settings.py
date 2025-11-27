@@ -160,7 +160,7 @@ except Exception:
     ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://5d67412c0245.ngrok-free.app",
+    "https://77e5eadc56f5.ngrok-free.app",
 ]
 
 # opcional: flag ligada por padrão
