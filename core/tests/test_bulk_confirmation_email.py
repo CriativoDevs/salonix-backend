@@ -75,8 +75,7 @@ def test_send_bulk_email_multipart_and_links(settings, with_professional):
         salon_name="Salonix",
     )
 
-    # Obtém mensagem enviada pelo FakeSMTP
-    smtp = _FakeSMTP("localhost", 1025)
+    # Obtém mensagem enviada pelo FakeSMTP (instância coletora criada abaixo)
     # A instância usada dentro da função não é esta, mas vamos verificar pelo
     # último objeto de mensagem anexado via monkeypatch global (armazenado em classe)
     # Para simplificar, recriamos e verificamos características através do conteúdo

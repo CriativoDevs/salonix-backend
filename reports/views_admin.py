@@ -8,6 +8,7 @@ from rest_framework import status
 
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
+from rest_framework import serializers
 
 from reports.utils.cache import invalidate_cache
 
@@ -23,20 +24,15 @@ class CacheInvalidateView(APIView):
 
     permission_classes = [IsAuthenticated, IsAdminUser]
 
+    class CacheInvalidateRequest(serializers.Serializer):
+        prefixes = serializers.ListField(
+            child=serializers.CharField(), required=True
+        )
+
     @extend_schema(
         tags=["Reports • Admin"],
         summary="Invalidar cache por prefixo (admin-only)",
-        request={
-            "type": "object",
-            "properties": {
-                "prefixes": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Lista de prefixos a invalidar (ex.: reports:overview:).",
-                }
-            },
-            "required": ["prefixes"],
-        },
+        request=CacheInvalidateRequest,
         responses={
             200: {
                 "type": "object",

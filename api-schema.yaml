@@ -130,24 +130,21 @@ paths:
   /api/appointments/bulk/mixed/:
     post:
       operationId: appointments_bulk_mixed_create
-      description: |-
-        POST /api/appointments/bulk/mixed/
-
-        Criar múltiplos agendamentos com itens de serviços e profissionais variados.
-        Sucesso parcial é possível; cada item retorna seu resultado.
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
       tags:
       - appointments
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+              $ref: '#/components/schemas/MixedBulkAppointmentRequestRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+              $ref: '#/components/schemas/MixedBulkAppointmentRequestRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/MixedBulkAppointmentRequest'
+              $ref: '#/components/schemas/MixedBulkAppointmentRequestRequest'
         required: true
       security:
       - jwtAuth: []
@@ -279,15 +276,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreditBalance'
-              examples:
-                exemplo:
-                  value:
-                    current_balance: '19.90'
-                    total_purchased: '50.00'
-                    total_consumed: '30.10'
-                    total_bonus: '0.00'
-                    can_purchase_extra: true
-                    has_auto_renewal: true
           description: ''
   /api/auth/credits/consume/:
     post:
@@ -300,12 +288,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ConsumeCreditsRequest'
-            examples:
-              exemplo:
-                value:
-                  amount: '0.045'
-                  description: 'SMS para +351912345678'
-                  reference_id: 'msg_abc123'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/ConsumeCreditsRequest'
@@ -336,21 +318,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CommLedger'
-              examples:
-                exemplo:
-                  value:
-                    - id: 1
-                      transaction_type: purchase
-                      amount_eur: '25.00'
-                      balance_before: '0.00'
-                      balance_after: '25.00'
-                      status: completed
-                      description: 'Recarga de créditos'
-                      reference_id: 'pi_123'
-                      expires_at: '2025-01-01T00:00:00Z'
-                      created_by_username: 'owner@demo.local'
-                      created_at: '2025-01-01T00:00:00Z'
-                      updated_at: '2025-01-01T00:00:00Z'
           description: ''
   /api/auth/credits/purchase/:
     post:
@@ -379,29 +346,6 @@ paths:
           description: Dados inválidos
         '403':
           description: Compra de créditos não permitida
-  /api/auth/realtime/credits/:
-    get:
-      operationId: auth_realtime_credits_retrieve
-      description: Stream SSE com atualizações de saldo/ledger por tenant
-      tags:
-      - auth
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            text/event-stream:
-              schema:
-                type: string
-              examples:
-                credit_update:
-                  summary: Exemplo de evento SSE de crédito
-                  value: |
-                    event: credit_update
-                    data: {"balance": "19.90", "type": "purchase"}
-
-                    
-          description: SSE stream de eventos de crédito
   /api/auth/me/features/:
     get:
       operationId: auth_me_features_retrieve
@@ -467,13 +411,18 @@ paths:
   /api/auth/me/profile/:
     get:
       operationId: auth_me_profile_retrieve
+      description: Retorna perfil do usuário logado
       tags:
       - auth
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSelf'
+          description: ''
     patch:
       operationId: auth_me_profile_partial_update
       description: Atualiza preferência de tema do usuário
@@ -506,19 +455,41 @@ paths:
   /api/auth/me/tenant/:
     get:
       operationId: auth_me_tenant_retrieve
+      description: Retorna metadados do tenant do usuário logado
       tags:
       - auth
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSelfService'
+          description: ''
   /api/auth/password/reset/:
     post:
       operationId: auth_password_reset_create
       description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+            examples:
+              Exemplo:
+                value:
+                  email: user@example.com
+                  reset_url: https://app/reset
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
@@ -531,12 +502,42 @@ paths:
       description: Confirma o reset de senha com uid+token e define nova senha.
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+            examples:
+              Exemplo:
+                value:
+                  uid: '1'
+                  token: <token>
+                  new_password: StrongPass123
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
           description: password_updated
+  /api/auth/realtime/credits/:
+    get:
+      operationId: auth_realtime_credits_retrieve
+      description: 'Stream SSE com atualizações de saldo/ledger por tenant. Content-Type:
+        text/event-stream. Eventos: heartbeat, credit_update.'
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: text/event-stream
   /api/auth/register/:
     post:
       operationId: auth_register_create
@@ -566,32 +567,72 @@ paths:
           description: ''
   /api/auth/staff/:
     get:
-      operationId: auth_staff_retrieve
+      operationId: auth_staff_list
+      description: Lista membros de equipe do tenant autenticado
       tags:
       - auth
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     post:
       operationId: auth_staff_create
+      description: Convida um membro de staff. Retorna token e expiração no payload.
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     patch:
       operationId: auth_staff_partial_update
+      description: Atualiza dados do membro de equipe (papel, status, etc.)
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     delete:
       operationId: auth_staff_destroy
       tags:
@@ -604,14 +645,123 @@ paths:
   /api/auth/staff/accept/:
     post:
       operationId: auth_staff_accept_create
+      description: Aceita convite de membro de equipe e ativa o acesso
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/auth/staff/access-link/:
+    post:
+      operationId: auth_staff_access_link_create
+      description: Envia link de acesso ao painel via redefinição de senha
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+            examples:
+              Payload:
+                value:
+                  id: 123
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/auth/staff/contact/:
+    patch:
+      operationId: auth_staff_contact_partial_update
+      description: Atualiza informações de contato do membro de equipe
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/auth/staff/resend/:
+    post:
+      operationId: auth_staff_resend_create
+      description: Reenvia convite para membro convidado. Gera novo token e expiração.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+            examples:
+              Payload:
+                value:
+                  id: 123
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
   /api/auth/tenant/meta/:
     get:
       operationId: auth_tenant_meta_retrieve
@@ -653,6 +803,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/TenantMeta'
           description: ''
+  /api/auth/tenant/notifications/:
+    patch:
+      operationId: auth_tenant_notifications_partial_update
+      description: Atualiza toggles de canais de notificação (SMS, WhatsApp, Push
+        Mobile). Push Mobile só pode ser ativado no plano Enterprise.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: ok
   /api/auth/token/:
     post:
       operationId: auth_token_create
@@ -818,6 +991,92 @@ paths:
               schema:
                 $ref: '#/components/schemas/NotificationMarkRead'
           description: ''
+  /api/notifications/consent/:
+    get:
+      operationId: notifications_consent_list
+      description: |-
+        GET /api/notifications/consent/
+
+        Lista consents de comunicação por cliente (e filtros opcionais).
+        Retorno: 200 com lista de consentimentos.
+        Erros: 400 para parâmetros inválidos.
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunicationConsent'
+          description: ''
+  /api/notifications/consent/create/:
+    post:
+      operationId: notifications_consent_create_create
+      description: |-
+        POST /api/notifications/consent/
+
+        Cria/atualiza consentimento: status=consented e consented_at=agora.
+        Retorno: 201 com consentimento atualizado/criado.
+        Erros: 400 (validação de campos), 404 (cliente não encontrado).
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunicationConsent'
+          description: ''
+  /api/notifications/consent/withdraw/:
+    post:
+      operationId: notifications_consent_withdraw_create
+      description: |-
+        POST /api/notifications/consent/withdraw/
+
+        Registra retirada de consentimento: status=withdrawn e withdrawn_at=agora.
+        Retorno: 200 com consentimento atualizado/criado.
+        Erros: 400 (validação de campos), 404 (cliente não encontrado).
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentWithdrawRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentWithdrawRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CommunicationConsentWithdrawRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunicationConsent'
+          description: ''
   /api/notifications/logs/:
     get:
       operationId: notifications_logs_list
@@ -975,55 +1234,133 @@ paths:
   /api/ops/auth/login/:
     post:
       operationId: ops_auth_login_create
+      description: Autentica no console Ops e retorna tokens
       tags:
       - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsTokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsTokenObtainPairRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/ops/auth/refresh/:
     post:
       operationId: ops_auth_refresh_create
+      description: Gera novo access token para o console Ops
       tags:
       - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsTokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsTokenRefreshRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/ops/metrics/overview/:
     get:
       operationId: ops_metrics_overview_retrieve
+      description: Resumo de métricas da plataforma
       tags:
       - ops
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/ops/support/clear-lockout/:
     post:
       operationId: ops_support_clear_lockout_create
+      description: Limpa lockout de conta
       tags:
       - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsClearLockoutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsClearLockoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsClearLockoutRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/ops/support/resend-notification/:
     post:
       operationId: ops_support_resend_notification_create
+      description: Reenvia notificação falhada
       tags:
       - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsResendNotificationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsResendNotificationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsResendNotificationRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/ops/tenants/:
     get:
       operationId: ops_tenants_list
@@ -1220,6 +1557,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/CheckoutSessionResponse'
           description: ''
+  /api/payments/stripe/credits/checkout/:
+    post:
+      operationId: payments_stripe_credits_checkout_create
+      description: Cria uma Stripe Checkout Session (mode=payment) para compra de
+        créditos.
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreditPurchaseRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+          description: ''
   /api/payments/stripe/credits/packages/:
     get:
       operationId: payments_stripe_credits_packages_retrieve
@@ -1234,20 +1599,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AvailableCreditPackagesResponse'
-              examples:
-                exemplo:
-                  value:
-                    packages:
-                      - name: '€5'
-                        amount_eur: '5.00'
-                      - name: '€10'
-                        amount_eur: '10.00'
-                      - name: '€25'
-                        amount_eur: '25.00'
-                      - name: '€50'
-                        amount_eur: '50.00'
-                      - name: '€100'
-                        amount_eur: '100.00'
           description: ''
   /api/payments/stripe/credits/purchase/:
     post:
@@ -1262,10 +1613,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreditPurchaseRequestRequest'
-            examples:
-              exemplo:
-                value:
-                  amount_eur: '5.00'
           application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/CreditPurchaseRequestRequest'
@@ -1281,15 +1628,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreditPurchaseResponse'
-              examples:
-                exemplo:
-                  value:
-                    client_secret: 'pi_secret_abc'
-                    payment_intent_id: 'pi_test_abc'
-                    amount_eur: '5.00'
           description: ''
-        '403':
-          description: Compra não permitida (OWNER inativo, tenant inválido ou extras desabilitados)
   /api/payments/stripe/history/:
     get:
       operationId: payments_stripe_history_retrieve
@@ -1320,33 +1659,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/BillingOverview'
           description: ''
-  /api/payments/stripe/settings/:
-    patch:
-      operationId: payments_stripe_settings_update
-      description: Atualiza configuração de renovação automática de créditos do tenant (OWNER).
-      tags:
-      - payments
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/StripeSettingsUpdateRequest'
-        required: true
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StripeSettingsResponse'
-          description: ''
   /api/payments/stripe/plans/:
     get:
       operationId: payments_stripe_plans_list
@@ -1363,6 +1675,32 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/AvailablePlans'
+          description: ''
+  /api/payments/stripe/settings/:
+    patch:
+      operationId: payments_stripe_settings_partial_update
+      description: Atualiza configurações de billing (Stripe) do tenant (OWNER-only).
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStripeSettingsUpdateRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStripeSettingsUpdateRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStripeSettingsUpdateRequestRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StripeSettingsResponse'
           description: ''
   /api/payments/stripe/subscription/action/:
     post:
@@ -1452,6 +1790,74 @@ paths:
               schema:
                 $ref: '#/components/schemas/PortalSessionResponse'
           description: ''
+  /api/payments/stripe/webhook/:
+    post:
+      operationId: payments_stripe_webhook_create
+      description: |-
+        Webhook em /api/payments/stripe/webhook/
+        Eventos considerados:
+          - checkout.session.completed
+          - customer.subscription.created
+          - customer.subscription.updated
+          - customer.subscription.deleted
+          - invoice.payment_succeeded
+          - invoice.payment_failed
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: binary
+          application/x-www-form-urlencoded:
+            schema:
+              type: string
+              format: binary
+          multipart/form-data:
+            schema:
+              type: string
+              format: binary
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Event processed
+  /api/payments/stripe/webhooks/stripe/:
+    post:
+      operationId: payments_stripe_webhooks_stripe_create
+      description: |-
+        Webhook em /api/payments/stripe/webhook/
+        Eventos considerados:
+          - checkout.session.completed
+          - customer.subscription.created
+          - customer.subscription.updated
+          - customer.subscription.deleted
+          - invoice.payment_succeeded
+          - invoice.payment_failed
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: binary
+          application/x-www-form-urlencoded:
+            schema:
+              type: string
+              format: binary
+          multipart/form-data:
+            schema:
+              type: string
+              format: binary
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: Event processed
   /api/professionals/:
     get:
       operationId: professionals_list
@@ -1605,6 +2011,33 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/public/appointments/{id}/ics/:
+    get:
+      operationId: public_appointments_ics_retrieve
+      description: |-
+        GET /api/public/appointments/{id}/ics/?token=...
+
+        Download público de arquivo .ics protegido por token HMAC.
+        Não requer autenticação.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ICS calendar file
   /api/public/professionals/:
     get:
       operationId: public_professionals_list
@@ -1657,6 +2090,21 @@ paths:
                 items:
                   $ref: '#/components/schemas/ScheduleSlot'
           description: ''
+  /api/public/unsubscribe:
+    get:
+      operationId: public_unsubscribe_retrieve
+      tags:
+      - public
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunicationConsent'
+          description: ''
   /api/reports/admin/cache/invalidate/:
     post:
       operationId: reports_admin_cache_invalidate_create
@@ -1670,18 +2118,24 @@ paths:
       tags:
       - Reports • Admin
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                prefixes:
-                  type: array
-                  items:
-                    type: string
-                  description: 'Lista de prefixos a invalidar (ex.: reports:overview:).'
-              additionalProperties: false
+              $ref: '#/components/schemas/CacheInvalidateRequestRequest'
+            examples:
+              ExemploRequisição:
+                value:
+                  prefixes:
+                  - 'reports:overview:'
+                  - 'reports:revenue:'
+                summary: Exemplo requisição
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CacheInvalidateRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CacheInvalidateRequestRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -2276,6 +2730,23 @@ paths:
         - update/partial_update: permite editar SOMENTE o campo 'notes'
           (cancelamento continua pelo endpoint específico de cancelamento).
         - destroy: opcionalmente podemos permitir apagar; por padrão vou desabilitar abaixo.
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+        description: Quantidade por página (default=20, max=100)
+      - in: query
+        name: offset
+        schema:
+          type: integer
+        description: Deslocamento de registros (default=0)
+      - in: query
+        name: ordering
+        schema:
+          type: string
+        description: 'Ordenação: start_time, -start_time, created_at, -created_at,
+          slot_time, -slot_time'
       tags:
       - salon
       security:
@@ -2288,7 +2759,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Appointment'
-          description: ''
+          description: 'Lista paginada. Headers de resposta: X-Total-Count, X-Limit,
+            X-Offset, Link (RFC 5988).'
     post:
       operationId: salon_appointments_create
       description: |-
@@ -3255,13 +3727,18 @@ paths:
   /api/users/me/profile/:
     get:
       operationId: users_me_profile_retrieve
+      description: Retorna perfil do usuário logado
       tags:
       - users
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSelf'
+          description: ''
     patch:
       operationId: users_me_profile_partial_update
       description: Atualiza preferência de tema do usuário
@@ -3294,19 +3771,41 @@ paths:
   /api/users/me/tenant/:
     get:
       operationId: users_me_tenant_retrieve
+      description: Retorna metadados do tenant do usuário logado
       tags:
       - users
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSelfService'
+          description: ''
   /api/users/password/reset/:
     post:
       operationId: users_password_reset_create
       description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+            examples:
+              Exemplo:
+                value:
+                  email: user@example.com
+                  reset_url: https://app/reset
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequestRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
@@ -3319,12 +3818,42 @@ paths:
       description: Confirma o reset de senha com uid+token e define nova senha.
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+            examples:
+              Exemplo:
+                value:
+                  uid: '1'
+                  token: <token>
+                  new_password: StrongPass123
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
           description: password_updated
+  /api/users/realtime/credits/:
+    get:
+      operationId: users_realtime_credits_retrieve
+      description: 'Stream SSE com atualizações de saldo/ledger por tenant. Content-Type:
+        text/event-stream. Eventos: heartbeat, credit_update.'
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: text/event-stream
   /api/users/register/:
     post:
       operationId: users_register_create
@@ -3354,32 +3883,72 @@ paths:
           description: ''
   /api/users/staff/:
     get:
-      operationId: users_staff_retrieve
+      operationId: users_staff_list
+      description: Lista membros de equipe do tenant autenticado
       tags:
       - users
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     post:
       operationId: users_staff_create
+      description: Convida um membro de staff. Retorna token e expiração no payload.
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffInviteRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     patch:
       operationId: users_staff_partial_update
+      description: Atualiza dados do membro de equipe (papel, status, etc.)
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffUpdateRequest'
       security:
       - jwtAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
     delete:
       operationId: users_staff_destroy
       tags:
@@ -3392,14 +3961,123 @@ paths:
   /api/users/staff/accept/:
     post:
       operationId: users_staff_accept_create
+      description: Aceita convite de membro de equipe e ativa o acesso
       tags:
       - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StaffAcceptInviteRequest'
+        required: true
       security:
       - jwtAuth: []
       - {}
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/users/staff/access-link/:
+    post:
+      operationId: users_staff_access_link_create
+      description: Envia link de acesso ao painel via redefinição de senha
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+            examples:
+              Payload:
+                value:
+                  id: 123
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/users/staff/contact/:
+    patch:
+      operationId: users_staff_contact_partial_update
+      description: Atualiza informações de contato do membro de equipe
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStaffContactUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
+  /api/users/staff/resend/:
+    post:
+      operationId: users_staff_resend_create
+      description: Reenvia convite para membro convidado. Gera novo token e expiração.
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+            examples:
+              Payload:
+                value:
+                  id: 123
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStaffMember'
+          description: ''
   /api/users/tenant/meta/:
     get:
       operationId: users_tenant_meta_retrieve
@@ -3441,6 +4119,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/TenantMeta'
           description: ''
+  /api/users/tenant/notifications/:
+    patch:
+      operationId: users_tenant_notifications_partial_update
+      description: Atualiza toggles de canais de notificação (SMS, WhatsApp, Push
+        Mobile). Push Mobile só pode ser ativado no plano Enterprise.
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantNotificationsUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: ok
   /api/users/token/:
     post:
       operationId: users_token_create
@@ -3809,6 +4510,16 @@ components:
           pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
           nullable: true
           description: Próximo valor a ser cobrado
+        trial_eligible:
+          type: boolean
+          description: Se é elegível ao período de teste
+        trial_days:
+          type: integer
+          default: 0
+          description: Dias de teste configurados
+        trial_exhausted:
+          type: boolean
+          description: Se o período de teste já foi utilizado
       required:
       - available_plans
       - can_purchase_credits
@@ -3816,24 +4527,11 @@ components:
       - current_subscription
       - has_auto_renewal
       - next_billing_amount
-    StripeSettingsUpdateRequest:
-      type: object
-      description: Payload para atualizar configurações de billing (Stripe).
-      properties:
-        auto_renewal:
-          type: boolean
-          description: Ativa/desativa renovação automática de créditos de comunicação
-      required:
-      - auto_renewal
-    StripeSettingsResponse:
-      type: object
-      description: Resposta simplificada para configurações de billing (Stripe).
-      properties:
-        auto_renewal:
-          type: boolean
-          description: Estado atual da renovação automática de créditos de comunicação
-      required:
-      - auto_renewal
+      - trial_eligible
+      - trial_exhausted
+    BlankEnum:
+      enum:
+      - ''
     BulkAppointmentRequest:
       type: object
       description: |-
@@ -3868,7 +4566,7 @@ components:
         client_email:
           type: string
           format: email
-          minLength: 1
+          nullable: true
         client_phone:
           type: string
           minLength: 1
@@ -3882,8 +4580,6 @@ components:
           maxLength: 500
       required:
       - appointments
-      - professional_id
-      - service_id
     BulkAppointmentResponse:
       type: object
       properties:
@@ -3917,127 +4613,15 @@ components:
       - service_name
       - success
       - total_value
-    MixedBulkAppointmentItem:
+    BulkAppointmentSlotRequest:
       type: object
-      description: Item de agendamento contendo slot, serviço e profissional.
+      description: Serializer para cada slot individual em um agendamento múltiplo.
       properties:
         slot_id:
           type: integer
         service_id:
           type: integer
         professional_id:
-          type: integer
-        notes:
-          type: string
-          maxLength: 500
-      required:
-      - slot_id
-      - service_id
-      - professional_id
-    MixedBulkAppointmentRequest:
-      type: object
-      description: |-
-        Request para criação mista de múltiplos agendamentos.
-
-        Estrutura esperada:
-        {
-            "customer_id": 123,
-            "client_name": "João Silva",
-            "client_email": "joao@email.com",
-            "client_phone": "+351912345678",
-            "items": [
-                {"slot_id": 10, "service_id": 1, "professional_id": 2, "notes": "..."},
-                {"slot_id": 15, "service_id": 3, "professional_id": 5},
-                {"slot_id": 20, "service_id": 1, "professional_id": 4}
-            ]
-        }
-      properties:
-        customer_id:
-          type: integer
-          nullable: true
-        client_name:
-          type: string
-          maxLength: 100
-        client_email:
-          type: string
-          format: email
-        client_phone:
-          type: string
-          maxLength: 20
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/MixedBulkAppointmentItem'
-      required:
-      - items
-    MixedBulkItemSuggestedSlot:
-      type: object
-      description: Slot sugerido quando o slot solicitado está indisponível.
-      properties:
-        slot_id:
-          type: integer
-        start_time:
-          type: string
-          format: date-time
-        end_time:
-          type: string
-          format: date-time
-        professional_id:
-          type: integer
-    MixedBulkItemResult:
-      type: object
-      description: Resultado individual por item do mixed bulk.
-      properties:
-        slot_id:
-          type: integer
-        status:
-          type: string
-          description: created ou error
-        message:
-          type: string
-        appointment_id:
-          type: integer
-          nullable: true
-        suggested_slot:
-          allOf:
-          - $ref: '#/components/schemas/MixedBulkItemSuggestedSlot'
-          nullable: true
-      required:
-      - message
-      - slot_id
-      - status
-    MixedBulkAppointmentResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        appointment_ids:
-          type: array
-          items:
-            type: integer
-        appointments_created:
-          type: integer
-        total_value:
-          type: number
-          format: double
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/MixedBulkItemResult'
-        message:
-          type: string
-      required:
-      - appointment_ids
-      - appointments_created
-      - message
-      - results
-      - success
-      - total_value
-    BulkAppointmentSlotRequest:
-      type: object
-      description: Serializer para cada slot individual em um agendamento múltiplo.
-      properties:
-        slot_id:
           type: integer
         date:
           type: string
@@ -4052,6 +4636,16 @@ components:
           maxLength: 500
       required:
       - slot_id
+    CacheInvalidateRequestRequest:
+      type: object
+      properties:
+        prefixes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+      required:
+      - prefixes
     CategoryEnum:
       enum:
       - notification_failure
@@ -4062,20 +4656,22 @@ components:
         * `notification_failure` - Notification Failure
         * `security_incident` - Security Incident
         * `system` - System
-    ChannelEnum:
+    ChannelE1eEnum:
       enum:
-      - in_app
-      - push_web
-      - push_mobile
-      - sms
-      - whatsapp
+      - CommunicationChannel.in_app
+      - CommunicationChannel.push_web
+      - CommunicationChannel.push_mobile
+      - CommunicationChannel.sms
+      - CommunicationChannel.whatsapp
+      - CommunicationChannel.email
       type: string
       description: |-
-        * `in_app` - In-App
-        * `push_web` - Web Push
-        * `push_mobile` - Mobile Push
-        * `sms` - SMS
-        * `whatsapp` - WhatsApp
+        * `CommunicationChannel.in_app` - CommunicationChannel.in_app
+        * `CommunicationChannel.push_web` - CommunicationChannel.push_web
+        * `CommunicationChannel.push_mobile` - CommunicationChannel.push_mobile
+        * `CommunicationChannel.sms` - CommunicationChannel.sms
+        * `CommunicationChannel.whatsapp` - CommunicationChannel.whatsapp
+        * `CommunicationChannel.email` - CommunicationChannel.email
     CheckoutSessionRequestRequest:
       type: object
       properties:
@@ -4112,14 +4708,6 @@ components:
           allOf:
           - $ref: '#/components/schemas/TransactionTypeEnum'
           readOnly: true
-          description: |-
-            Tipo de transação
-
-            * `purchase` - Compra
-            * `consumption` - Consumo
-            * `expiration` - Expiração
-            * `refund` - Reembolso
-            * `bonus` - Bônus
         amount_eur:
           type: string
           format: decimal
@@ -4142,13 +4730,6 @@ components:
           allOf:
           - $ref: '#/components/schemas/CommLedgerStatusEnum'
           readOnly: true
-          description: |-
-            Status da transação
-
-            * `pending` - Pendente
-            * `completed` - Concluído
-            * `failed` - Falhou
-            * `cancelled` - Cancelado
         description:
           type: string
           readOnly: true
@@ -4191,16 +4772,161 @@ components:
       - updated_at
     CommLedgerStatusEnum:
       enum:
-      - pending
-      - completed
-      - failed
-      - cancelled
+      - CommLedgerStatus.pending
+      - CommLedgerStatus.completed
+      - CommLedgerStatus.failed
+      - CommLedgerStatus.cancelled
       type: string
       description: |-
-        * `pending` - Pendente
-        * `completed` - Concluído
-        * `failed` - Falhou
-        * `cancelled` - Cancelado
+        * `CommLedgerStatus.pending` - CommLedgerStatus.pending
+        * `CommLedgerStatus.completed` - CommLedgerStatus.completed
+        * `CommLedgerStatus.failed` - CommLedgerStatus.failed
+        * `CommLedgerStatus.cancelled` - CommLedgerStatus.cancelled
+    CommunicationConsent:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tenant:
+          type: integer
+          readOnly: true
+        customer_id:
+          type: integer
+          readOnly: true
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/ChannelE1eEnum'
+          readOnly: true
+        purpose:
+          allOf:
+          - $ref: '#/components/schemas/PurposeEnum'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/CommunicationConsentStatusEnum'
+          readOnly: true
+        consented_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        withdrawn_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        source:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+          maxLength: 256
+        version:
+          type: string
+          nullable: true
+          maxLength: 32
+        locale:
+          type: string
+          nullable: true
+          maxLength: 16
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - channel
+      - consented_at
+      - created_at
+      - customer_id
+      - id
+      - purpose
+      - status
+      - tenant
+      - updated_at
+      - withdrawn_at
+    CommunicationConsentCreateRequest:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+        channel:
+          $ref: '#/components/schemas/ChannelE1eEnum'
+        purpose:
+          $ref: '#/components/schemas/PurposeEnum'
+        source:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ip_address:
+          type: string
+          nullable: true
+          minLength: 1
+        user_agent:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 256
+        version:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 32
+        locale:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 16
+      required:
+      - channel
+      - customer_id
+      - purpose
+    CommunicationConsentStatusEnum:
+      enum:
+      - CommunicationStatus.consented
+      - CommunicationStatus.withdrawn
+      - CommunicationStatus.pending
+      type: string
+      description: |-
+        * `CommunicationStatus.consented` - CommunicationStatus.consented
+        * `CommunicationStatus.withdrawn` - CommunicationStatus.withdrawn
+        * `CommunicationStatus.pending` - CommunicationStatus.pending
+    CommunicationConsentWithdrawRequest:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+        purpose:
+          $ref: '#/components/schemas/PurposeEnum'
+        source:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        ip_address:
+          type: string
+          nullable: true
+          minLength: 1
+        user_agent:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 256
+      required:
+      - customer_id
+      - purpose
     ConsumeCreditsRequest:
       type: object
       description: Serializer para consumir créditos.
@@ -4354,6 +5080,106 @@ components:
       required:
       - email
       - password
+    MixedBulkAppointmentItemRequest:
+      type: object
+      description: 'Item para criação mista: requer service_id e professional_id por
+        slot.'
+      properties:
+        slot_id:
+          type: integer
+        service_id:
+          type: integer
+        professional_id:
+          type: integer
+        notes:
+          type: string
+          maxLength: 500
+      required:
+      - professional_id
+      - service_id
+      - slot_id
+    MixedBulkAppointmentRequestRequest:
+      type: object
+      description: |-
+        Payload para POST /appointments/bulk/mixed/.
+
+        Estrutura esperada:
+        {
+            "customer_id": 123,  # opcional
+            "client_name": "João Silva",  # opcional
+            "client_email": "joao@email.com",  # opcional
+            "client_phone": "+351912345678",  # opcional
+            "items": [
+                {"slot_id": 10, "service_id": 1, "professional_id": 2, "notes": "..."},
+                {"slot_id": 15, "service_id": 3, "professional_id": 5},
+                {"slot_id": 20, "service_id": 1, "professional_id": 4}
+            ]
+        }
+      properties:
+        customer_id:
+          type: integer
+          nullable: true
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        client_email:
+          type: string
+          format: email
+          nullable: true
+        client_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MixedBulkAppointmentItemRequest'
+      required:
+      - items
+    MixedBulkAppointmentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        appointment_ids:
+          type: array
+          items:
+            type: integer
+        appointments_created:
+          type: integer
+        total_value:
+          type: number
+          format: double
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MixedBulkItemResult'
+        message:
+          type: string
+      required:
+      - appointment_ids
+      - appointments_created
+      - message
+      - results
+      - success
+      - total_value
+    MixedBulkItemResult:
+      type: object
+      properties:
+        slot_id:
+          type: integer
+        status:
+          type: string
+        message:
+          type: string
+        appointment_id:
+          type: integer
+        suggested_slot: {}
+      required:
+      - message
+      - slot_id
+      - status
     Notification:
       type: object
       description: |-
@@ -4476,7 +5302,7 @@ components:
           readOnly: true
         channel:
           allOf:
-          - $ref: '#/components/schemas/ChannelEnum'
+          - $ref: '#/components/schemas/NotificationLogChannelEnum'
           readOnly: true
           description: |-
             Canal de envio da notificação
@@ -4554,6 +5380,20 @@ components:
       - status
       - status_display
       - title
+    NotificationLogChannelEnum:
+      enum:
+      - in_app
+      - push_web
+      - push_mobile
+      - sms
+      - whatsapp
+      type: string
+      description: |-
+        * `in_app` - In-App
+        * `push_web` - Web Push
+        * `push_mobile` - Mobile Push
+        * `sms` - SMS
+        * `whatsapp` - WhatsApp
     NotificationLogStatusEnum:
       enum:
       - pending
@@ -4612,6 +5452,20 @@ components:
       - registered_devices
       - total_notifications
       - unread_notifications
+    NotificationTestChannelEnum:
+      enum:
+      - NotificationChannel.in_app
+      - NotificationChannel.push_web
+      - NotificationChannel.push_mobile
+      - NotificationChannel.sms
+      - NotificationChannel.whatsapp
+      type: string
+      description: |-
+        * `NotificationChannel.in_app` - NotificationChannel.in_app
+        * `NotificationChannel.push_web` - NotificationChannel.push_web
+        * `NotificationChannel.push_mobile` - NotificationChannel.push_mobile
+        * `NotificationChannel.sms` - NotificationChannel.sms
+        * `NotificationChannel.whatsapp` - NotificationChannel.whatsapp
     NotificationTestRequest:
       type: object
       description: |-
@@ -4620,15 +5474,15 @@ components:
       properties:
         channel:
           allOf:
-          - $ref: '#/components/schemas/ChannelEnum'
+          - $ref: '#/components/schemas/NotificationTestChannelEnum'
           description: |-
             Canal a ser testado
 
-            * `in_app` - In-App
-            * `push_web` - Web Push
-            * `push_mobile` - Mobile Push
-            * `sms` - SMS
-            * `whatsapp` - WhatsApp
+            * `NotificationChannel.in_app` - NotificationChannel.in_app
+            * `NotificationChannel.push_web` - NotificationChannel.push_web
+            * `NotificationChannel.push_mobile` - NotificationChannel.push_mobile
+            * `NotificationChannel.sms` - NotificationChannel.sms
+            * `NotificationChannel.whatsapp` - NotificationChannel.whatsapp
         message:
           type: string
           minLength: 1
@@ -4666,6 +5520,9 @@ components:
         * `appointment_completed` - Agendamento Concluído
         * `payment_received` - Pagamento Recebido
         * `system` - Notificação do Sistema
+    NullEnum:
+      enum:
+      - null
     OpsAlert:
       type: object
       properties:
@@ -4730,6 +5587,23 @@ components:
       - tenant
       - tenant_name
       - updated_at
+    OpsClearLockoutRequest:
+      type: object
+      properties:
+        lockout_id:
+          type: integer
+        note:
+          type: string
+          maxLength: 255
+      required:
+      - lockout_id
+    OpsResendNotificationRequest:
+      type: object
+      properties:
+        notification_log_id:
+          type: integer
+      required:
+      - notification_log_id
     OpsTenant:
       type: object
       properties:
@@ -4818,6 +5692,28 @@ components:
       - timezone
       - updated_at
       - user_counts
+    OpsTokenObtainPairRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - email
+      - password
+    OpsTokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
     PaginatedOpsTenantList:
       type: object
       required:
@@ -4841,6 +5737,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpsTenant'
+    PasswordResetConfirmRequest:
+      type: object
+      properties:
+        uid:
+          type: string
+          minLength: 1
+        token:
+          type: string
+          minLength: 1
+        new_password:
+          type: string
+          minLength: 8
+      required:
+      - new_password
+      - token
+      - uid
+    PasswordResetRequestRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        reset_url:
+          type: string
+      required:
+      - email
     PatchedAppointmentRequest:
       type: object
       properties:
@@ -4896,6 +5819,10 @@ components:
           type: boolean
         staff_member:
           type: integer
+        service_ids:
+          type: array
+          items:
+            type: integer
     PatchedSalonCustomerRequest:
       type: object
       properties:
@@ -4948,11 +5875,36 @@ components:
           minimum: 0
           format: int64
           description: Duração do serviço em minutos
+    PatchedStaffContactUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        first_name:
+          type: string
+        last_name:
+          type: string
+    PatchedStaffUpdateRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        status:
+          $ref: '#/components/schemas/StatusAb9Enum'
+    PatchedStripeSettingsUpdateRequestRequest:
+      type: object
+      description: Payload para atualizar configurações de billing (Stripe).
+      properties:
+        auto_renewal:
+          type: boolean
+          description: Ativa/desativa renovação automática de créditos de comunicação
     PatchedTenantBrandingUpdateRequest:
       type: object
       description: |-
         Serializer para atualização de branding do tenant.
-        Permite upload de logo e atualização de favicon_url e app_name.
+        Permite upload de logo.
       properties:
         logo:
           type: string
@@ -4977,6 +5929,15 @@ components:
           description: Nome exibido do salão/aplicativo
           maxLength: 100
         auto_invite_enabled:
+          type: boolean
+    PatchedTenantNotificationsUpdateRequest:
+      type: object
+      properties:
+        sms_enabled:
+          type: boolean
+        whatsapp_enabled:
+          type: boolean
+        push_mobile_enabled:
           type: boolean
     PatchedUserFeatureFlagsUpdateRequest:
       type: object
@@ -5114,6 +6075,10 @@ components:
           type: boolean
         staff_member:
           type: integer
+        service_ids:
+          type: array
+          items:
+            type: integer
       required:
       - id
       - name
@@ -5147,6 +6112,10 @@ components:
           type: boolean
         staff_member:
           type: integer
+        service_ids:
+          type: array
+          items:
+            type: integer
       required:
       - name
     PurchaseCreditsRequest:
@@ -5160,6 +6129,24 @@ components:
           description: Quantidade de créditos a comprar em EUR (mínimo 5.00)
       required:
       - amount
+    PurposeEnum:
+      enum:
+      - CommunicationPurpose.marketing
+      - CommunicationPurpose.transactional
+      type: string
+      description: |-
+        * `CommunicationPurpose.marketing` - CommunicationPurpose.marketing
+        * `CommunicationPurpose.transactional` - CommunicationPurpose.transactional
+    RoleEnum:
+      enum:
+      - TenantStaffMemberRole.owner
+      - TenantStaffMemberRole.manager
+      - TenantStaffMemberRole.collaborator
+      type: string
+      description: |-
+        * `TenantStaffMemberRole.owner` - TenantStaffMemberRole.owner
+        * `TenantStaffMemberRole.manager` - TenantStaffMemberRole.manager
+        * `TenantStaffMemberRole.collaborator` - TenantStaffMemberRole.collaborator
     SalonCustomer:
       type: object
       properties:
@@ -5393,6 +6380,49 @@ components:
         * `info` - Info
         * `warning` - Warning
         * `critical` - Critical
+    SourceEnum:
+      enum:
+      - admin
+      - self_service
+      - import
+      type: string
+      description: |-
+        * `admin` - Admin
+        * `self_service` - Self Service
+        * `import` - Import
+    StaffAcceptInviteRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 8
+        first_name:
+          type: string
+        last_name:
+          type: string
+      required:
+      - password
+      - token
+    StaffInviteRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          default: TenantStaffMemberRole.collaborator
+        first_name:
+          type: string
+        last_name:
+          type: string
+      required:
+      - email
     Status2d6Enum:
       enum:
       - scheduled
@@ -5405,6 +6435,25 @@ components:
         * `cancelled` - Cancelled
         * `completed` - Completed
         * `paid` - Paid
+    StatusAb9Enum:
+      enum:
+      - TenantStaffMemberStatus.active
+      - TenantStaffMemberStatus.invited
+      - TenantStaffMemberStatus.disabled
+      type: string
+      description: |-
+        * `TenantStaffMemberStatus.active` - TenantStaffMemberStatus.active
+        * `TenantStaffMemberStatus.invited` - TenantStaffMemberStatus.invited
+        * `TenantStaffMemberStatus.disabled` - TenantStaffMemberStatus.disabled
+    StripeSettingsResponse:
+      type: object
+      description: Resposta simplificada para configurações de billing (Stripe).
+      properties:
+        auto_renewal:
+          type: boolean
+          description: Estado atual da renovação automática de créditos de comunicação
+      required:
+      - auto_renewal
     SubscriptionActionActionEnum:
       enum:
       - cancel
@@ -5455,10 +6504,12 @@ components:
           type: string
           format: uri
           readOnly: true
+          nullable: true
           description: URL do favicon do salão
         app_name:
           type: string
           readOnly: true
+          nullable: true
           description: Nome exibido do salão/aplicativo
         timezone:
           type: string
@@ -5488,8 +6539,10 @@ components:
           type: boolean
           readOnly: true
       required:
+      - app_name
       - auto_invite_enabled
       - currency
+      - favicon_url
       - feature_flags
       - logo_url
       - name
@@ -5512,7 +6565,8 @@ components:
           description: Identificador único (URL-friendly)
           pattern: ^[-a-zA-Z0-9_]+$
         plan:
-          type: string
+          type: object
+          additionalProperties: {}
           readOnly: true
         timezone:
           type: string
@@ -5523,10 +6577,12 @@ components:
           readOnly: true
           description: Moeda padrão (ISO 4217)
         feature_flags:
-          type: string
+          type: object
+          additionalProperties: {}
           readOnly: true
         branding:
-          type: string
+          type: object
+          additionalProperties: {}
           readOnly: true
       required:
       - branding
@@ -5537,6 +6593,63 @@ components:
       - plan
       - slug
       - timezone
+    TenantStaffMember:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusAb9Enum'
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        first_name:
+          type: string
+          readOnly: true
+        last_name:
+          type: string
+          readOnly: true
+        invited_at:
+          type: string
+          format: date-time
+          nullable: true
+        activated_at:
+          type: string
+          format: date-time
+          nullable: true
+        deactivated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - email
+      - first_name
+      - id
+      - last_name
+      - role
+      - status
+      - updated_at
+      - username
     TokenRefresh:
       type: object
       properties:
@@ -5556,18 +6669,18 @@ components:
       - refresh
     TransactionTypeEnum:
       enum:
-      - purchase
-      - consumption
-      - expiration
-      - refund
-      - bonus
+      - CommLedgerTransactionType.purchase
+      - CommLedgerTransactionType.consumption
+      - CommLedgerTransactionType.expiration
+      - CommLedgerTransactionType.refund
+      - CommLedgerTransactionType.bonus
       type: string
       description: |-
-        * `purchase` - Compra
-        * `consumption` - Consumo
-        * `expiration` - Expiração
-        * `refund` - Reembolso
-        * `bonus` - Bônus
+        * `CommLedgerTransactionType.purchase` - CommLedgerTransactionType.purchase
+        * `CommLedgerTransactionType.consumption` - CommLedgerTransactionType.consumption
+        * `CommLedgerTransactionType.expiration` - CommLedgerTransactionType.expiration
+        * `CommLedgerTransactionType.refund` - CommLedgerTransactionType.refund
+        * `CommLedgerTransactionType.bonus` - CommLedgerTransactionType.bonus
     TypeEnum:
       enum:
       - subscription

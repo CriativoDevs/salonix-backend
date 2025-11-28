@@ -21,6 +21,8 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -69,6 +71,11 @@ class OpsAuthLoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [OpsAuthLoginThrottle]
 
+    @extend_schema(
+        request=OpsTokenObtainPairSerializer,
+        responses=OpenApiTypes.OBJECT,
+        description="Autentica no console Ops e retorna tokens",
+    )
     def post(self, request, *args: Any, **kwargs: Any) -> Response:
         serializer = OpsTokenObtainPairSerializer(data=request.data)
         try:
@@ -143,6 +150,11 @@ class OpsAuthRefreshView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [OpsAuthRefreshThrottle]
 
+    @extend_schema(
+        request=OpsTokenRefreshSerializer,
+        responses=OpenApiTypes.OBJECT,
+        description="Gera novo access token para o console Ops",
+    )
     def post(self, request, *args: Any, **kwargs: Any) -> Response:
         serializer = OpsTokenRefreshSerializer(data=request.data)
         try:
@@ -603,6 +615,7 @@ class OpsTenantViewSet(
 class OpsMetricsOverviewView(APIView):
     permission_classes = [IsOpsSupportOrAdmin]
 
+    @extend_schema(responses=OpenApiTypes.OBJECT, description="Resumo de métricas da plataforma")
     def get(self, request, *args: Any, **kwargs: Any) -> Response:
         now = timezone.now()
 
@@ -737,6 +750,11 @@ class OpsAlertViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 class OpsSupportResendNotificationView(APIView):
     permission_classes = [IsOpsSupportOrAdmin]
 
+    @extend_schema(
+        request=OpsResendNotificationSerializer,
+        responses=OpenApiTypes.OBJECT,
+        description="Reenvia notificação falhada",
+    )
     def post(self, request, *args: Any, **kwargs: Any) -> Response:
         serializer = OpsResendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -820,6 +838,11 @@ class OpsSupportResendNotificationView(APIView):
 class OpsSupportClearLockoutView(APIView):
     permission_classes = [IsOpsAdmin]
 
+    @extend_schema(
+        request=OpsClearLockoutSerializer,
+        responses=OpenApiTypes.OBJECT,
+        description="Limpa lockout de conta",
+    )
     def post(self, request, *args: Any, **kwargs: Any) -> Response:
         serializer = OpsClearLockoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

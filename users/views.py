@@ -14,11 +14,13 @@ from rest_framework.exceptions import (
 )
 
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
+from drf_spectacular.types import OpenApiTypes
 
 from rest_framework.exceptions import NotFound
 from django.http import StreamingHttpResponse
 import json
 import time
+import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
@@ -42,6 +44,8 @@ from .serializers import (
     ConsumeCreditsSerializer,
     PurchaseCreditsSerializer,
     TenantNotificationsUpdateSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -54,11 +58,20 @@ from .observability import (
     USERS_THROTTLED_TOTAL,
     USERS_PASSWORD_RESET_EVENTS_TOTAL,
     USERS_SSE_EVENTS_TOTAL,
+    USERS_STAFF_INVITE_EVENTS_TOTAL,
 )
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from rest_framework.throttling import ScopedRateThrottle
+from core.email_utils import send_staff_invite_email
+from .serializers import StaffContactUpdateSerializer
+from .throttling import UsersPasswordResetThrottle as _UsersPasswordResetThrottle
+from .throttling import (
+    UsersStaffInviteThrottle,
+    UsersStaffResendInviteThrottle,
+)
+from django.utils import timezone
+from datetime import timedelta
 
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
@@ -297,6 +310,10 @@ class MeTenantView(APIView):
     permission_classes = [IsAuthenticated]
     CACHE_TTL = 30
 
+    @extend_schema(
+        responses=TenantSelfServiceSerializer,
+        description="Retorna metadados do tenant do usuário logado",
+    )
     def get(self, request):
         user = request.user
         tenant = getattr(user, "tenant", None)
@@ -329,6 +346,9 @@ class MeTenantView(APIView):
 class MeProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses=UserSelfSerializer, description="Retorna perfil do usuário logado"
+    )
     def get(self, request):
         user = request.user
         serializer = UserSelfSerializer(user)
@@ -382,7 +402,14 @@ class MeProfileView(APIView):
 
 class TenantStaffView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [UsersStaffInviteThrottle]
+    throttle_scope = "users_staff_invite"
+    serializer_class = TenantStaffMemberSerializer
 
+    @extend_schema(
+        responses={200: TenantStaffMemberSerializer(many=True)},
+        description="Lista membros de equipe do tenant autenticado",
+    )
     def get(self, request):
         tenant = getattr(request.user, "tenant", None)
         if tenant is None:
@@ -400,6 +427,11 @@ class TenantStaffView(APIView):
         serializer = TenantStaffMemberSerializer(staff_qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        request=StaffInviteSerializer,
+        responses=TenantStaffMemberSerializer,
+        description="Convida um membro de staff. Retorna token e expiração no payload.",
+    )
     def post(self, request):
         tenant = getattr(request.user, "tenant", None)
         if tenant is None:
@@ -413,8 +445,46 @@ class TenantStaffView(APIView):
         response_data = TenantStaffMemberSerializer(staff_member).data
         response_data["invite_token"] = serializer.invite_token
         response_data["invite_token_expires_at"] = staff_member.invite_token_expires_at
+
+        # Envio de e-mail com link de aceite
+        try:
+            base = getattr(
+                settings, "FRONTEND_BASE_URL", "http://localhost:5173"
+            ).rstrip("/")
+            token = serializer.invite_token or ""
+            accept_url = f"{base}/staff/accept?token={token}"
+            to_email = staff_member.user.email or ""
+            inviter_name = (
+                request.user.get_full_name()
+                or request.user.email
+                or request.user.username
+            )
+            if to_email:
+                ok = send_staff_invite_email(
+                    to_email=to_email,
+                    accept_url=accept_url,
+                    salon_name=tenant.name or "Salonix",
+                    inviter_name=inviter_name,
+                )
+                USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                    event="invite", result="success" if ok else "failure"
+                ).inc()
+            else:
+                USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                    event="invite", result="failure"
+                ).inc()
+        except Exception:
+            USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                event="invite", result="failure"
+            ).inc()
+
         return Response(response_data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        request=StaffUpdateSerializer,
+        responses=TenantStaffMemberSerializer,
+        description="Atualiza dados do membro de equipe (papel, status, etc.)",
+    )
     def patch(self, request):
         tenant = getattr(request.user, "tenant", None)
         if tenant is None:
@@ -477,25 +547,302 @@ class TenantStaffView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class TenantStaffAcceptInviteView(APIView):
-    permission_classes = [AllowAny]
+class TenantStaffResendInviteView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [UsersStaffResendInviteThrottle]
+    throttle_scope = "users_staff_resend"
 
+    @extend_schema(
+        request=OpenApiTypes.OBJECT,
+        examples=[
+            OpenApiExample("Payload", value={"id": 123}, request_only=True),
+        ],
+        responses=TenantStaffMemberSerializer,
+        description="Reenvia convite para membro convidado. Gera novo token e expiração.",
+    )
     def post(self, request):
-        serializer = StaffAcceptInviteSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        staff_member = serializer.save()
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        member_id = request.data.get("id")
+        if not member_id:
+            raise ValidationError({"id": "Informe o identificador do membro."})
+
+        try:
+            staff_member = TenantStaffMember.objects.select_related("user").get(
+                tenant=tenant, id=member_id
+            )
+        except TenantStaffMember.DoesNotExist as exc:
+            raise NotFound("Membro de equipe não encontrado.") from exc
+
+        if staff_member.role == TenantStaffMember.Role.OWNER:
+            raise ValidationError("Owner não recebe convite.")
+
+        if staff_member.status == TenantStaffMember.Status.ACTIVE:
+            raise ValidationError("Membro já está ativo.")
+
+        to_email = (staff_member.user.email or "").strip()
+        if not to_email:
+            return Response(
+                {
+                    "detail": "E-mail do membro ausente. Atualize o cadastro e tente novamente."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token = secrets.token_urlsafe(48)
+        expires_at = timezone.now() + timedelta(days=7)
+        staff_member.set_invite(token, expires_at, invited_by=request.user)
+
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
+            "/"
+        )
+        accept_url = f"{base}/staff/accept?token={token}"
+        inviter_name = (
+            request.user.get_full_name() or request.user.email or request.user.username
+        )
+
+        try:
+            ok = send_staff_invite_email(
+                to_email=to_email,
+                accept_url=accept_url,
+                salon_name=tenant.name or "Salonix",
+                inviter_name=inviter_name,
+            )
+            USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                event="invite", result="success" if ok else "failure"
+            ).inc()
+        except Exception:
+            USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                event="invite", result="failure"
+            ).inc()
+
         response_data = TenantStaffMemberSerializer(staff_member).data
+        response_data["invite_token"] = token
+        response_data["invite_token_expires_at"] = staff_member.invite_token_expires_at
         return Response(response_data, status=status.HTTP_200_OK)
 
 
-class UsersPasswordResetThrottle(ScopedRateThrottle):
-    scope = "users_password_reset"
+class TenantStaffAcceptInviteView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=StaffAcceptInviteSerializer,
+        responses=TenantStaffMemberSerializer,
+        description="Aceita convite de membro de equipe e ativa o acesso",
+    )
+    def post(self, request):
+        serializer = StaffAcceptInviteSerializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            staff_member = serializer.save()
+            USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                event="accept", result="success"
+            ).inc()
+            response_data = TenantStaffMemberSerializer(staff_member).data
+            return Response(response_data, status=status.HTTP_200_OK)
+        except Exception:
+            USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
+                event="accept", result="failure"
+            ).inc()
+            raise
+
+
+class UsersPasswordResetThrottle(_UsersPasswordResetThrottle):
+    pass
+
+
+class TenantStaffAccessLinkView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [UsersPasswordResetThrottle]
+    throttle_scope = "users_password_reset"
+
+    @extend_schema(
+        request=OpenApiTypes.OBJECT,
+        examples=[
+            OpenApiExample("Payload", value={"id": 123}, request_only=True),
+        ],
+        responses=TenantStaffMemberSerializer,
+        description="Envia link de acesso ao painel via redefinição de senha",
+    )
+    def post(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        member_id = request.data.get("id")
+        if not member_id:
+            raise ValidationError({"id": "Informe o identificador do membro."})
+
+        try:
+            staff_member = TenantStaffMember.objects.select_related("user").get(
+                tenant=tenant, id=member_id
+            )
+        except TenantStaffMember.DoesNotExist as exc:
+            raise NotFound("Membro de equipe não encontrado.") from exc
+
+        if staff_member.role == TenantStaffMember.Role.OWNER:
+            raise ValidationError("Owner não recebe link.")
+
+        if staff_member.status == TenantStaffMember.Status.DISABLED:
+            raise ValidationError("Membro desativado.")
+
+        to_email = (staff_member.user.email or "").strip()
+        if not to_email:
+            return Response(
+                {
+                    "detail": "E-mail do membro ausente. Atualize o cadastro e tente novamente."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Gerar token de redefinição de senha para acesso
+        try:
+            token_gen = PasswordResetTokenGenerator()
+            token = token_gen.make_token(staff_member.user)
+            uid = str(staff_member.user.pk)
+
+            base = getattr(
+                settings, "FRONTEND_BASE_URL", "http://localhost:5173"
+            ).rstrip("/")
+            link = f"{base}/reset-password?uid={uid}&token={token}"
+
+            from core.email_utils import send_staff_access_link_email
+
+            try:
+                send_staff_access_link_email(
+                    to_email=to_email,
+                    access_url=link,
+                    salon_name=tenant.name or "Salonix",
+                )
+            except Exception:
+                pass
+
+            from django.core.mail import EmailMultiAlternatives
+
+            fail_silently = not (
+                getattr(settings, "DEBUG", False)
+                or getattr(settings, "ENV", "dev") == "dev"
+            )
+
+            subject = "Acesso ao painel • TimelyOne"
+            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
+            text_body = (
+                "Receba um link para acessar redefinindo sua senha.\n\n"
+                f"Clique no link a seguir: {link}\n\n"
+                "Se não foi você, ignore este e-mail."
+            )
+            html_body = f"""
+            <div style=\"font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu, sans-serif; max-width:560px; margin:0 auto;\">
+              <h2 style=\"margin:0 0 12px;\">Acesso ao painel</h2>
+              <p style=\"margin:0 0 16px; color:#334155;\">Use o link abaixo para acessar o painel redefinindo sua senha.</p>
+              <p style=\"margin:0 0 20px;\">
+                <a href=\"{link}\" style=\"
+                   display:inline-block; background:#0ea5e9; color:#fff; text-decoration:none;
+                   padding:10px 16px; border-radius:8px; font-weight:600;\">Acessar</a>
+              </p>
+              <p style=\"margin:0 0 8px; color:#475569;\">Ou copie e cole este link no navegador:</p>
+              <p style=\"margin:0 0 16px;\"><a href=\"{link}\">{link}</a></p>
+              <p style=\"margin:24px 0 0; font-size:12px; color:#64748b;\">Se você não solicitou esta ação, pode ignorar este e-mail.</p>
+            </div>
+            """
+
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email=from_email,
+                to=[to_email],
+            )
+            msg.attach_alternative(html_body, "text/html")
+            msg.send(fail_silently=fail_silently)
+
+            # Logar o link em dev para facilitar QA
+            try:
+                env_name = getattr(settings, "ENV", "dev")
+            except Exception:
+                env_name = "dev"
+            if settings.DEBUG or env_name == "dev":
+                security_logger.info(
+                    f"Access link (dev): {link} | email={to_email}",
+                    extra={
+                        "event": "password_reset_link",
+                        "email": to_email,
+                        "link": link,
+                        "request_id": getattr(request, "request_id", None),
+                    },
+                )
+
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="success"
+            ).inc()
+        except Exception:
+            USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
+                event="request", result="failure"
+            ).inc()
+
+        response_data = TenantStaffMemberSerializer(staff_member).data
+        response_data["access_link_sent"] = True
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class TenantStaffContactUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=StaffContactUpdateSerializer,
+        responses=TenantStaffMemberSerializer,
+        description="Atualiza informações de contato do membro de equipe",
+    )
+    def patch(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        member_id = request.data.get("id")
+        if not member_id:
+            raise ValidationError({"id": "Informe o identificador do membro."})
+
+        try:
+            staff_member = TenantStaffMember.objects.select_related("user").get(
+                tenant=tenant, id=member_id
+            )
+        except TenantStaffMember.DoesNotExist as exc:
+            raise NotFound("Membro de equipe não encontrado.") from exc
+
+        serializer = StaffContactUpdateSerializer(
+            instance=staff_member, data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_data = TenantStaffMemberSerializer(staff_member).data
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [UsersPasswordResetThrottle]
     throttle_scope = "users_password_reset"
+    serializer_class = PasswordResetRequestSerializer
 
     @extend_schema(
         description="Solicita um reset de senha. Resposta é neutra para não vazar existência.",
@@ -632,6 +979,7 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+    serializer_class = PasswordResetConfirmSerializer
 
     @extend_schema(
         description="Confirma o reset de senha com uid+token e define nova senha.",

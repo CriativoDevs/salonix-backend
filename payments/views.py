@@ -902,7 +902,7 @@ class ImprovedPortalSessionView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(responses={200: PortalSessionResponseSerializer})
+    @extend_schema(request=None, responses={200: PortalSessionResponseSerializer})
     def post(self, request):
         """Cria uma sessão do portal de billing usando o novo SubscriptionService."""
         base_url = getattr(

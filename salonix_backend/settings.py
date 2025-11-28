@@ -109,6 +109,9 @@ INSTALLED_APPS = [
     "reports",
 ]
 
+# Silenciar warnings de URLField default em Django 6
+FORMS_URLFIELD_ASSUME_HTTPS = True
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "salonix_backend.middleware.RequestLoggingMiddleware",  # Logging com X-Request-ID
@@ -319,6 +322,23 @@ REST_FRAMEWORK = {
                 else "60/min"
             ),
         ),
+        # staff convites e reenvio
+        "users_staff_invite": env_get(
+            "USERS_STAFF_INVITE_RATE",
+            (
+                "50/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "10/hour"
+            ),
+        ),
+        "users_staff_resend": env_get(
+            "USERS_STAFF_RESEND_RATE",
+            (
+                "50/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "10/hour"
+            ),
+        ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
@@ -418,6 +438,7 @@ SPECTACULAR_SETTINGS = {
     # "SERVERS": [{"url": "http://localhost:8000", "description": "Local"}],
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/",
+    # ENUM_NAME_OVERRIDES desativado para evitar conflitos de nomes
 }
 
 # =====================================================

@@ -34,3 +34,10 @@ USERS_SSE_EVENTS_TOTAL = _get_or_create_counter(
     "Total de eventos SSE de créditos",
     ("event", "result"),
 )
+
+# Convites de staff (events: invite, accept)
+USERS_STAFF_INVITE_EVENTS_TOTAL = _get_or_create_counter(
+    "users_staff_invite_events_total",
+    "Total de eventos do fluxo de convite de staff",
+    ("event", "result"),
+)
