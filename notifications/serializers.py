@@ -1,6 +1,43 @@
 from rest_framework import serializers
+from enum import Enum
 from .models import Notification, NotificationDevice, NotificationLog
 from core.models import CustomerCommunicationConsent, SalonCustomer
+
+
+class NotificationChannel(str, Enum):
+    in_app = "in_app"
+    push_web = "push_web"
+    push_mobile = "push_mobile"
+    sms = "sms"
+    whatsapp = "whatsapp"
+
+
+class NotificationStatus(str, Enum):
+    pending = "pending"
+    sent = "sent"
+    delivered = "delivered"
+    failed = "failed"
+    skipped = "skipped"
+
+
+class CommunicationChannel(str, Enum):
+    in_app = "in_app"
+    push_web = "push_web"
+    push_mobile = "push_mobile"
+    sms = "sms"
+    whatsapp = "whatsapp"
+    email = "email"
+
+
+class CommunicationPurpose(str, Enum):
+    marketing = "marketing"
+    transactional = "transactional"
+
+
+class CommunicationStatus(str, Enum):
+    consented = "consented"
+    withdrawn = "withdrawn"
+    pending = "pending"
 
 
 class NotificationDeviceSerializer(serializers.ModelSerializer):
@@ -64,16 +101,8 @@ class NotificationTestSerializer(serializers.Serializer):
     Usado no endpoint POST /api/notifications/test
     """
 
-    CHANNEL_CHOICES = [
-        ("in_app", "In-App"),
-        ("push_web", "Web Push"),
-        ("push_mobile", "Mobile Push"),
-        ("sms", "SMS"),
-        ("whatsapp", "WhatsApp"),
-    ]
-
     channel = serializers.ChoiceField(
-        choices=CHANNEL_CHOICES, help_text="Canal a ser testado"
+        choices=NotificationChannel, help_text="Canal a ser testado"
     )
     message = serializers.CharField(
         max_length=500, default="Teste de notificação", help_text="Mensagem de teste"
@@ -151,6 +180,9 @@ class NotificationStatsResponseSerializer(serializers.Serializer):
 
 class CommunicationConsentSerializer(serializers.ModelSerializer):
     customer_id = serializers.IntegerField(source="customer.id", read_only=True)
+    channel = serializers.ChoiceField(choices=CommunicationChannel, read_only=True)
+    purpose = serializers.ChoiceField(choices=CommunicationPurpose, read_only=True)
+    status = serializers.ChoiceField(choices=CommunicationStatus, read_only=True)
 
     class Meta:
         model = CustomerCommunicationConsent
@@ -184,12 +216,8 @@ class CommunicationConsentSerializer(serializers.ModelSerializer):
 
 class CommunicationConsentCreateSerializer(serializers.Serializer):
     customer_id = serializers.IntegerField()
-    channel = serializers.ChoiceField(
-        choices=CustomerCommunicationConsent.CHANNEL_CHOICES
-    )
-    purpose = serializers.ChoiceField(
-        choices=CustomerCommunicationConsent.PURPOSE_CHOICES
-    )
+    channel = serializers.ChoiceField(choices=CommunicationChannel)
+    purpose = serializers.ChoiceField(choices=CommunicationPurpose)
     source = serializers.ChoiceField(
         choices=[
             ("admin", "Admin"),
@@ -217,12 +245,8 @@ class CommunicationConsentCreateSerializer(serializers.Serializer):
 
 class CommunicationConsentWithdrawSerializer(serializers.Serializer):
     customer_id = serializers.IntegerField()
-    channel = serializers.ChoiceField(
-        choices=CustomerCommunicationConsent.CHANNEL_CHOICES
-    )
-    purpose = serializers.ChoiceField(
-        choices=CustomerCommunicationConsent.PURPOSE_CHOICES
-    )
+    channel = serializers.ChoiceField(choices=CommunicationChannel)
+    purpose = serializers.ChoiceField(choices=CommunicationPurpose)
     source = serializers.ChoiceField(
         choices=[
             ("admin", "Admin"),
@@ -234,3 +258,35 @@ class CommunicationConsentWithdrawSerializer(serializers.Serializer):
     )
     ip_address = serializers.IPAddressField(required=False, allow_null=True)
     user_agent = serializers.CharField(required=False, allow_null=True, max_length=256)
+    channel = serializers.ChoiceField(choices=NotificationChannel, read_only=True)
+    status = serializers.ChoiceField(choices=NotificationStatus, read_only=True)
+
+
+class NotificationChannel(str, Enum):
+    in_app = "in_app"
+    push_web = "push_web"
+    push_mobile = "push_mobile"
+    sms = "sms"
+    whatsapp = "whatsapp"
+
+
+class NotificationStatus(str, Enum):
+    pending = "pending"
+    sent = "sent"
+    delivered = "delivered"
+    failed = "failed"
+    skipped = "skipped"
+
+
+class CommunicationChannel(str, Enum):
+    in_app = "in_app"
+    push_web = "push_web"
+    push_mobile = "push_mobile"
+    sms = "sms"
+    whatsapp = "whatsapp"
+    email = "email"
+
+
+class CommunicationPurpose(str, Enum):
+    marketing = "marketing"
+    transactional = "transactional"

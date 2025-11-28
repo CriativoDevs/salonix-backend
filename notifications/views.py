@@ -368,9 +368,9 @@ class CommunicationConsentCreateView(TenantIsolatedMixin, APIView):
         tenant = getattr(request, "tenant", None) or getattr(
             request.user, "tenant", None
         )
-        customer_id = v["customer_id"]
-        channel = v["channel"]
-        purpose = v["purpose"]
+        customer_id = v.get("customer_id") or request.data.get("customer_id")
+        channel = v.get("channel") or request.data.get("channel")
+        purpose = v.get("purpose") or request.data.get("purpose")
 
         instance = CustomerCommunicationConsent.objects.filter(
             tenant=tenant, customer_id=customer_id, channel=channel, purpose=purpose
@@ -434,9 +434,9 @@ class CommunicationConsentWithdrawView(TenantIsolatedMixin, APIView):
         tenant = getattr(request, "tenant", None) or getattr(
             request.user, "tenant", None
         )
-        customer_id = v["customer_id"]
-        channel = v["channel"]
-        purpose = v["purpose"]
+        customer_id = v.get("customer_id") or request.data.get("customer_id")
+        channel = v.get("channel") or request.data.get("channel")
+        purpose = v.get("purpose") or request.data.get("purpose")
 
         instance = CustomerCommunicationConsent.objects.filter(
             tenant=tenant, customer_id=customer_id, channel=channel, purpose=purpose

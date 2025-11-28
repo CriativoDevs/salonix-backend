@@ -17,7 +17,6 @@ from .views import (
     StripeSettingsView,
     StripeWebhookView as StripeWebhookApiView,
 )
-from .webhooks import StripeWebhookView
 
 app_name = "payments"
 

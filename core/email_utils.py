@@ -45,15 +45,17 @@ def send_appointment_confirmation_email(
 
     message.attach(MIMEText(body, "plain"))
 
+    # Guardas para ambientes de teste
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — confirmation to", receiver_email)
+        return
+
     try:
-        # Conecta ao servidor SMTP e envia o e-mail
         with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
             server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
             server.send_message(message)
-
         print("E-mail enviado com sucesso para", receiver_email)
-
     except Exception as e:
         print("Erro ao enviar e-mail:", str(e))
 
@@ -99,17 +101,18 @@ def send_appointment_cancellation_email(
     message["Subject"] = subject
     message.attach(MIMEText(body, "plain"))
 
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — cancellation to", client_email, salon_email)
+        return
+
     try:
         with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
             server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
-
             for recipient in [client_email, salon_email]:
                 message.replace_header("To", recipient)
                 server.send_message(message)
-
         print(f"E-mail de cancelamento enviado para {client_email} e {salon_email}")
-
     except Exception as e:
         print("Erro ao enviar e-mail de cancelamento:", str(e))
 
@@ -214,6 +217,10 @@ def send_bulk_appointment_confirmation_email(
     message.attach(MIMEText(body, "plain"))
     message.attach(MIMEText(body_html, "html"))
 
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — bulk confirmation to", receiver_email)
+        return
+
     try:
         with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
@@ -295,6 +302,10 @@ def send_marketing_email(
     message.attach(MIMEText(body_plain, "plain"))
     message.attach(MIMEText(body_html, "html"))
 
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — marketing to", receiver_email)
+        return
+
     try:
         with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
             server.starttls()
@@ -303,3 +314,115 @@ def send_marketing_email(
         print("E-mail de marketing enviado com sucesso para", receiver_email)
     except Exception as e:
         print("Erro ao enviar e-mail de marketing:", str(e))
+
+
+def send_staff_invite_email(
+    to_email: str,
+    accept_url: str,
+    salon_name: str = "Salonix",
+    inviter_name: str | None = None,
+):
+    subject = "Convite para acessar o painel do salão"
+    sender_email = settings.EMAIL_HOST_USER
+    receiver_email = to_email
+
+    inviter_line = (
+        f"{inviter_name} convidou você para acessar o painel do {salon_name}."
+        if inviter_name
+        else f"Você foi convidado(a) para acessar o painel do {salon_name}."
+    )
+
+    body_plain = f"""
+Olá,
+
+{inviter_line}
+
+Para ativar seu acesso, defina sua senha clicando no link abaixo:
+{accept_url}
+
+Se você não esperava este convite, ignore este e-mail.
+
+Obrigado,
+Equipe {salon_name}
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+          <p>Olá,</p>
+          <p>{inviter_line}</p>
+          <p>Para ativar seu acesso, defina sua senha clicando no link abaixo:</p>
+          <p><a href="{accept_url}" target="_blank" rel="noopener">Ativar acesso</a></p>
+          <p style="font-size:12px;color:#555">Se você não esperava este convite, ignore este e-mail.</p>
+          <p>Obrigado,<br/>Equipe {salon_name}</p>
+        </div>
+    """
+
+    message = MIMEMultipart("alternative")
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+    message.attach(MIMEText(body_plain, "plain"))
+    message.attach(MIMEText(body_html, "html"))
+
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — staff invite to", receiver_email)
+        return True
+
+    try:
+        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
+            server.starttls()
+            server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
+            server.send_message(message)
+        print("E-mail de convite de staff enviado para", receiver_email)
+        return True
+    except Exception as e:
+        print("Erro ao enviar e-mail de convite de staff:", str(e))
+        return False
+
+
+def send_staff_access_link_email(
+    to_email: str,
+    access_url: str,
+    salon_name: str = "Salonix",
+):
+    subject = "Acesso ao painel"
+    sender_email = settings.EMAIL_HOST_USER
+    receiver_email = to_email
+
+    body_plain = f"""
+Use o link abaixo para acessar o painel redefinindo sua senha:
+{access_url}
+
+Se você não solicitou esta ação, ignore este e-mail.
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+          <p>Use o link abaixo para acessar o painel redefinindo sua senha:</p>
+          <p><a href="{access_url}" target="_blank" rel="noopener">Acessar</a></p>
+          <p style="font-size:12px;color:#555">Se você não solicitou esta ação, ignore este e-mail.</p>
+          <p>Obrigado,<br/>Equipe {salon_name}</p>
+        </div>
+    """
+
+    message = MIMEMultipart("alternative")
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+    message.attach(MIMEText(body_plain, "plain"))
+    message.attach(MIMEText(body_html, "html"))
+
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        print("[email] outbound disabled — access link to", receiver_email)
+        return True
+
+    try:
+        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
+            server.starttls()
+            server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
+            server.send_message(message)
+        print("E-mail de acesso enviado para", receiver_email)
+        return True
+    except Exception as e:
+        print("Erro ao enviar e-mail de acesso:", str(e))
+        return False

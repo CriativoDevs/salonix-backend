@@ -4,7 +4,6 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from django.core import signing
 
-from users.models import Tenant
 from core.models import SalonCustomer, CustomerCommunicationConsent
 from notifications.views import UNSUBSCRIBE_TOKEN_SALT
 

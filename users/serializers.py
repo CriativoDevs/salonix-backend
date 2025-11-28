@@ -1,7 +1,9 @@
 import logging
 import secrets
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any, Dict, cast
+from enum import Enum
 
 from django.db import transaction
 from django.utils import timezone
@@ -21,6 +23,33 @@ from salonix_backend.validators import (
 
 
 audit_logger = logging.getLogger("users.audit")
+
+
+class TenantStaffMemberRole(str, Enum):
+    owner = "owner"
+    manager = "manager"
+    collaborator = "collaborator"
+
+
+class TenantStaffMemberStatus(str, Enum):
+    active = "active"
+    invited = "invited"
+    disabled = "disabled"
+
+
+class CommLedgerTransactionType(str, Enum):
+    purchase = "purchase"
+    consumption = "consumption"
+    expiration = "expiration"
+    refund = "refund"
+    bonus = "bonus"
+
+
+class CommLedgerStatus(str, Enum):
+    pending = "pending"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
 
 
 def _generate_unique_tenant_slug(base_name: str) -> str:
@@ -69,9 +98,11 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_feature_flags(self, obj):
         return obj.get_feature_flags_dict()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_branding(self, obj):
         return {
             "logo_url": obj.get_logo_url,
@@ -79,6 +110,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "app_name": obj.app_name or obj.name,
         }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_plan(self, obj):
         return {
             "tier": obj.plan_tier,
@@ -260,6 +292,8 @@ class TenantStaffMemberSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
+    role = serializers.ChoiceField(choices=TenantStaffMemberRole, read_only=True)
+    status = serializers.ChoiceField(choices=TenantStaffMemberStatus, read_only=True)
 
     class Meta:
         model = TenantStaffMember
@@ -282,11 +316,7 @@ class TenantStaffMemberSerializer(serializers.ModelSerializer):
 class StaffInviteSerializer(serializers.Serializer):
     email = serializers.EmailField()
     role = serializers.ChoiceField(
-        choices=[
-            TenantStaffMember.Role.MANAGER,
-            TenantStaffMember.Role.COLLABORATOR,
-        ],
-        default=TenantStaffMember.Role.COLLABORATOR,
+        choices=TenantStaffMemberRole, default=TenantStaffMemberRole.collaborator
     )
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
@@ -310,7 +340,7 @@ class StaffInviteSerializer(serializers.Serializer):
         ):
             raise ValidationError("Permissão negada para convidar membros de equipe.")
         if (
-            role == TenantStaffMember.Role.MANAGER
+            role == TenantStaffMemberRole.manager
             and request.user.staff_role != TenantStaffMember.Role.OWNER
         ):
             raise ValidationError("Apenas owner pode convidar novos managers.")
@@ -349,17 +379,24 @@ class StaffInviteSerializer(serializers.Serializer):
             user.set_unusable_password()
             user.save(update_fields=["password"])
 
+        # Mapear role (Enum) para TextChoices do modelo
+        model_role = (
+            TenantStaffMember.Role.MANAGER
+            if role == TenantStaffMemberRole.manager
+            else TenantStaffMember.Role.COLLABORATOR
+        )
+
         staff_member, _created = TenantStaffMember.objects.get_or_create(
             tenant=tenant,
             user=user,
             defaults={
-                "role": role,
+                "role": model_role,
                 "status": TenantStaffMember.Status.INVITED,
             },
         )
 
         if staff_member.role != TenantStaffMember.Role.OWNER:
-            staff_member.role = role
+            staff_member.role = model_role
 
         token = secrets.token_urlsafe(48)
         expires_at = timezone.now() + timedelta(days=7)
@@ -423,20 +460,8 @@ class StaffAcceptInviteSerializer(serializers.Serializer):
 
 
 class StaffUpdateSerializer(serializers.Serializer):
-    role = serializers.ChoiceField(
-        choices=[
-            TenantStaffMember.Role.MANAGER,
-            TenantStaffMember.Role.COLLABORATOR,
-        ],
-        required=False,
-    )
-    status = serializers.ChoiceField(
-        choices=[
-            TenantStaffMember.Status.ACTIVE,
-            TenantStaffMember.Status.DISABLED,
-        ],
-        required=False,
-    )
+    role = serializers.ChoiceField(choices=TenantStaffMemberRole, required=False)
+    status = serializers.ChoiceField(choices=TenantStaffMemberStatus, required=False)
 
     def validate(self, attrs):
         if not attrs:
@@ -456,14 +481,18 @@ class StaffUpdateSerializer(serializers.Serializer):
         if role:
             if (
                 request.user.staff_role != TenantStaffMember.Role.OWNER
-                and role == TenantStaffMember.Role.MANAGER
+                and role == TenantStaffMemberRole.manager
             ):
                 raise ValidationError("Apenas owner pode promover para manager.")
-            instance.role = role
+            instance.role = (
+                TenantStaffMember.Role.MANAGER
+                if role == TenantStaffMemberRole.manager
+                else TenantStaffMember.Role.COLLABORATOR
+            )
             update_fields.append("role")
 
         if status:
-            if status == TenantStaffMember.Status.ACTIVE:
+            if status == TenantStaffMemberStatus.active:
                 instance.status = TenantStaffMember.Status.ACTIVE
                 instance.deactivated_at = None
                 if "status" not in update_fields:
@@ -480,6 +509,63 @@ class StaffUpdateSerializer(serializers.Serializer):
             instance.ensure_professional()
         elif status == TenantStaffMember.Status.ACTIVE:
             instance._set_professionals_active(active=True)
+
+        return instance
+
+
+class StaffContactUpdateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        instance: TenantStaffMember = self.instance
+        if instance and instance.role == TenantStaffMember.Role.OWNER:
+            raise ValidationError(
+                "Owner não pode ter e-mail alterado por este endpoint."
+            )
+
+        email = (attrs.get("email") or "").strip().lower()
+        if not email:
+            raise ValidationError({"email": "Informe um e-mail válido."})
+
+        user = instance.user if instance else None
+        conflict = CustomUser.objects.filter(email__iexact=email)
+        if user:
+            conflict = conflict.exclude(id=user.id)
+        if conflict.exists():
+            raise ValidationError({"email": "E-mail já está em uso por outro usuário."})
+
+        return attrs
+
+    def update(self, instance: TenantStaffMember, validated_data):
+        # regra já validada em validate()
+
+        user = instance.user
+        email = validated_data.get("email", "").strip().lower()
+        first_name = validated_data.get("first_name")
+        last_name = validated_data.get("last_name")
+
+        # E-mail deve ser único (case-insensitive) no sistema
+        conflict = (
+            CustomUser.objects.filter(email__iexact=email).exclude(id=user.id).exists()
+        )
+        if conflict:
+            raise ValidationError("E-mail já está em uso por outro usuário.")
+
+        updates = []
+        if email and email != (user.email or "").lower():
+            user.email = email
+            updates.append("email")
+        if first_name is not None:
+            user.first_name = first_name
+            updates.append("first_name")
+        if last_name is not None:
+            user.last_name = last_name
+            updates.append("last_name")
+
+        if updates:
+            user.save(update_fields=list(dict.fromkeys(updates)))
 
         return instance
 
@@ -655,6 +741,10 @@ class CommLedgerSerializer(serializers.ModelSerializer):
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True, allow_null=True
     )
+    transaction_type = serializers.ChoiceField(
+        choices=CommLedgerTransactionType, read_only=True
+    )
+    status = serializers.ChoiceField(choices=CommLedgerStatus, read_only=True)
 
     class Meta:
         model = CommLedger
@@ -700,7 +790,7 @@ class ConsumeCreditsSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        min_value=0.01,
+        min_value=Decimal("0.01"),
         help_text="Quantidade de créditos a consumir em EUR",
     )
     description = serializers.CharField(
@@ -742,3 +832,14 @@ class TenantNotificationsUpdateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         return attrs
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    reset_url = serializers.CharField(required=False, allow_blank=True)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(min_length=8)

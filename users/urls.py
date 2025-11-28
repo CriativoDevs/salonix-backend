@@ -10,6 +10,9 @@ from .views import (
     MeTenantView,
     MeProfileView,
     TenantStaffView,
+    TenantStaffResendInviteView,
+    TenantStaffAccessLinkView,
+    TenantStaffContactUpdateView,
     TenantStaffAcceptInviteView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
@@ -25,6 +28,21 @@ urlpatterns = [
     path("register/", UserRegistrationView.as_view(), name="register"),
     path("me/profile/", MeProfileView.as_view(), name="me_profile"),
     path("staff/", TenantStaffView.as_view(), name="tenant_staff"),
+    path(
+        "staff/resend/",
+        TenantStaffResendInviteView.as_view(),
+        name="tenant_staff_resend",
+    ),
+    path(
+        "staff/access-link/",
+        TenantStaffAccessLinkView.as_view(),
+        name="tenant_staff_access_link",
+    ),
+    path(
+        "staff/contact/",
+        TenantStaffContactUpdateView.as_view(),
+        name="tenant_staff_contact_update",
+    ),
     path(
         "staff/accept/",
         TenantStaffAcceptInviteView.as_view(),

@@ -1,5 +1,4 @@
 import pytest
-from rest_framework import status
 
 from notifications.services import notification_service
 from core.models import SalonCustomer, CustomerCommunicationConsent

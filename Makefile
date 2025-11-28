@@ -58,6 +58,10 @@ env-example:
 > 'USERS_AUTH_THROTTLE_REGISTER=5/min' \
 > 'USERS_TENANT_META_PUBLIC=60/min' \
 > '' \
+> '# --- Staff invite/resend throttling ---' \
+> 'USERS_STAFF_INVITE_RATE=10/hour' \
+> 'USERS_STAFF_RESEND_RATE=10/hour' \
+> '' \
 > '# --- CAPTCHA (self-service) ---' \
 > '# CAPTCHA_ENABLED=true|false' \
 > 'CAPTCHA_ENABLED=false' \

@@ -73,16 +73,16 @@ class ProfessionalAdmin(admin.ModelAdmin):
     """Admin para profissionais com filtro por tenant."""
 
     form = ProfessionalAdminForm
-    list_display = ("name", "tenant_name", "user", "staff_member", "is_active")
+    list_display = ("name", "tenant_name", "user", "user_email", "staff_member", "is_active")
     list_filter = ("tenant", "is_active")
     search_fields = ("name", "user__username", "tenant__name")
-    readonly_fields = ("tenant", "user")
+    readonly_fields = ("tenant", "user", "user_email")
     inlines = (ProfessionalServiceInline,)
 
     fieldsets = (
         (
             "Informações Básicas",
-            {"fields": ("staff_member", "name", "bio", "is_active", "tenant", "user")},
+            {"fields": ("staff_member", "name", "bio", "is_active", "tenant", "user", "user_email")},
         ),
     )
 
@@ -122,6 +122,12 @@ class ProfessionalAdmin(admin.ModelAdmin):
 
     tenant_name.short_description = "Tenant"
     tenant_name.admin_order_field = "tenant__name"
+
+    def user_email(self, obj):
+        return obj.user.email or "-"
+
+    user_email.short_description = "E-mail"
+    user_email.admin_order_field = "user__email"
 
 
 @admin.register(ScheduleSlot)

@@ -1011,7 +1011,6 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             return None
 
         # Helper para encontrar blocos contíguos suficientes para a duração
-        from datetime import timedelta as _td
 
         def _find_contiguous_block(
             start_slot: ScheduleSlot, required_minutes: int

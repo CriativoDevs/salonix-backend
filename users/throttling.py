@@ -29,3 +29,15 @@ class UsersAuthRegisterThrottle(_BaseUsersThrottle):
 
 class UsersTenantMetaPublicThrottle(_BaseUsersThrottle):
     scope = "tenant_meta_public"
+
+
+class UsersStaffInviteThrottle(_BaseUsersThrottle):
+    scope = "users_staff_invite"
+
+
+class UsersStaffResendInviteThrottle(_BaseUsersThrottle):
+    scope = "users_staff_resend"
+
+
+class UsersPasswordResetThrottle(_BaseUsersThrottle):
+    scope = "users_password_reset"
