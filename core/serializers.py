@@ -844,3 +844,31 @@ class AppointmentSeriesOccurrenceCancelResponseSerializer(serializers.Serializer
     series_id = serializers.IntegerField()
     appointment_id = serializers.IntegerField()
     message = serializers.CharField()
+
+
+class ClientAccessLinkRequestSerializer(serializers.Serializer):
+    customer_id = serializers.IntegerField()
+    channel = serializers.ChoiceField(
+        choices=("email",), required=False, default="email"
+    )
+
+    def validate_customer_id(self, value):
+        request = self.context.get("request")
+        tenant = getattr(getattr(request, "user", None), "tenant", None) or getattr(
+            request, "tenant", None
+        )
+        try:
+            SalonCustomer.objects.get(id=int(value), tenant=tenant)
+        except SalonCustomer.DoesNotExist:
+            raise serializers.ValidationError("Cliente não encontrado para este tenant.")
+        return value
+
+
+class ClientAccessAcceptSerializer(serializers.Serializer):
+    token = serializers.CharField()
+
+
+class PublicClientAccessLinkRequestSerializer(serializers.Serializer):
+    tenant_slug = serializers.SlugField()
+    email = serializers.EmailField()
+    channel = serializers.ChoiceField(choices=("email",), required=False, default="email")

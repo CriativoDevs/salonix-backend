@@ -882,6 +882,129 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenRefresh'
           description: ''
+  /api/clients/access-accept/:
+    post:
+      operationId: clients_access_accept_create
+      description: Aceita link/token de acesso do cliente e cria sessão.
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientAccessAcceptRequest'
+            examples:
+              Request:
+                value:
+                  token: <token-assinado>
+                description: Aceitar convite com token
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientAccessAcceptRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientAccessAcceptRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                SessãoCriada:
+                  value:
+                    session: created
+                    tenant_id: 1
+                    customer_id: 42
+                  summary: Sessão criada
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                TokenInválido:
+                  value:
+                    detail: Token inválido
+                  summary: Token inválido
+                TokenExpirado:
+                  value:
+                    detail: Token expirado
+                  summary: Token expirado
+          description: ''
+  /api/clients/access-link/:
+    post:
+      operationId: clients_access_link_create
+      description: Emite link/token de acesso para cliente (PWA).
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientAccessLinkRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientAccessLinkRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientAccessLinkRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/clients/session/refresh/:
+    post:
+      operationId: clients_session_refresh_create
+      description: Renova sessão do cliente (sliding window) e reemite cookie.
+      tags:
+      - clients
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                SessãoRenovada:
+                  value:
+                    session: refreshed
+                  summary: Sessão renovada
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                SessãoAusente:
+                  value:
+                    detail: Sessão ausente
+                  summary: Sessão ausente
+                SessãoInválida:
+                  value:
+                    detail: Sessão inválida
+                  summary: Sessão inválida
+          description: ''
   /api/me/appointments/:
     get:
       operationId: me_appointments_list
@@ -2038,6 +2161,59 @@ paths:
                 type: string
                 format: binary
           description: ICS calendar file
+  /api/public/clients/access-link/:
+    post:
+      operationId: public_clients_access_link_create
+      description: Solicita envio de link de acesso (self-service) para cliente via
+        e-mail.
+      tags:
+      - public
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicClientAccessLinkRequestRequest'
+            examples:
+              Request:
+                value:
+                  tenant_slug: beleza-top
+                  email: ana@example.com
+                  captcha_token: dev-bypass
+                description: Solicitação de envio de link
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PublicClientAccessLinkRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PublicClientAccessLinkRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                Sucesso:
+                  value:
+                    access_link_requested: true
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                CaptchaInválido:
+                  value:
+                    detail: Captcha inválido.
+                  summary: Captcha inválido
+          description: ''
   /api/public/professionals/:
     get:
       operationId: public_professionals_list
@@ -4656,6 +4832,11 @@ components:
         * `notification_failure` - Notification Failure
         * `security_incident` - Security Incident
         * `system` - System
+    Channel307Enum:
+      enum:
+      - email
+      type: string
+      description: '* `email` - email'
     ChannelE1eEnum:
       enum:
       - CommunicationChannel.in_app
@@ -4697,6 +4878,25 @@ components:
       required:
       - checkout_url
       - session_id
+    ClientAccessAcceptRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+      required:
+      - token
+    ClientAccessLinkRequestRequest:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/Channel307Enum'
+          default: email
+      required:
+      - customer_id
     CommLedger:
       type: object
       description: Serializer para histórico de transações de crédito.
@@ -6118,6 +6318,24 @@ components:
             type: integer
       required:
       - name
+    PublicClientAccessLinkRequestRequest:
+      type: object
+      properties:
+        tenant_slug:
+          type: string
+          minLength: 1
+          pattern: ^[-a-zA-Z0-9_]+$
+        email:
+          type: string
+          format: email
+          minLength: 1
+        channel:
+          allOf:
+          - $ref: '#/components/schemas/Channel307Enum'
+          default: email
+      required:
+      - email
+      - tenant_slug
     PurchaseCreditsRequest:
       type: object
       description: Serializer para compra de créditos (futuro uso com Stripe).

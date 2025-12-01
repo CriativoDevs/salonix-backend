@@ -22,6 +22,10 @@ from core.views import (
     SalonCustomerViewSet,
     ServiceViewSet,
     ScheduleSlotViewSet,
+    ClientAccessLinkView,
+    ClientAccessAcceptView,
+    ClientSessionRefreshView,
+    PublicClientAccessLinkView,
 )
 
 router = DefaultRouter()
@@ -36,7 +40,27 @@ router.register("salon/customers", SalonCustomerViewSet, basename="salon-custome
 urlpatterns = [
     path("", include(router.urls)),
     path("auth/", include("users.urls")),
+    path(
+        "clients/access-link/",
+        ClientAccessLinkView.as_view(),
+        name="clients_access_link",
+    ),
+    path(
+        "clients/access-accept/",
+        ClientAccessAcceptView.as_view(),
+        name="clients_access_accept",
+    ),
+    path(
+        "clients/session/refresh/",
+        ClientSessionRefreshView.as_view(),
+        name="clients_session_refresh",
+    ),
     # Public routes
+    path(
+        "public/clients/access-link/",
+        PublicClientAccessLinkView.as_view(),
+        name="public_clients_access_link",
+    ),
     path("public/services/", PublicServiceListView.as_view()),
     path("public/professionals/", PublicProfessionalListView.as_view()),
     path("public/slots/", PublicSlotListView.as_view()),

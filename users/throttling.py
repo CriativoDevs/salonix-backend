@@ -41,3 +41,24 @@ class UsersStaffResendInviteThrottle(_BaseUsersThrottle):
 
 class UsersPasswordResetThrottle(_BaseUsersThrottle):
     scope = "users_password_reset"
+
+
+class UsersClientAccessLinkThrottle(_BaseUsersThrottle):
+    scope = "clients_access_link"
+
+    def get_cache_key(self, request, view):
+        # Per cliente+tenant quando disponíveis, senão padrão
+        tenant_slug = None
+        email = None
+        try:
+            tenant_slug = request.data.get("tenant_slug") if hasattr(request, "data") else None
+            email = request.data.get("email") if hasattr(request, "data") else None
+        except Exception:
+            tenant_slug = None
+            email = None
+
+        if tenant_slug and email:
+            ident = f"{str(tenant_slug).lower()}:{str(email).strip().lower()}"
+            return self.cache_format % {"scope": self.scope, "ident": ident}
+
+        return super().get_cache_key(request, view)

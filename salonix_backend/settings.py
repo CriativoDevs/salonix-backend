@@ -112,6 +112,12 @@ INSTALLED_APPS = [
 # Silenciar warnings de URLField default em Django 6
 FORMS_URLFIELD_ASSUME_HTTPS = True
 
+# PWA Cliente: TTLs de token e sessão
+CLIENT_PWA_INVITE_TTL_SECONDS = int(env_get("CLIENT_PWA_INVITE_TTL_SECONDS", 15 * 60))
+CLIENT_PWA_SESSION_TTL_SECONDS = int(
+    env_get("CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600)
+)
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "salonix_backend.middleware.RequestLoggingMiddleware",  # Logging com X-Request-ID
@@ -333,6 +339,14 @@ REST_FRAMEWORK = {
         ),
         "users_staff_resend": env_get(
             "USERS_STAFF_RESEND_RATE",
+            (
+                "50/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "10/hour"
+            ),
+        ),
+        "clients_access_link": env_get(
+            "CLIENTS_ACCESS_LINK_RATE",
             (
                 "50/hour"
                 if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")

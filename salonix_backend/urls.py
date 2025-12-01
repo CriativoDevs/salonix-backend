@@ -34,6 +34,12 @@ urlpatterns = [
         SpectacularSwaggerView.as_view(url_name="schema"),
         name="swagger-ui",
     ),
+    # Compat alias para documentação que referencia /api/schema/swagger-ui/
+    path(
+        "api/schema/swagger-ui/",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui-compat",
+    ),
     path(
         "api/schema/redoc/",
         SpectacularRedocView.as_view(url_name="schema"),
