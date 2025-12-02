@@ -2603,7 +2603,7 @@ class ClientSessionRefreshView(APIView):
 class ClientsMeAppointmentsUpcomingView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(responses={200: AppointmentSerializer(many=True)})
+    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
         tenant, customer = _get_client_session_or_raise(request)
         now = timezone.now()
@@ -2617,14 +2617,14 @@ class ClientsMeAppointmentsUpcomingView(APIView):
             .select_related("slot", "service", "professional")
             .order_by("slot__start_time")
         )
-        ser = AppointmentSerializer(qs, many=True)
+        ser = AppointmentDetailSerializer(qs, many=True)
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
 
 class ClientsMeAppointmentsHistoryView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(responses={200: AppointmentSerializer(many=True)})
+    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
         tenant, customer = _get_client_session_or_raise(request)
         now = timezone.now()
@@ -2638,7 +2638,7 @@ class ClientsMeAppointmentsHistoryView(APIView):
             .select_related("slot", "service", "professional")
             .order_by("-slot__start_time")
         )
-        ser = AppointmentSerializer(qs, many=True)
+        ser = AppointmentDetailSerializer(qs, many=True)
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
 
