@@ -127,6 +127,35 @@ CLIENT_ACCESS_EVENTS_TOTAL = _get_or_create_counter(
     ("event", "result", "tenant_id"),
 )
 
+
+def _get_client_session_or_raise(request):
+    raw = request.COOKIES.get("client_session")
+    if not raw:
+        raise ValidationError("Sessão ausente")
+    try:
+        payload = signing.loads(raw, salt="CLIENT_PWA_SESSION_SALT")
+    except signing.BadSignature:
+        raise ValidationError("Sessão inválida")
+
+    tenant_id = int(payload.get("tenant_id"))
+    customer_id = int(payload.get("customer_id"))
+
+    try:
+        tenant = Tenant.objects.get(id=tenant_id, is_active=True)
+    except Tenant.DoesNotExist:
+        raise ValidationError("Tenant inválido")
+
+    if not tenant.can_use_pwa_client():
+        raise ValidationError("Funcionalidade indisponível para este tenant")
+
+    try:
+        customer = SalonCustomer.objects.get(id=customer_id, tenant=tenant)
+    except SalonCustomer.DoesNotExist:
+        raise ValidationError("Cliente inválido")
+
+    return tenant, customer
+
+
 APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
     "appointment_series_errors_total",
     "Total number of series update errors",
@@ -2159,7 +2188,10 @@ class ClientAccessLinkView(TenantIsolatedMixin, APIView):
         base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
             "/"
         )
-        link = f"{base}/client/access?token={token}"
+        slug = getattr(tenant, "slug", "").strip().lower()
+        tenant_qs = f"tenant={slug}" if slug else ""
+        sep = "&" if tenant_qs else ""
+        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
 
         try:
             send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=user)
@@ -2231,33 +2263,58 @@ class PublicClientAccessLinkView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        tenant_slug = data["tenant_slug"]
+        tenant_slug = (data.get("tenant_slug") or "").strip().lower()
         email = data["email"].strip().lower()
 
         resp = Response({"access_link_requested": True}, status=drf_status.HTTP_200_OK)
 
-        try:
-            tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
-        except Tenant.DoesNotExist:
-            CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                event="emit_public",
-                result="tenant_not_found",
-                tenant_id=str(0),
-            ).inc()
-            return resp
+        tenant = None
+        customer = None
+        if tenant_slug:
+            try:
+                tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+            except Tenant.DoesNotExist:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="tenant_not_found",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+        else:
+            possible = SalonCustomer.objects.select_related("tenant").filter(
+                email__iexact=email, tenant__is_active=True
+            )
+            matches = [c for c in possible if c.tenant.can_use_pwa_client()]
+            if len(matches) == 0:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="customer_not_found",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+            if len(matches) > 1:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="ambiguous",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+            customer = matches[0]
+            tenant = customer.tenant
 
         if not tenant.can_use_pwa_client():
             return resp
 
-        try:
-            customer = SalonCustomer.objects.get(tenant=tenant, email__iexact=email)
-        except SalonCustomer.DoesNotExist:
-            CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                event="emit_public",
-                result="customer_not_found",
-                tenant_id=str(tenant.id),
-            ).inc()
-            return resp
+        if customer is None:
+            try:
+                customer = SalonCustomer.objects.get(tenant=tenant, email__iexact=email)
+            except SalonCustomer.DoesNotExist:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="customer_not_found",
+                    tenant_id=str(tenant.id),
+                ).inc()
+                return resp
 
         if not (customer.email or "").strip():
             return resp
@@ -2273,7 +2330,10 @@ class PublicClientAccessLinkView(APIView):
         base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
             "/"
         )
-        link = f"{base}/client/access?token={token}"
+        slug = getattr(tenant, "slug", "").strip().lower()
+        tenant_qs = f"tenant={slug}" if slug else ""
+        sep = "&" if tenant_qs else ""
+        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
 
         security_logger = logging.getLogger("users.security")
         env_name = getattr(settings, "ENV_NAME", "dev")
@@ -2538,6 +2598,109 @@ class ClientSessionRefreshView(APIView):
             path="/",
         )
         return resp
+
+
+class ClientsMeAppointmentsUpcomingView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: AppointmentSerializer(many=True)})
+    def get(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        now = timezone.now()
+        qs = (
+            Appointment.objects.filter(
+                tenant=tenant,
+                customer=customer,
+                slot__start_time__gte=now,
+                status="scheduled",
+            )
+            .select_related("slot", "service", "professional")
+            .order_by("slot__start_time")
+        )
+        ser = AppointmentSerializer(qs, many=True)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientsMeAppointmentsHistoryView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: AppointmentSerializer(many=True)})
+    def get(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        now = timezone.now()
+        qs = (
+            Appointment.objects.filter(
+                tenant=tenant,
+                customer=customer,
+                slot__start_time__lt=now,
+                status__in=["completed", "paid", "cancelled"],
+            )
+            .select_related("slot", "service", "professional")
+            .order_by("-slot__start_time")
+        )
+        ser = AppointmentSerializer(qs, many=True)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientsMeProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: SalonCustomerSerializer})
+    def get(self, request):
+        _, customer = _get_client_session_or_raise(request)
+        ser = SalonCustomerSerializer(customer)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+    @extend_schema(
+        request=SalonCustomerSerializer, responses={200: SalonCustomerSerializer}
+    )
+    def patch(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        allowed = {"name", "phone_number", "notes", "marketing_opt_in"}
+        data = {k: v for k, v in request.data.items() if k in allowed}
+        ser = SalonCustomerSerializer(customer, data=data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save(tenant=tenant)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientAppointmentCancelView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=None, responses={200: AppointmentSerializer})
+    def patch(self, request, pk: int):
+        tenant, customer = _get_client_session_or_raise(request)
+        appt = get_object_or_404(
+            Appointment.objects.select_related("slot", "tenant"),
+            pk=pk,
+            tenant=tenant,
+            customer=customer,
+        )
+
+        now = timezone.now()
+        slot_start = getattr(appt.slot, "start_time", None)
+        if slot_start and slot_start <= now:
+            return Response(
+                {"detail": "Não é possível cancelar agendamentos passados."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appt.status == "cancelled":
+            return Response(
+                {"detail": "Este agendamento já foi cancelado."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            if appt.slot:
+                appt.slot.mark_available()
+            _release_reserved_slots(appt)
+            appt.status = "cancelled"
+            appt.cancelled_by = None
+            appt.save(update_fields=["status", "cancelled_by"])
+
+        ser = AppointmentSerializer(appt)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
 
     def get_object(self):
         # Busca direta por PK e valida tenant explicitamente (evita filtros indevidos no queryset)

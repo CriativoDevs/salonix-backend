@@ -168,8 +168,18 @@ except Exception:
         "x-requested-with",
     ]
 
+CORS_ALLOW_CREDENTIALS = True
+# Quando credenciais estão habilitadas, não podemos usar "*" como origem.
+if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
+    CORS_ALLOW_ALL_ORIGINS = False
+    if not origins_raw:
+        CORS_ALLOWED_ORIGINS = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+
 CSRF_TRUSTED_ORIGINS = [
-    "https://77e5eadc56f5.ngrok-free.app",
+    "https://e1934e3a350d.ngrok-free.app",
 ]
 
 # opcional: flag ligada por padrão
@@ -454,6 +464,9 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/",
     # ENUM_NAME_OVERRIDES desativado para evitar conflitos de nomes
 }
+
+# Default tenant slug (fallback)
+DEFAULT_TENANT_SLUG = str(env_get("DEFAULT_TENANT_SLUG", "timelyone")).strip().lower()
 
 # =====================================================
 # LOGGING CONFIGURATION

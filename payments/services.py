@@ -423,21 +423,33 @@ class SubscriptionService:
 
             plan_info = cls.AVAILABLE_PLANS.get(plan_code or "", {})
 
+            # Campos tolerantes a ausência no Stripe
+            status = getattr(stripe_sub, "status", None)
+            cancel_at_period_end = bool(
+                getattr(stripe_sub, "cancel_at_period_end", False)
+            )
+            cpe_ts = getattr(stripe_sub, "current_period_end", None)
+            cpe_dt = None
+            try:
+                if cpe_ts:
+                    cpe_dt = datetime.fromtimestamp(cpe_ts, tz=timezone.utc)
+            except Exception:
+                cpe_dt = None
+
+            next_billing = None
+            try:
+                if cpe_ts and not cancel_at_period_end:
+                    next_billing = datetime.fromtimestamp(cpe_ts, tz=timezone.utc)
+            except Exception:
+                next_billing = None
+
             return {
                 "plan_code": plan_code,
                 "plan_name": plan_info.get("name", (plan_code or "").title()),
-                "status": stripe_sub.status,
-                "current_period_end": datetime.fromtimestamp(
-                    stripe_sub.current_period_end, tz=timezone.utc
-                ),
-                "cancel_at_period_end": stripe_sub.cancel_at_period_end,
-                "next_billing_date": (
-                    datetime.fromtimestamp(
-                        stripe_sub.current_period_end, tz=timezone.utc
-                    )
-                    if not stripe_sub.cancel_at_period_end
-                    else None
-                ),
+                "status": status,
+                "current_period_end": cpe_dt,
+                "cancel_at_period_end": cancel_at_period_end,
+                "next_billing_date": next_billing,
                 "price_monthly": plan_info.get("price_monthly", Decimal("0.00")),
             }
 
@@ -445,7 +457,31 @@ class SubscriptionService:
             return None
         except Exception as e:
             logger.error(f"Stripe error getting subscription: {str(e)}")
-            return None
+            # Ainda retornar mínima info usando registro local
+            try:
+                sub = (
+                    Subscription.objects.filter(
+                        user__tenant=user.tenant,
+                        status__in=["active", "trialing", "past_due"],
+                    )
+                    .order_by("-updated_at", "-created_at")
+                    .first()
+                )
+                if not sub:
+                    return None
+                plan_code = get_plan_code_from_price(sub.price_id)
+                plan_info = cls.AVAILABLE_PLANS.get(plan_code or "", {})
+                return {
+                    "plan_code": plan_code,
+                    "plan_name": plan_info.get("name", (plan_code or "").title()),
+                    "status": sub.status,
+                    "current_period_end": sub.current_period_end,
+                    "cancel_at_period_end": sub.cancel_at_period_end,
+                    "next_billing_date": sub.current_period_end,
+                    "price_monthly": plan_info.get("price_monthly", Decimal("0.00")),
+                }
+            except Exception:
+                return None
 
     @classmethod
     def cancel_subscription(cls, user: User, cancel_at_period_end: bool = True) -> bool:

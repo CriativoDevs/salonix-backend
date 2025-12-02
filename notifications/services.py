@@ -1,7 +1,13 @@
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Optional, Any
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.core import signing
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 from users.models import Tenant
 from core.models import CustomerCommunicationConsent
 from .models import Notification, NotificationDevice, NotificationLog
@@ -14,19 +20,105 @@ logger = logging.getLogger(__name__)
 def send_customer_pwa_invite(
     tenant: Tenant, customer, invited_by: Optional[Any] = None
 ) -> bool:
-    """Placeholder para envio de convite do PWA Cliente."""
-    logger.info(
-        "PWA invite dispatched",
-        extra={
-            "tenant_id": getattr(tenant, "id", None),
-            "tenant_slug": getattr(tenant, "slug", None),
-            "customer_id": getattr(customer, "id", None),
-            "customer_email": getattr(customer, "email", None),
-            "invited_by": getattr(invited_by, "id", None),
-        },
+    """Envia convite do PWA Cliente por e-mail com link de acesso.
+
+    Requisitos:
+    - `FRONTEND_BASE_URL` definido nas settings para montar o link.
+    - Configuração SMTP em `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`.
+    - Respeita `EMAIL_DISABLE_OUTBOUND` (não envia em ambientes com bloqueio).
+    """
+    to_email = (getattr(customer, "email", None) or "").strip()
+    if not to_email:
+        return False
+
+    payload = {
+        "tenant_id": getattr(tenant, "id", None),
+        "customer_id": getattr(customer, "id", None),
+        "ts": int(timezone.now().timestamp()),
+        # uso único será validado no accept
+        "jti": signing.TimestampSigner().sign_object({"r": timezone.now().timestamp()})[
+            :16
+        ],
+    }
+    token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
+    base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
+    slug = getattr(tenant, "slug", "").strip().lower()
+    tenant_qs = f"tenant={slug}" if slug else ""
+    sep = "&" if tenant_qs else ""
+    link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+
+    subject = "Seu acesso ao Salonix"
+    sender_email = settings.EMAIL_HOST_USER or getattr(
+        settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
     )
-    # TODO: integrar com serviço real de envio (email/SMS) assim que definido.
-    return True
+
+    text_body = (
+        f"Olá,\n\n"
+        f"Para acessar sua área de cliente, utilize o link abaixo:\n\n"
+        f"{link}\n\n"
+        f"Se você não solicitou este acesso, ignore esta mensagem.\n"
+    )
+
+    html_body = f"""
+    <div style="font-family: Arial, sans-serif;">
+      <p>Olá,</p>
+      <p>Para acessar sua área de cliente, utilize o link abaixo:</p>
+      <p><a href="{link}" style="background:#2563eb;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Acessar</a></p>
+      <p>Se você não solicitou este acesso, ignore esta mensagem.</p>
+    </div>
+    """
+
+    message = MIMEMultipart("alternative")
+    message["From"] = sender_email
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.attach(MIMEText(text_body, "plain"))
+    message.attach(MIMEText(html_body, "html"))
+
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        logger.info(
+            "Outbound email disabled — PWA invite skipped",
+            extra={
+                "tenant_id": getattr(tenant, "id", None),
+                "customer_id": getattr(customer, "id", None),
+                "to": to_email,
+            },
+        )
+        return False
+
+    try:
+        if getattr(settings, "EMAIL_HOST", "").strip():
+            with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
+                if getattr(settings, "EMAIL_USE_TLS", False):
+                    server.starttls()
+                if settings.EMAIL_HOST_USER and settings.EMAIL_HOST_PASSWORD:
+                    server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
+                server.send_message(message)
+        else:
+            email = EmailMultiAlternatives(subject, text_body, sender_email, [to_email])
+            email.attach_alternative(html_body, "text/html")
+            email.send()
+        logger.info(
+            "PWA invite email sent",
+            extra={
+                "tenant_id": getattr(tenant, "id", None),
+                "tenant_slug": getattr(tenant, "slug", None),
+                "customer_id": getattr(customer, "id", None),
+                "customer_email": to_email,
+                "invited_by": getattr(invited_by, "id", None),
+            },
+        )
+        return True
+    except Exception:
+        logger.exception(
+            "PWA invite email failed",
+            extra={
+                "tenant_id": getattr(tenant, "id", None),
+                "customer_id": getattr(customer, "id", None),
+                "customer_email": to_email,
+            },
+        )
+        return False
 
 
 class NotificationService:

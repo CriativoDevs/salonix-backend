@@ -22,6 +22,7 @@ from .views import (
     PurchaseCreditsView,
     RealtimeCreditsSSEView,
     TenantNotificationsSettingsView,
+    TenantModulesSettingsView,
 )
 
 urlpatterns = [
@@ -72,5 +73,10 @@ urlpatterns = [
         "tenant/notifications/",
         TenantNotificationsSettingsView.as_view(),
         name="tenant_notifications_settings",
+    ),
+    path(
+        "tenant/modules/",
+        TenantModulesSettingsView.as_view(),
+        name="tenant_modules_settings",
     ),
 ]

@@ -869,6 +869,6 @@ class ClientAccessAcceptSerializer(serializers.Serializer):
 
 
 class PublicClientAccessLinkRequestSerializer(serializers.Serializer):
-    tenant_slug = serializers.SlugField()
+    tenant_slug = serializers.SlugField(required=False, allow_null=True, allow_blank=True)
     email = serializers.EmailField()
     channel = serializers.ChoiceField(choices=("email",), required=False, default="email")

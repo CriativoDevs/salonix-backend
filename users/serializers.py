@@ -730,6 +730,10 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
         return data
 
 
+class TenantModulesUpdateSerializer(serializers.Serializer):
+    pwa_client_enabled = serializers.BooleanField(required=False)
+
+
 # ============================================================================
 # Serializers para Sistema de Créditos de Comunicação
 # ============================================================================

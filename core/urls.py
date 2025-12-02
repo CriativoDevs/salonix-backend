@@ -26,6 +26,10 @@ from core.views import (
     ClientAccessAcceptView,
     ClientSessionRefreshView,
     PublicClientAccessLinkView,
+    ClientsMeAppointmentsUpcomingView,
+    ClientsMeAppointmentsHistoryView,
+    ClientsMeProfileView,
+    ClientAppointmentCancelView,
 )
 
 router = DefaultRouter()
@@ -54,6 +58,27 @@ urlpatterns = [
         "clients/session/refresh/",
         ClientSessionRefreshView.as_view(),
         name="clients_session_refresh",
+    ),
+    # Cliente autenticado via cookie de sessão
+    path(
+        "clients/me/appointments/upcoming/",
+        ClientsMeAppointmentsUpcomingView.as_view(),
+        name="clients_me_appointments_upcoming",
+    ),
+    path(
+        "clients/me/appointments/history/",
+        ClientsMeAppointmentsHistoryView.as_view(),
+        name="clients_me_appointments_history",
+    ),
+    path(
+        "clients/me/profile/",
+        ClientsMeProfileView.as_view(),
+        name="clients_me_profile",
+    ),
+    path(
+        "clients/me/appointments/<int:pk>/cancel/",
+        ClientAppointmentCancelView.as_view(),
+        name="clients_me_appointment_cancel",
     ),
     # Public routes
     path(
