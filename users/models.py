@@ -57,6 +57,69 @@ class Tenant(models.Model):
         max_length=3, default="EUR", help_text="Moeda padrão (ISO 4217)"
     )
 
+    # Endereço do estabelecimento
+    address_street = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Rua/Logradouro do estabelecimento",
+    )
+    address_number = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Número",
+    )
+    address_complement = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Complemento (sala, bloco, etc.)",
+    )
+    address_neighborhood = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Bairro/Distrito",
+    )
+    address_city = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Cidade",
+    )
+    address_state = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Estado/Província/UF",
+    )
+    address_zip = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="CEP/Código postal",
+    )
+    address_country = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="País",
+    )
+
+    # Contatos do estabelecimento
+    contact_email = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="Email de contato público do salão",
+    )
+    contact_phone = models.CharField(
+        max_length=32,
+        blank=True,
+        null=True,
+        help_text="Telefone de contato público do salão (E.164 ou local)",
+    )
+
     # Planos e Feature Flags
     PLAN_BASIC = "basic"
     PLAN_STANDARD = "standard"

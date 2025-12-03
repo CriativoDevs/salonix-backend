@@ -31,6 +31,7 @@ from .serializers import (
     TenantMetaSerializer,
     TenantBrandingUpdateSerializer,
     TenantModulesUpdateSerializer,
+    TenantProfileSerializer,
     UserRegistrationSerializer,
     UserFeatureFlagsSerializer,
     UserFeatureFlagsUpdateSerializer,
@@ -322,6 +323,119 @@ class TenantMetaView(APIView):
 
         response_serializer = TenantMetaSerializer(tenant)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+
+class TenantProfileView(APIView):
+    """
+    GET /api/users/tenant/profile/
+    PATCH /api/users/tenant/profile/
+
+    Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+    GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+    """
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get_throttles(self):
+        if self.request.method == "GET":
+            self.throttle_scope = "tenant_meta_public"
+            return [UsersTenantMetaPublicThrottle()]
+        return []
+
+    def _resolve_tenant_for_get(self, request):
+        tenant_slug = request.GET.get("tenant") or request.headers.get("X-Tenant-Slug")
+        if not tenant_slug:
+            raise TenantError(
+                "Parâmetro 'tenant' ou header 'X-Tenant-Slug' é obrigatório",
+                code=ErrorCodes.VALIDATION_REQUIRED_FIELD,
+            )
+        try:
+            return Tenant.objects.get(slug=tenant_slug, is_active=True)
+        except Tenant.DoesNotExist:
+            raise TenantError(
+                f"Tenant '{tenant_slug}' não encontrado ou inativo",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
+
+    def _resolve_tenant_for_patch(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if not tenant:
+            raise TenantError(
+                "Usuário não possui tenant associado",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
+        if not (
+            getattr(user, "is_superuser", False)
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                "Apenas owner ou manager podem atualizar perfil do tenant."
+            )
+        return tenant
+
+    @extend_schema(responses=TenantProfileSerializer)
+    def get(self, request):
+        tenant = self._resolve_tenant_for_get(request)
+        try:
+            owner_member = (
+                TenantStaffMember.objects.select_related("user")
+                .filter(tenant=tenant, role=TenantStaffMember.Role.OWNER)
+                .first()
+            )
+            owner_email = getattr(getattr(owner_member, "user", None), "email", None)
+        except Exception:
+            owner_email = None
+        serializer = TenantProfileSerializer(
+            {
+                "email": getattr(tenant, "contact_email", None) or owner_email,
+                "phone": getattr(tenant, "contact_phone", None),
+            }
+        )
+        return Response({"profile": serializer.data}, status=status.HTTP_200_OK)
+
+    @extend_schema(request=TenantProfileSerializer, responses=TenantProfileSerializer)
+    def patch(self, request):
+        tenant = self._resolve_tenant_for_patch(request)
+
+        payload = request.data or {}
+        data = (
+            payload.get("profile")
+            if isinstance(payload.get("profile"), dict)
+            else payload
+        )
+
+        serializer = TenantProfileSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+
+        validated = serializer.validated_data
+        email = validated.get("email")
+        phone = validated.get("phone")
+
+        update_fields = []
+        if email is not None:
+            tenant.contact_email = email or None
+            update_fields.append("contact_email")
+        if phone is not None:
+            tenant.contact_phone = phone or None
+            update_fields.append("contact_phone")
+
+        if update_fields:
+            update_fields.append("updated_at")
+            tenant.save(update_fields=update_fields)
+
+        resp = {
+            "profile": {
+                "email": getattr(tenant, "contact_email", None),
+                "phone": getattr(tenant, "contact_phone", None),
+            }
+        }
+        return Response(resp, status=status.HTTP_200_OK)
 
 
 class MeTenantView(APIView):

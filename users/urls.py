@@ -23,6 +23,7 @@ from .views import (
     RealtimeCreditsSSEView,
     TenantNotificationsSettingsView,
     TenantModulesSettingsView,
+    TenantProfileView,
 )
 
 urlpatterns = [
@@ -52,6 +53,7 @@ urlpatterns = [
     path("me/features/", MeFeatureFlagsView.as_view(), name="me_feature_flags"),
     path("me/tenant/", MeTenantView.as_view(), name="me_tenant"),
     path("tenant/meta/", TenantMetaView.as_view(), name="tenant_meta"),
+    path("tenant/profile/", TenantProfileView.as_view(), name="tenant_profile"),
     path("token/", EmailTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("password/reset/", PasswordResetRequestView.as_view(), name="password_reset"),
