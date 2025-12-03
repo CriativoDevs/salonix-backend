@@ -28,6 +28,7 @@ from core.views import (
     PublicClientAccessLinkView,
     ClientsMeAppointmentsUpcomingView,
     ClientsMeAppointmentsHistoryView,
+    ClientsMeAppointmentCreateView,
     ClientsMeProfileView,
     ClientAppointmentCancelView,
 )
@@ -69,6 +70,11 @@ urlpatterns = [
         "clients/me/appointments/history/",
         ClientsMeAppointmentsHistoryView.as_view(),
         name="clients_me_appointments_history",
+    ),
+    path(
+        "clients/me/appointments/",
+        ClientsMeAppointmentCreateView.as_view(),
+        name="clients_me_appointments_create",
     ),
     path(
         "clients/me/profile/",

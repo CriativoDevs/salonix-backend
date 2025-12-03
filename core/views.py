@@ -2642,6 +2642,144 @@ class ClientsMeAppointmentsHistoryView(APIView):
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
 
+class ClientsMeAppointmentCreateView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "clients_me_appointments_create"
+
+    @extend_schema(
+        request=AppointmentSerializer, responses={201: AppointmentDetailSerializer}
+    )
+    def post(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+
+        raw = request.data or {}
+        try:
+            service_id = int(raw.get("service") or raw.get("service_id") or 0)
+            professional_id = int(
+                raw.get("professional") or raw.get("professional_id") or 0
+            )
+            slot_id = int(raw.get("slot") or raw.get("slot_id") or 0)
+        except Exception:
+            raise ValidationError({"detail": "Parâmetros inválidos."})
+        notes = str(raw.get("notes") or "")
+
+        with transaction.atomic():
+            service = get_object_or_404(Service, pk=service_id, tenant=tenant)
+            professional = get_object_or_404(
+                Professional, pk=professional_id, tenant=tenant
+            )
+            slot = get_object_or_404(
+                ScheduleSlot.objects.select_for_update(), pk=slot_id, tenant=tenant
+            )
+
+            if slot.professional_id != professional.id:
+                raise ValidationError(
+                    {"slot": ["Slot não pertence ao profissional informado."]}
+                )
+            if slot.start_time <= timezone.now():
+                raise ValidationError(
+                    {"slot": ["Não é possível agendar horários no passado."]}
+                )
+            if (not slot.is_available) or (slot.status != "available"):
+                raise ValidationError(
+                    {"slot": ["Este horário já foi agendado ou não está disponível."]}
+                )
+
+            if not ProfessionalService.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                service=service,
+                is_active=True,
+            ).exists():
+                raise ValidationError(
+                    {"service": ["Profissional não atende este serviço."]}
+                )
+
+            owner = TenantStaffMember.objects.filter(
+                tenant=tenant, role=TenantStaffMember.Role.OWNER
+            ).first()
+            client_user = getattr(owner, "user", None)
+            if client_user is None:
+                manager = TenantStaffMember.objects.filter(
+                    tenant=tenant, role=TenantStaffMember.Role.MANAGER
+                ).first()
+                client_user = getattr(manager, "user", None)
+            if client_user is None:
+                raise ValidationError(
+                    "Tenant sem responsável cadastrado para vincular o agendamento."
+                )
+
+            duration = int(getattr(service, "duration_minutes", 0) or 0)
+            slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
+            extra_slots: list[ScheduleSlot] = []
+
+            if duration > slot_minutes:
+                block = _find_contiguous_block_for(
+                    tenant=tenant,
+                    professional=professional,
+                    start_slot=slot,
+                    required_minutes=duration,
+                )
+                total_minutes = sum(
+                    int((s.end_time - s.start_time).total_seconds() // 60)
+                    for s in block
+                )
+                if not block or total_minutes < duration:
+                    raise ValidationError(
+                        {
+                            "slot": [
+                                "Não há slots suficientes para a duração do serviço."
+                            ]
+                        }
+                    )
+                for s in block[1:]:
+                    if (not s.is_available) or (s.status != "available"):
+                        raise ValidationError(
+                            {"slot": ["Bloco contíguo de slots indisponível."]}
+                        )
+                for s in block[1:]:
+                    s.mark_booked()
+                    extra_slots.append(s)
+
+            slot.mark_booked()
+            appointment = Appointment.objects.create(
+                tenant=tenant,
+                client=client_user,
+                customer=customer,
+                service=service,
+                professional=professional,
+                slot=slot,
+                notes=notes,
+                status="scheduled",
+            )
+            for s in extra_slots:
+                AppointmentReservedSlot.objects.create(
+                    tenant=tenant, appointment=appointment, slot=s
+                )
+
+        try:
+            to_email = (customer.email or "").strip()
+            if to_email:
+                client_name = customer.name or "Cliente"
+                salon_name = tenant.name or "Salonix"
+                send_appointment_confirmation_email(
+                    to_email=to_email,
+                    client_name=client_name,
+                    service_name=service.name,
+                    date_time=slot.start_time,
+                    salon_name=salon_name,
+                )
+        except Exception as e:
+            logger.warning(
+                "Falha ao enviar e-mail de confirmação (cliente)",
+                extra={"error": str(e)},
+            )
+
+        ser = AppointmentDetailSerializer(appointment)
+        return Response(ser.data, status=drf_status.HTTP_201_CREATED)
+
+
 class ClientsMeProfileView(APIView):
     permission_classes = [AllowAny]
 

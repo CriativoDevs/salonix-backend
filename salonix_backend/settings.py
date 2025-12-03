@@ -363,6 +363,14 @@ REST_FRAMEWORK = {
                 else "10/hour"
             ),
         ),
+        "clients_me_appointments_create": env_get(
+            "CLIENTS_ME_APPOINTMENTS_CREATE_RATE",
+            (
+                "100/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "20/hour"
+            ),
+        ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
