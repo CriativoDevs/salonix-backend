@@ -30,6 +30,8 @@ from .serializers import (
     EmailTokenObtainPairSerializer,
     TenantMetaSerializer,
     TenantBrandingUpdateSerializer,
+    TenantModulesUpdateSerializer,
+    TenantProfileSerializer,
     UserRegistrationSerializer,
     UserFeatureFlagsSerializer,
     UserFeatureFlagsUpdateSerializer,
@@ -67,7 +69,6 @@ from core.email_utils import send_staff_invite_email
 from .serializers import StaffContactUpdateSerializer
 from .throttling import UsersPasswordResetThrottle as _UsersPasswordResetThrottle
 from .throttling import (
-    UsersStaffInviteThrottle,
     UsersStaffResendInviteThrottle,
 )
 from django.utils import timezone
@@ -202,6 +203,24 @@ class TenantMetaView(APIView):
         try:
             return Tenant.objects.get(slug=tenant_slug, is_active=True)
         except Tenant.DoesNotExist:
+            default_slug = (
+                str(getattr(settings, "DEFAULT_TENANT_SLUG", "timelyone"))
+                .strip()
+                .lower()
+            )
+            normalized = str(tenant_slug).strip().lower()
+            if normalized == default_slug:
+                tenant, _created = Tenant.objects.get_or_create(
+                    slug=default_slug,
+                    defaults={
+                        "name": "TimelyOne",
+                        "is_active": True,
+                    },
+                )
+                if not tenant.is_active:
+                    tenant.is_active = True
+                    tenant.save(update_fields=["is_active", "updated_at"])
+                return tenant
             raise TenantError(
                 f"Tenant '{tenant_slug}' não encontrado ou inativo",
                 code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
@@ -306,6 +325,119 @@ class TenantMetaView(APIView):
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
+class TenantProfileView(APIView):
+    """
+    GET /api/users/tenant/profile/
+    PATCH /api/users/tenant/profile/
+
+    Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+    GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+    """
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get_throttles(self):
+        if self.request.method == "GET":
+            self.throttle_scope = "tenant_meta_public"
+            return [UsersTenantMetaPublicThrottle()]
+        return []
+
+    def _resolve_tenant_for_get(self, request):
+        tenant_slug = request.GET.get("tenant") or request.headers.get("X-Tenant-Slug")
+        if not tenant_slug:
+            raise TenantError(
+                "Parâmetro 'tenant' ou header 'X-Tenant-Slug' é obrigatório",
+                code=ErrorCodes.VALIDATION_REQUIRED_FIELD,
+            )
+        try:
+            return Tenant.objects.get(slug=tenant_slug, is_active=True)
+        except Tenant.DoesNotExist:
+            raise TenantError(
+                f"Tenant '{tenant_slug}' não encontrado ou inativo",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
+
+    def _resolve_tenant_for_patch(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if not tenant:
+            raise TenantError(
+                "Usuário não possui tenant associado",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
+        if not (
+            getattr(user, "is_superuser", False)
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                "Apenas owner ou manager podem atualizar perfil do tenant."
+            )
+        return tenant
+
+    @extend_schema(responses=TenantProfileSerializer)
+    def get(self, request):
+        tenant = self._resolve_tenant_for_get(request)
+        try:
+            owner_member = (
+                TenantStaffMember.objects.select_related("user")
+                .filter(tenant=tenant, role=TenantStaffMember.Role.OWNER)
+                .first()
+            )
+            owner_email = getattr(getattr(owner_member, "user", None), "email", None)
+        except Exception:
+            owner_email = None
+        serializer = TenantProfileSerializer(
+            {
+                "email": getattr(tenant, "contact_email", None) or owner_email,
+                "phone": getattr(tenant, "contact_phone", None),
+            }
+        )
+        return Response({"profile": serializer.data}, status=status.HTTP_200_OK)
+
+    @extend_schema(request=TenantProfileSerializer, responses=TenantProfileSerializer)
+    def patch(self, request):
+        tenant = self._resolve_tenant_for_patch(request)
+
+        payload = request.data or {}
+        data = (
+            payload.get("profile")
+            if isinstance(payload.get("profile"), dict)
+            else payload
+        )
+
+        serializer = TenantProfileSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+
+        validated = serializer.validated_data
+        email = validated.get("email")
+        phone = validated.get("phone")
+
+        update_fields = []
+        if email is not None:
+            tenant.contact_email = email or None
+            update_fields.append("contact_email")
+        if phone is not None:
+            tenant.contact_phone = phone or None
+            update_fields.append("contact_phone")
+
+        if update_fields:
+            update_fields.append("updated_at")
+            tenant.save(update_fields=update_fields)
+
+        resp = {
+            "profile": {
+                "email": getattr(tenant, "contact_email", None),
+                "phone": getattr(tenant, "contact_phone", None),
+            }
+        }
+        return Response(resp, status=status.HTTP_200_OK)
+
+
 class MeTenantView(APIView):
     permission_classes = [IsAuthenticated]
     CACHE_TTL = 30
@@ -319,6 +451,28 @@ class MeTenantView(APIView):
         tenant = getattr(user, "tenant", None)
         if getattr(user, "is_ops_user", False) or not tenant:
             raise NotFound("Tenant não encontrado para o usuário autenticado.")
+
+        # Sincronizar o plano do tenant com o serviço de subscrição antes de servir o bootstrap
+        try:
+            from payments.services import SubscriptionService
+
+            current = SubscriptionService.get_current_subscription(user) or {}
+            plan_code = current.get("plan_code")
+            if plan_code and tenant.plan_tier != plan_code:
+                old = tenant.plan_tier
+                tenant.plan_tier = plan_code
+                tenant.save(update_fields=["plan_tier", "updated_at"])
+                bootstrap_logger.info(
+                    "tenant.bootstrap.plan_sync",
+                    extra={
+                        "tenant_id": tenant.id,
+                        "tenant_slug": tenant.slug,
+                        "old_plan": old,
+                        "new_plan": plan_code,
+                    },
+                )
+        except Exception:
+            pass
 
         cache_key = _me_tenant_cache_key(user.id, tenant.id, tenant.updated_at)
         payload = cache.get(cache_key)
@@ -400,10 +554,59 @@ class MeProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class TenantModulesSettingsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description=(
+            "Atualiza módulos do tenant (ex.: PWA Cliente). Só permitido para owner/manager "
+            "e plano Standard+."
+        ),
+        request=TenantModulesUpdateSerializer,
+        responses={200: OpenApiResponse(description="ok")},
+    )
+    def patch(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise AuthenticationFailed("tenant_required")
+
+        if request.user.staff_role not in (
+            TenantStaffMember.Role.OWNER,
+            TenantStaffMember.Role.MANAGER,
+        ):
+            raise PermissionDenied("Permissão negada.")
+
+        serializer = TenantModulesUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        v = serializer.validated_data
+
+        if "pwa_client_enabled" in v:
+            desired = bool(v["pwa_client_enabled"])
+            if desired and tenant.plan_tier not in (
+                Tenant.PLAN_STANDARD,
+                Tenant.PLAN_PRO,
+                Tenant.PLAN_ENTERPRISE,
+            ):
+                return Response(
+                    {
+                        "detail": (
+                            "PWA Cliente disponível a partir do plano Standard. "
+                            "Atualize seu plano para ativar."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            tenant.pwa_client_enabled = desired
+            tenant.save(update_fields=["pwa_client_enabled", "updated_at"])
+
+        return Response(
+            {"pwa_client_enabled": tenant.pwa_client_enabled}, status=status.HTTP_200_OK
+        )
+
+
 class TenantStaffView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [UsersStaffInviteThrottle]
-    throttle_scope = "users_staff_invite"
+    # Listar staff não deve ser afetado pelo throttle de convites
     serializer_class = TenantStaffMemberSerializer
 
     @extend_schema(

@@ -11,7 +11,12 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    OpenApiParameter,
+    OpenApiExample,
+)
 
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -45,6 +50,9 @@ from core.serializers import (
     SalonCustomerSerializer,
     ServiceSerializer,
     ScheduleSlotSerializer,
+    ClientAccessLinkRequestSerializer,
+    ClientAccessAcceptSerializer,
+    PublicClientAccessLinkRequestSerializer,
 )
 from core.mixins import TenantIsolatedMixin
 from core.utils.pagination import get_limit_offset, set_pagination_headers
@@ -55,7 +63,11 @@ from django.db.models import Q
 from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.core.cache import cache
+import uuid
 from django.utils.dateparse import parse_datetime, parse_date
+from django.core import signing
+from django.conf import settings
 from prometheus_client import Counter, REGISTRY
 
 from users.permissions import IsSalonOwnerOfAppointment
@@ -64,6 +76,9 @@ from core.utils.ics import ICSGenerator, verify_public_ics_token
 import csv
 import io
 from typing import Any, Dict, List, Optional, cast
+
+from users.throttling import UsersClientAccessLinkThrottle
+from users.security import enforce_captcha_or_raise
 
 
 def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
@@ -104,6 +119,42 @@ APPOINTMENT_SERIES_UPDATED_TOTAL = _get_or_create_counter(
     "Total number of series update operations",
     ("tenant_id", "action", "status"),
 )
+
+# Métricas de acesso do cliente (PWA)
+CLIENT_ACCESS_EVENTS_TOTAL = _get_or_create_counter(
+    "client_access_events_total",
+    "Eventos de acesso do cliente (emitir/aceitar/refresh)",
+    ("event", "result", "tenant_id"),
+)
+
+
+def _get_client_session_or_raise(request):
+    raw = request.COOKIES.get("client_session")
+    if not raw:
+        raise ValidationError("Sessão ausente")
+    try:
+        payload = signing.loads(raw, salt="CLIENT_PWA_SESSION_SALT")
+    except signing.BadSignature:
+        raise ValidationError("Sessão inválida")
+
+    tenant_id = int(payload.get("tenant_id"))
+    customer_id = int(payload.get("customer_id"))
+
+    try:
+        tenant = Tenant.objects.get(id=tenant_id, is_active=True)
+    except Tenant.DoesNotExist:
+        raise ValidationError("Tenant inválido")
+
+    if not tenant.can_use_pwa_client():
+        raise ValidationError("Funcionalidade indisponível para este tenant")
+
+    try:
+        customer = SalonCustomer.objects.get(id=customer_id, tenant=tenant)
+    except SalonCustomer.DoesNotExist:
+        raise ValidationError("Cliente inválido")
+
+    return tenant, customer
+
 
 APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
     "appointment_series_errors_total",
@@ -2030,8 +2081,6 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        # Preferir tenant do request (usuário autenticado); se ausente (ex.: superuser),
-        # tentar resolver via header 'X-Tenant-Slug' ou query param 'tenant'.
         tenant = getattr(self.request, "tenant", None) or getattr(
             self.request.user, "tenant", None
         )
@@ -2045,7 +2094,6 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
                 except Tenant.DoesNotExist:
                     tenant = None
         if tenant is None and not self.request.user.is_superuser:
-            # Usuário comum sem tenant não deve criar registros órfãos
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
@@ -2059,6 +2107,738 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
             raise PermissionDenied("Apenas owner ou manager podem criar serviços.")
 
         serializer.save(user=self.request.user, tenant=tenant)
+
+    def get_object(self):
+        obj = get_object_or_404(
+            Service, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
+        if self.request.user.is_superuser:
+            return obj
+
+        if self.request.method not in SAFE_METHODS:
+            if not (
+                self.request.user.has_staff_role(
+                    TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+                )
+            ):
+                if obj.user_id != self.request.user.id:
+                    raise PermissionDenied(
+                        "Apenas owner/manager ou o responsável pelo serviço podem alterar."
+                    )
+
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if tenant and hasattr(obj, "tenant"):
+            if obj.tenant_id != tenant.id:
+                raise PermissionDenied(
+                    "Acesso negado: objeto não pertence ao seu tenant"
+                )
+        return obj
+
+
+class ClientAccessLinkView(TenantIsolatedMixin, APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [UsersClientAccessLinkThrottle]
+    throttle_scope = "clients_access_link"
+
+    @extend_schema(
+        request=ClientAccessLinkRequestSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        description="Emite link/token de acesso para cliente (PWA).",
+    )
+    def post(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None) or getattr(request, "tenant", None)
+        if tenant is None:
+            raise ValidationError("Tenant não encontrado para o usuário autenticado.")
+
+        role = getattr(user, "staff_role", None)
+        if role not in (TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER):
+            raise PermissionDenied("Somente OWNER/MANAGER podem emitir link de acesso.")
+
+        serializer = ClientAccessLinkRequestSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        customer_id = int(data["customer_id"])
+        try:
+            customer = SalonCustomer.objects.get(id=customer_id, tenant=tenant)
+        except SalonCustomer.DoesNotExist:
+            raise ValidationError("Cliente não encontrado para este tenant.")
+
+        to_email = (customer.email or "").strip()
+        if not to_email:
+            return Response(
+                {
+                    "detail": "E-mail do cliente ausente. Atualize o cadastro e tente novamente."
+                },
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = {
+            "tenant_id": tenant.id,
+            "customer_id": customer.id,
+            "ts": int(timezone.now().timestamp()),
+            "jti": uuid.uuid4().hex,
+        }
+        token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
+            "/"
+        )
+        slug = getattr(tenant, "slug", "").strip().lower()
+        tenant_qs = f"tenant={slug}" if slug else ""
+        sep = "&" if tenant_qs else ""
+        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+
+        try:
+            send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=user)
+        except Exception:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="emit_staff",
+                result="failure",
+                tenant_id=str(tenant.id),
+            ).inc()
+        else:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="emit_staff",
+                result="success",
+                tenant_id=str(tenant.id),
+            ).inc()
+
+        return Response(
+            {"access_link_sent": True, "customer_id": customer.id, "access_link": link},
+            status=drf_status.HTTP_200_OK,
+        )
+
+
+class PublicClientAccessLinkView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersClientAccessLinkThrottle]
+    throttle_scope = "clients_access_link"
+
+    @extend_schema(
+        request=PublicClientAccessLinkRequestSerializer,
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Request",
+                description="Solicitação de envio de link",
+                value={
+                    "tenant_slug": "beleza-top",
+                    "email": "ana@example.com",
+                    "captcha_token": "dev-bypass",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="Sucesso",
+                value={"access_link_requested": True},
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="Captcha inválido",
+                value={"detail": "Captcha inválido."},
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
+        description="Solicita envio de link de acesso (self-service) para cliente via e-mail.",
+    )
+    def post(self, request):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            return Response(
+                {"detail": "Captcha inválido."}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = PublicClientAccessLinkRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        tenant_slug = (data.get("tenant_slug") or "").strip().lower()
+        email = data["email"].strip().lower()
+
+        resp = Response({"access_link_requested": True}, status=drf_status.HTTP_200_OK)
+
+        tenant = None
+        customer = None
+        if tenant_slug:
+            try:
+                tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+            except Tenant.DoesNotExist:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="tenant_not_found",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+        else:
+            possible = SalonCustomer.objects.select_related("tenant").filter(
+                email__iexact=email, tenant__is_active=True
+            )
+            matches = [c for c in possible if c.tenant.can_use_pwa_client()]
+            if len(matches) == 0:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="customer_not_found",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+            if len(matches) > 1:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="ambiguous",
+                    tenant_id=str(0),
+                ).inc()
+                return resp
+            customer = matches[0]
+            tenant = customer.tenant
+
+        if not tenant.can_use_pwa_client():
+            return resp
+
+        if customer is None:
+            try:
+                customer = SalonCustomer.objects.get(tenant=tenant, email__iexact=email)
+            except SalonCustomer.DoesNotExist:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="emit_public",
+                    result="customer_not_found",
+                    tenant_id=str(tenant.id),
+                ).inc()
+                return resp
+
+        if not (customer.email or "").strip():
+            return resp
+
+        # Gerar token/link (uso único por jti) e logar em dev
+        payload = {
+            "tenant_id": tenant.id,
+            "customer_id": customer.id,
+            "ts": int(timezone.now().timestamp()),
+            "jti": uuid.uuid4().hex,
+        }
+        token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
+            "/"
+        )
+        slug = getattr(tenant, "slug", "").strip().lower()
+        tenant_qs = f"tenant={slug}" if slug else ""
+        sep = "&" if tenant_qs else ""
+        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+
+        security_logger = logging.getLogger("users.security")
+        env_name = getattr(settings, "ENV_NAME", "dev")
+        if getattr(settings, "DEBUG", False) or env_name == "dev":
+            security_logger.info(
+                f"Client access link (dev): {link} | email={email}",
+                extra={
+                    "event": "client_access_link",
+                    "email": email,
+                    "link": link,
+                    "tenant_id": tenant.id,
+                },
+            )
+
+        try:
+            send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=None)
+        except Exception:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="emit_public",
+                result="failure",
+                tenant_id=str(tenant.id),
+            ).inc()
+        else:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="emit_public",
+                result="success",
+                tenant_id=str(tenant.id),
+            ).inc()
+
+        return resp
+
+
+class ClientAccessAcceptView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersClientAccessLinkThrottle]
+    throttle_scope = "clients_access_link"
+
+    @extend_schema(
+        request=ClientAccessAcceptSerializer,
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Request",
+                description="Aceitar convite com token",
+                value={"token": "<token-assinado>"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="Sessão criada",
+                value={
+                    "session": "created",
+                    "tenant_id": 1,
+                    "customer_id": 42,
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="Token inválido",
+                value={"detail": "Token inválido"},
+                response_only=True,
+                status_codes=["400"],
+            ),
+            OpenApiExample(
+                name="Token expirado",
+                value={"detail": "Token expirado"},
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
+        description="Aceita link/token de acesso do cliente e cria sessão.",
+    )
+    def post(self, request):
+        serializer = ClientAccessAcceptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        raw = serializer.validated_data["token"]
+        try:
+            payload = signing.loads(raw, salt="CLIENT_PWA_INVITE_SALT")
+        except signing.BadSignature:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="bad_signature",
+                tenant_id=str(0),
+            ).inc()
+            raise ValidationError("Token inválido")
+
+        tenant_id = int(payload.get("tenant_id"))
+        customer_id = int(payload.get("customer_id"))
+        ts = int(payload.get("ts", 0))
+        jti = str(payload.get("jti", ""))
+
+        ttl = getattr(settings, "CLIENT_PWA_INVITE_TTL_SECONDS", 15 * 60)
+        if int(timezone.now().timestamp()) - ts > ttl:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="expired",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Token expirado")
+
+        # Uso único do token por jti
+        if not jti:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="missing_jti",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Token inválido")
+        remaining = ttl - (int(timezone.now().timestamp()) - ts)
+        if remaining < 0:
+            remaining = 0
+        cache_key = f"client_invite_jti:{tenant_id}:{customer_id}:{jti}"
+        # add é atômico: retorna False se já existir
+        added = cache.add(cache_key, True, timeout=remaining or ttl)
+        if not added:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="reused",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Token já utilizado")
+
+        # Verificar existência
+        try:
+            tenant = Tenant.objects.get(id=tenant_id, is_active=True)
+        except Tenant.DoesNotExist:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="tenant_not_found",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Tenant inválido")
+
+        try:
+            customer = SalonCustomer.objects.get(id=customer_id, tenant=tenant)
+        except SalonCustomer.DoesNotExist:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="customer_not_found",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Cliente inválido")
+
+        # Criar cookie de sessão para cliente
+        session_payload = {
+            "tenant_id": tenant.id,
+            "customer_id": customer.id,
+            "iat": int(timezone.now().timestamp()),
+        }
+        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
+
+        resp = Response(
+            {
+                "session": "created",
+                "tenant_id": tenant.id,
+                "customer_id": customer.id,
+            },
+            status=drf_status.HTTP_200_OK,
+        )
+        CLIENT_ACCESS_EVENTS_TOTAL.labels(
+            event="accept",
+            result="success",
+            tenant_id=str(tenant.id),
+        ).inc()
+        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
+        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
+        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
+        resp.set_cookie(
+            "client_session",
+            session_token,
+            max_age=max_age,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+        return resp
+
+
+class ClientSessionRefreshView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersClientAccessLinkThrottle]
+    throttle_scope = "clients_access_link"
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sessão renovada",
+                value={"session": "refreshed"},
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="Sessão ausente",
+                value={"detail": "Sessão ausente"},
+                response_only=True,
+                status_codes=["400"],
+            ),
+            OpenApiExample(
+                name="Sessão inválida",
+                value={"detail": "Sessão inválida"},
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
+        description="Renova sessão do cliente (sliding window) e reemite cookie.",
+    )
+    def post(self, request):
+        raw = request.COOKIES.get("client_session")
+        if not raw:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="refresh",
+                result="absent",
+                tenant_id=str(0),
+            ).inc()
+            raise ValidationError("Sessão ausente")
+        try:
+            payload = signing.loads(raw, salt="CLIENT_PWA_SESSION_SALT")
+        except signing.BadSignature:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="refresh",
+                result="bad_signature",
+                tenant_id=str(0),
+            ).inc()
+            raise ValidationError("Sessão inválida")
+
+        # Pode validar tenant/customer existentes se necessário
+        tenant_id = int(payload.get("tenant_id"))
+        customer_id = int(payload.get("customer_id"))
+
+        session_payload = {
+            "tenant_id": tenant_id,
+            "customer_id": customer_id,
+            "iat": int(timezone.now().timestamp()),
+        }
+        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
+
+        resp = Response({"session": "refreshed"}, status=drf_status.HTTP_200_OK)
+        CLIENT_ACCESS_EVENTS_TOTAL.labels(
+            event="refresh",
+            result="success",
+            tenant_id=str(tenant_id),
+        ).inc()
+        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600)
+        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
+        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
+        resp.set_cookie(
+            "client_session",
+            session_token,
+            max_age=max_age,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+        return resp
+
+
+class ClientsMeAppointmentsUpcomingView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
+    def get(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        now = timezone.now()
+        qs = (
+            Appointment.objects.filter(
+                tenant=tenant,
+                customer=customer,
+                slot__start_time__gte=now,
+                status="scheduled",
+            )
+            .select_related("slot", "service", "professional")
+            .order_by("slot__start_time")
+        )
+        ser = AppointmentDetailSerializer(qs, many=True)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientsMeAppointmentsHistoryView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
+    def get(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        now = timezone.now()
+        qs = (
+            Appointment.objects.filter(
+                tenant=tenant,
+                customer=customer,
+                slot__start_time__lt=now,
+                status__in=["completed", "paid", "cancelled"],
+            )
+            .select_related("slot", "service", "professional")
+            .order_by("-slot__start_time")
+        )
+        ser = AppointmentDetailSerializer(qs, many=True)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientsMeAppointmentCreateView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "clients_me_appointments_create"
+
+    @extend_schema(
+        request=AppointmentSerializer, responses={201: AppointmentDetailSerializer}
+    )
+    def post(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+
+        raw = request.data or {}
+        try:
+            service_id = int(raw.get("service") or raw.get("service_id") or 0)
+            professional_id = int(
+                raw.get("professional") or raw.get("professional_id") or 0
+            )
+            slot_id = int(raw.get("slot") or raw.get("slot_id") or 0)
+        except Exception:
+            raise ValidationError({"detail": "Parâmetros inválidos."})
+        notes = str(raw.get("notes") or "")
+
+        with transaction.atomic():
+            service = get_object_or_404(Service, pk=service_id, tenant=tenant)
+            professional = get_object_or_404(
+                Professional, pk=professional_id, tenant=tenant
+            )
+            slot = get_object_or_404(
+                ScheduleSlot.objects.select_for_update(), pk=slot_id, tenant=tenant
+            )
+
+            if slot.professional_id != professional.id:
+                raise ValidationError(
+                    {"slot": ["Slot não pertence ao profissional informado."]}
+                )
+            if slot.start_time <= timezone.now():
+                raise ValidationError(
+                    {"slot": ["Não é possível agendar horários no passado."]}
+                )
+            if (not slot.is_available) or (slot.status != "available"):
+                raise ValidationError(
+                    {"slot": ["Este horário já foi agendado ou não está disponível."]}
+                )
+
+            if not ProfessionalService.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                service=service,
+                is_active=True,
+            ).exists():
+                raise ValidationError(
+                    {"service": ["Profissional não atende este serviço."]}
+                )
+
+            owner = TenantStaffMember.objects.filter(
+                tenant=tenant, role=TenantStaffMember.Role.OWNER
+            ).first()
+            client_user = getattr(owner, "user", None)
+            if client_user is None:
+                manager = TenantStaffMember.objects.filter(
+                    tenant=tenant, role=TenantStaffMember.Role.MANAGER
+                ).first()
+                client_user = getattr(manager, "user", None)
+            if client_user is None:
+                raise ValidationError(
+                    "Tenant sem responsável cadastrado para vincular o agendamento."
+                )
+
+            duration = int(getattr(service, "duration_minutes", 0) or 0)
+            slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
+            extra_slots: list[ScheduleSlot] = []
+
+            if duration > slot_minutes:
+                block = _find_contiguous_block_for(
+                    tenant=tenant,
+                    professional=professional,
+                    start_slot=slot,
+                    required_minutes=duration,
+                )
+                total_minutes = sum(
+                    int((s.end_time - s.start_time).total_seconds() // 60)
+                    for s in block
+                )
+                if not block or total_minutes < duration:
+                    raise ValidationError(
+                        {
+                            "slot": [
+                                "Não há slots suficientes para a duração do serviço."
+                            ]
+                        }
+                    )
+                for s in block[1:]:
+                    if (not s.is_available) or (s.status != "available"):
+                        raise ValidationError(
+                            {"slot": ["Bloco contíguo de slots indisponível."]}
+                        )
+                for s in block[1:]:
+                    s.mark_booked()
+                    extra_slots.append(s)
+
+            slot.mark_booked()
+            appointment = Appointment.objects.create(
+                tenant=tenant,
+                client=client_user,
+                customer=customer,
+                service=service,
+                professional=professional,
+                slot=slot,
+                notes=notes,
+                status="scheduled",
+            )
+            for s in extra_slots:
+                AppointmentReservedSlot.objects.create(
+                    tenant=tenant, appointment=appointment, slot=s
+                )
+
+        try:
+            to_email = (customer.email or "").strip()
+            if to_email:
+                client_name = customer.name or "Cliente"
+                salon_name = tenant.name or "Salonix"
+                send_appointment_confirmation_email(
+                    to_email=to_email,
+                    client_name=client_name,
+                    service_name=service.name,
+                    date_time=slot.start_time,
+                    salon_name=salon_name,
+                )
+        except Exception as e:
+            logger.warning(
+                "Falha ao enviar e-mail de confirmação (cliente)",
+                extra={"error": str(e)},
+            )
+
+        ser = AppointmentDetailSerializer(appointment)
+        return Response(ser.data, status=drf_status.HTTP_201_CREATED)
+
+
+class ClientsMeProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(responses={200: SalonCustomerSerializer})
+    def get(self, request):
+        _, customer = _get_client_session_or_raise(request)
+        ser = SalonCustomerSerializer(customer)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+    @extend_schema(
+        request=SalonCustomerSerializer, responses={200: SalonCustomerSerializer}
+    )
+    def patch(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+        allowed = {"name", "phone_number", "notes", "marketing_opt_in"}
+        data = {k: v for k, v in request.data.items() if k in allowed}
+        ser = SalonCustomerSerializer(customer, data=data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save(tenant=tenant)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientAppointmentCancelView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=None, responses={200: AppointmentSerializer})
+    def patch(self, request, pk: int):
+        tenant, customer = _get_client_session_or_raise(request)
+        appt = get_object_or_404(
+            Appointment.objects.select_related("slot", "tenant"),
+            pk=pk,
+            tenant=tenant,
+            customer=customer,
+        )
+
+        now = timezone.now()
+        slot_start = getattr(appt.slot, "start_time", None)
+        if slot_start and slot_start <= now:
+            return Response(
+                {"detail": "Não é possível cancelar agendamentos passados."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appt.status == "cancelled":
+            return Response(
+                {"detail": "Este agendamento já foi cancelado."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            if appt.slot:
+                appt.slot.mark_available()
+            _release_reserved_slots(appt)
+            appt.status = "cancelled"
+            appt.cancelled_by = None
+            appt.save(update_fields=["status", "cancelled_by"])
+
+        ser = AppointmentSerializer(appt)
+        return Response(ser.data, status=drf_status.HTTP_200_OK)
 
     def get_object(self):
         # Busca direta por PK e valida tenant explicitamente (evita filtros indevidos no queryset)

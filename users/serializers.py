@@ -655,6 +655,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     feature_flags = serializers.SerializerMethodField()
     logo_url = serializers.SerializerMethodField()
     auto_invite_enabled = serializers.BooleanField(read_only=True)
+    profile = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -666,9 +667,18 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "app_name",
             "timezone",
             "currency",
+            "address_street",
+            "address_number",
+            "address_complement",
+            "address_neighborhood",
+            "address_city",
+            "address_state",
+            "address_zip",
+            "address_country",
             "plan_tier",
             "feature_flags",
             "auto_invite_enabled",
+            "profile",
         ]
         read_only_fields = [
             "name",
@@ -678,9 +688,18 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "app_name",
             "timezone",
             "currency",
+            "address_street",
+            "address_number",
+            "address_complement",
+            "address_neighborhood",
+            "address_city",
+            "address_state",
+            "address_zip",
+            "address_country",
             "plan_tier",
             "feature_flags",
             "auto_invite_enabled",
+            "profile",
         ]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -692,6 +711,46 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     def get_logo_url(self, obj):
         """Retorna a URL do logo (upload ou URL externa)"""
         return obj.get_logo_url
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_profile(self, obj):
+        owner_email = None
+        try:
+            owner_member = (
+                TenantStaffMember.objects.select_related("user")
+                .filter(tenant=obj, role=TenantStaffMember.Role.OWNER)
+                .first()
+            )
+            owner_email = getattr(getattr(owner_member, "user", None), "email", None)
+        except Exception:
+            owner_email = None
+        return {
+            "email": getattr(obj, "contact_email", None) or owner_email,
+            "phone": getattr(obj, "contact_phone", None),
+        }
+
+
+class TenantProfileSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=32
+    )
+
+    def validate_phone(self, value):
+        if value is None:
+            return value
+        raw = str(value).strip()
+        cleaned = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
+        if cleaned and cleaned.count("+") > 1:
+            raise serializers.ValidationError("Telefone inválido.")
+        if cleaned and cleaned.startswith("+"):
+            digits = cleaned[1:]
+            if len(digits) < 8:
+                raise serializers.ValidationError("Telefone muito curto.")
+        elif cleaned:
+            if len(cleaned) < 8:
+                raise serializers.ValidationError("Telefone muito curto.")
+        return cleaned
 
 
 class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
@@ -710,6 +769,14 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
             "favicon_url",
             "app_name",
             "auto_invite_enabled",
+            "address_street",
+            "address_number",
+            "address_complement",
+            "address_neighborhood",
+            "address_city",
+            "address_state",
+            "address_zip",
+            "address_country",
         ]
         extra_kwargs = {
             "logo": {"required": False},
@@ -717,6 +784,14 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
             "favicon_url": {"required": False},
             "app_name": {"required": False},
             "auto_invite_enabled": {"required": False},
+            "address_street": {"required": False},
+            "address_number": {"required": False},
+            "address_complement": {"required": False},
+            "address_neighborhood": {"required": False},
+            "address_city": {"required": False},
+            "address_state": {"required": False},
+            "address_zip": {"required": False},
+            "address_country": {"required": False},
         }
 
     def validate(self, data):
@@ -728,6 +803,10 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
             )
 
         return data
+
+
+class TenantModulesUpdateSerializer(serializers.Serializer):
+    pwa_client_enabled = serializers.BooleanField(required=False)
 
 
 # ============================================================================

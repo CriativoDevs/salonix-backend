@@ -22,6 +22,15 @@ from core.views import (
     SalonCustomerViewSet,
     ServiceViewSet,
     ScheduleSlotViewSet,
+    ClientAccessLinkView,
+    ClientAccessAcceptView,
+    ClientSessionRefreshView,
+    PublicClientAccessLinkView,
+    ClientsMeAppointmentsUpcomingView,
+    ClientsMeAppointmentsHistoryView,
+    ClientsMeAppointmentCreateView,
+    ClientsMeProfileView,
+    ClientAppointmentCancelView,
 )
 
 router = DefaultRouter()
@@ -36,7 +45,53 @@ router.register("salon/customers", SalonCustomerViewSet, basename="salon-custome
 urlpatterns = [
     path("", include(router.urls)),
     path("auth/", include("users.urls")),
+    path(
+        "clients/access-link/",
+        ClientAccessLinkView.as_view(),
+        name="clients_access_link",
+    ),
+    path(
+        "clients/access-accept/",
+        ClientAccessAcceptView.as_view(),
+        name="clients_access_accept",
+    ),
+    path(
+        "clients/session/refresh/",
+        ClientSessionRefreshView.as_view(),
+        name="clients_session_refresh",
+    ),
+    # Cliente autenticado via cookie de sessão
+    path(
+        "clients/me/appointments/upcoming/",
+        ClientsMeAppointmentsUpcomingView.as_view(),
+        name="clients_me_appointments_upcoming",
+    ),
+    path(
+        "clients/me/appointments/history/",
+        ClientsMeAppointmentsHistoryView.as_view(),
+        name="clients_me_appointments_history",
+    ),
+    path(
+        "clients/me/appointments/",
+        ClientsMeAppointmentCreateView.as_view(),
+        name="clients_me_appointments_create",
+    ),
+    path(
+        "clients/me/profile/",
+        ClientsMeProfileView.as_view(),
+        name="clients_me_profile",
+    ),
+    path(
+        "clients/me/appointments/<int:pk>/cancel/",
+        ClientAppointmentCancelView.as_view(),
+        name="clients_me_appointment_cancel",
+    ),
     # Public routes
+    path(
+        "public/clients/access-link/",
+        PublicClientAccessLinkView.as_view(),
+        name="public_clients_access_link",
+    ),
     path("public/services/", PublicServiceListView.as_view()),
     path("public/professionals/", PublicProfessionalListView.as_view()),
     path("public/slots/", PublicSlotListView.as_view()),

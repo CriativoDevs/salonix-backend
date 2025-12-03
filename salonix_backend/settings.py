@@ -112,6 +112,12 @@ INSTALLED_APPS = [
 # Silenciar warnings de URLField default em Django 6
 FORMS_URLFIELD_ASSUME_HTTPS = True
 
+# PWA Cliente: TTLs de token e sessão
+CLIENT_PWA_INVITE_TTL_SECONDS = int(env_get("CLIENT_PWA_INVITE_TTL_SECONDS", 15 * 60))
+CLIENT_PWA_SESSION_TTL_SECONDS = int(
+    env_get("CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600)
+)
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "salonix_backend.middleware.RequestLoggingMiddleware",  # Logging com X-Request-ID
@@ -162,8 +168,18 @@ except Exception:
         "x-requested-with",
     ]
 
+CORS_ALLOW_CREDENTIALS = True
+# Quando credenciais estão habilitadas, não podemos usar "*" como origem.
+if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
+    CORS_ALLOW_ALL_ORIGINS = False
+    if not origins_raw:
+        CORS_ALLOWED_ORIGINS = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+
 CSRF_TRUSTED_ORIGINS = [
-    "https://77e5eadc56f5.ngrok-free.app",
+    "https://e1934e3a350d.ngrok-free.app",
 ]
 
 # opcional: flag ligada por padrão
@@ -339,6 +355,22 @@ REST_FRAMEWORK = {
                 else "10/hour"
             ),
         ),
+        "clients_access_link": env_get(
+            "CLIENTS_ACCESS_LINK_RATE",
+            (
+                "50/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "10/hour"
+            ),
+        ),
+        "clients_me_appointments_create": env_get(
+            "CLIENTS_ME_APPOINTMENTS_CREATE_RATE",
+            (
+                "100/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "20/hour"
+            ),
+        ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
@@ -440,6 +472,9 @@ SPECTACULAR_SETTINGS = {
     "SCHEMA_PATH_PREFIX": r"/api/",
     # ENUM_NAME_OVERRIDES desativado para evitar conflitos de nomes
 }
+
+# Default tenant slug (fallback)
+DEFAULT_TENANT_SLUG = str(env_get("DEFAULT_TENANT_SLUG", "timelyone")).strip().lower()
 
 # =====================================================
 # LOGGING CONFIGURATION
