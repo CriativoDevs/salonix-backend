@@ -80,8 +80,8 @@ def test_metrics_overview_endpoint(
 
     plan_pricing = {
         Tenant.PLAN_BASIC: Decimal("29.00"),
-        Tenant.PLAN_STANDARD: Decimal("59.00"),
-        Tenant.PLAN_PRO: Decimal("99.00"),
+        Tenant.PLAN_STANDARD: Decimal("55.00"),
+        Tenant.PLAN_PRO: Decimal("95.00"),
     }
     expected_mrr = Decimal("0.00")
     for tenant in Tenant.objects.filter(is_active=True):
