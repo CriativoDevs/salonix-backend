@@ -371,6 +371,15 @@ REST_FRAMEWORK = {
                 else "20/hour"
             ),
         ),
+        # feedback: criação com proteção anti-spam
+        "feedback_create": env_get(
+            "FEEDBACK_CREATE_RATE",
+            (
+                "100/hour"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "20/hour"
+            ),
+        ),
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
@@ -475,6 +484,9 @@ SPECTACULAR_SETTINGS = {
 
 # Default tenant slug (fallback)
 DEFAULT_TENANT_SLUG = str(env_get("DEFAULT_TENANT_SLUG", "timelyone")).strip().lower()
+
+# Retenção RGPD de feedbacks (em dias)
+FEEDBACK_RETENTION_DAYS = env_int("FEEDBACK_RETENTION_DAYS", 365)
 
 # =====================================================
 # LOGGING CONFIGURATION

@@ -51,7 +51,9 @@ class UsersClientAccessLinkThrottle(_BaseUsersThrottle):
         tenant_slug = None
         email = None
         try:
-            tenant_slug = request.data.get("tenant_slug") if hasattr(request, "data") else None
+            tenant_slug = (
+                request.data.get("tenant_slug") if hasattr(request, "data") else None
+            )
             email = request.data.get("email") if hasattr(request, "data") else None
         except Exception:
             tenant_slug = None
@@ -60,5 +62,49 @@ class UsersClientAccessLinkThrottle(_BaseUsersThrottle):
         if tenant_slug and email:
             ident = f"{str(tenant_slug).lower()}:{str(email).strip().lower()}"
             return self.cache_format % {"scope": self.scope, "ident": ident}
+
+        return super().get_cache_key(request, view)
+
+
+class FeedbackCreateThrottle(_BaseUsersThrottle):
+    scope = "feedback_create"
+
+    def get_cache_key(self, request, view):
+        tenant_slug = None
+        email = None
+        customer_id = None
+        try:
+            tenant_slug = (
+                request.data.get("tenant_slug") if hasattr(request, "data") else None
+            )
+            email = request.data.get("email") if hasattr(request, "data") else None
+            customer_id = (
+                request.data.get("customer") if hasattr(request, "data") else None
+            )
+        except Exception:
+            tenant_slug = None
+            email = None
+            customer_id = None
+
+        # Se houver tenant+email, chave por combinação
+        if tenant_slug and email:
+            ident = f"{str(tenant_slug).lower()}:{str(email).strip().lower()}"
+            return self.cache_format % {"scope": self.scope, "ident": ident}
+
+        # Se houver tenant no request e customer_id, chave por tenant_id:customer_id
+        tenant_id = getattr(getattr(request, "tenant", None), "id", None)
+        if tenant_id and customer_id:
+            try:
+                ident = f"{int(tenant_id)}:{int(customer_id)}"
+                return self.cache_format % {"scope": self.scope, "ident": ident}
+            except Exception:
+                pass
+
+        if tenant_id and getattr(getattr(request, "user", None), "is_authenticated", False):
+            try:
+                ident = f"{int(tenant_id)}:{int(request.user.pk)}"
+                return self.cache_format % {"scope": self.scope, "ident": ident}
+            except Exception:
+                pass
 
         return super().get_cache_key(request, view)

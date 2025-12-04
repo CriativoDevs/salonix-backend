@@ -393,3 +393,42 @@ class CustomerCommunicationConsent(models.Model):
         return (
             f"Consent {self.customer_id} {self.channel}/{self.purpose} ({self.status})"
         )
+
+
+class Feedback(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="feedbacks",
+    )
+    customer = models.ForeignKey(
+        SalonCustomer,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="feedbacks",
+    )
+    CATEGORY_CHOICES = [
+        ("bug", "Bug"),
+        ("suggestion", "Suggestion"),
+        ("praise", "Praise"),
+        ("other", "Other"),
+    ]
+    category = models.CharField(max_length=24, choices=CATEGORY_CHOICES)
+    rating = models.PositiveSmallIntegerField()
+    message = models.TextField()
+    is_anonymous = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_feedback_tenant_idx"),
+            models.Index(fields=["tenant", "category"], name="core_feedback_cat_idx"),
+            models.Index(fields=["tenant", "rating"], name="core_feedback_rating_idx"),
+            models.Index(fields=["tenant", "created_at"], name="core_feedback_created_idx"),
+        ]
+        ordering = ("-created_at", "id")
+
+    def __str__(self):
+        return f"Feedback {self.id} ({self.tenant_id})"

@@ -9,6 +9,7 @@ from core.models import (
     Appointment,
     SalonCustomer,
     ProfessionalService,
+    Feedback,
 )
 from users.models import TenantStaffMember
 from salonix_backend.validators import (
@@ -860,7 +861,9 @@ class ClientAccessLinkRequestSerializer(serializers.Serializer):
         try:
             SalonCustomer.objects.get(id=int(value), tenant=tenant)
         except SalonCustomer.DoesNotExist:
-            raise serializers.ValidationError("Cliente não encontrado para este tenant.")
+            raise serializers.ValidationError(
+                "Cliente não encontrado para este tenant."
+            )
         return value
 
 
@@ -869,6 +872,69 @@ class ClientAccessAcceptSerializer(serializers.Serializer):
 
 
 class PublicClientAccessLinkRequestSerializer(serializers.Serializer):
-    tenant_slug = serializers.SlugField(required=False, allow_null=True, allow_blank=True)
+    tenant_slug = serializers.SlugField(
+        required=False, allow_null=True, allow_blank=True
+    )
     email = serializers.EmailField()
-    channel = serializers.ChoiceField(choices=("email",), required=False, default="email")
+    channel = serializers.ChoiceField(
+        choices=("email",), required=False, default="email"
+    )
+
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Feedback
+        fields = [
+            "id",
+            "tenant",
+            "customer",
+            "category",
+            "rating",
+            "message",
+            "is_anonymous",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["tenant", "created_at", "updated_at"]
+
+    def validate_rating(self, value):
+        if value is None:
+            raise serializers.ValidationError("Rating é obrigatório.")
+        if int(value) < 1 or int(value) > 5:
+            raise serializers.ValidationError("Rating deve estar entre 1 e 5.")
+        return value
+
+    def validate_message(self, value):
+        sanitized = sanitize_text_input(value, max_length=2000)
+        if not sanitized:
+            raise serializers.ValidationError("Mensagem é obrigatória.")
+        return sanitized
+
+    def validate_category(self, value):
+        allowed = [c[0] for c in Feedback.CATEGORY_CHOICES]
+        if value not in allowed:
+            raise serializers.ValidationError("Categoria inválida.")
+        return value
+
+    def validate(self, data):
+        anon = data.get("is_anonymous")
+        customer = data.get("customer")
+        if not anon and customer is None:
+            raise serializers.ValidationError(
+                {"customer": "Informe o cliente ou defina como anónimo."}
+            )
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant is None:
+            user = getattr(request, "user", None) if request else None
+            if getattr(user, "tenant", None):
+                tenant = user.tenant
+        if tenant is None:
+            tenant = validated_data.get("tenant")
+        if tenant is None:
+            raise serializers.ValidationError({"tenant": "Tenant é obrigatório."})
+        validated_data["tenant"] = tenant
+        return Feedback.objects.create(**validated_data)

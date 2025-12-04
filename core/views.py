@@ -31,9 +31,13 @@ from core.models import (
     ScheduleSlot,
     ProfessionalService,
     AppointmentReservedSlot,
+    Feedback,
 )
 from users.models import Tenant, TenantStaffMember
-from notifications.services import send_customer_pwa_invite
+from notifications.services import (
+    send_customer_pwa_invite,
+    trigger_feedback_notifications,
+)
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
@@ -53,6 +57,7 @@ from core.serializers import (
     ClientAccessLinkRequestSerializer,
     ClientAccessAcceptSerializer,
     PublicClientAccessLinkRequestSerializer,
+    FeedbackSerializer,
 )
 from core.mixins import TenantIsolatedMixin
 from core.utils.pagination import get_limit_offset, set_pagination_headers
@@ -77,7 +82,7 @@ import csv
 import io
 from typing import Any, Dict, List, Optional, cast
 
-from users.throttling import UsersClientAccessLinkThrottle
+from users.throttling import UsersClientAccessLinkThrottle, FeedbackCreateThrottle
 from users.security import enforce_captcha_or_raise
 
 
@@ -125,6 +130,27 @@ CLIENT_ACCESS_EVENTS_TOTAL = _get_or_create_counter(
     "client_access_events_total",
     "Eventos de acesso do cliente (emitir/aceitar/refresh)",
     ("event", "result", "tenant_id"),
+)
+
+FEEDBACK_EVENTS_TOTAL = _get_or_create_counter(
+    "feedback_events_total",
+    "Eventos de feedback",
+    ("tenant_id", "action", "result", "category"),
+)
+FEEDBACK_RATINGS_SUM = _get_or_create_counter(
+    "feedback_ratings_sum_total",
+    "Soma de ratings de feedback",
+    ("tenant_id",),
+)
+FEEDBACK_RATINGS_COUNT = _get_or_create_counter(
+    "feedback_ratings_count_total",
+    "Contagem de feedbacks (para média)",
+    ("tenant_id",),
+)
+FEEDBACK_CATEGORY_TOTAL = _get_or_create_counter(
+    "feedback_category_total",
+    "Distribuição por categoria de feedback",
+    ("tenant_id", "category"),
 )
 
 
@@ -4167,3 +4193,496 @@ class AppointmentICSDownloadPublicView(APIView):
             },
         )
         return response
+
+
+class FeedbackListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Listar feedbacks",
+        parameters=[
+            OpenApiParameter(
+                name="from",
+                description="Data/hora inicial (ISO)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="to",
+                description="Data/hora final (ISO)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="category",
+                description="Filtro de categoria",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="rating",
+                description="Filtro por rating exato (1-5)",
+                required=False,
+                type=OpenApiTypes.INT,
+            ),
+            OpenApiParameter(
+                name="min_rating",
+                description="Rating mínimo (1-5)",
+                required=False,
+                type=OpenApiTypes.INT,
+            ),
+            OpenApiParameter(
+                name="max_rating",
+                description="Rating máximo (1-5)",
+                required=False,
+                type=OpenApiTypes.INT,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(response=FeedbackSerializer(many=True)),
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Listar por categoria e rating mínimo",
+                value={"results": []},
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        user = request.user
+        tenant = getattr(request, "tenant", None)
+        if not tenant and getattr(user, "tenant", None):
+            tenant = user.tenant
+        if not tenant:
+            raise PermissionDenied("Tenant não resolvido")
+        if not user.has_staff_role(
+            TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+        ):
+            raise PermissionDenied("Apenas owner/manager podem listar feedbacks")
+
+        qs = Feedback.objects.filter(tenant=tenant)
+        start_q = request.query_params.get("from")
+        end_q = request.query_params.get("to")
+        if start_q:
+            try:
+                start = parse_datetime(start_q) or (
+                    parse_date(start_q)
+                    and timezone.make_aware(
+                        timezone.datetime.combine(
+                            parse_date(start_q), timezone.datetime.min.time()
+                        )
+                    )
+                )
+                if start:
+                    qs = qs.filter(created_at__gte=start)
+            except Exception:
+                pass
+        if end_q:
+            try:
+                end = parse_datetime(end_q) or (
+                    parse_date(end_q)
+                    and timezone.make_aware(
+                        timezone.datetime.combine(
+                            parse_date(end_q), timezone.datetime.max.time()
+                        )
+                    )
+                )
+                if end:
+                    qs = qs.filter(created_at__lte=end)
+            except Exception:
+                pass
+        category = request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+        rating = request.query_params.get("rating")
+        if rating:
+            try:
+                qs = qs.filter(rating=int(rating))
+            except Exception:
+                pass
+        min_rating = request.query_params.get("min_rating")
+        max_rating = request.query_params.get("max_rating")
+        try:
+            if min_rating:
+                qs = qs.filter(rating__gte=int(min_rating))
+            if max_rating:
+                qs = qs.filter(rating__lte=int(max_rating))
+        except Exception:
+            pass
+
+        data = FeedbackSerializer(qs.order_by("-created_at"), many=True).data
+        cat_label = (request.query_params.get("category") or "-").strip() or "-"
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id),
+            action="list",
+            result="success",
+            category=cat_label,
+        ).inc()
+        logger.info(
+            "feedback_list_ok",
+            extra={
+                "tenant_id": tenant.id,
+                "count": len(data),
+                "category_filter": cat_label,
+            },
+        )
+        return Response(data)
+
+    throttle_classes = [FeedbackCreateThrottle]
+    throttle_scope = "feedback_create"
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Criar feedback",
+        request=FeedbackSerializer,
+        responses={
+            201: FeedbackSerializer,
+            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            429: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Request (anônimo)",
+                description="Criação de feedback anônimo",
+                value={
+                    "category": "praise",
+                    "rating": 5,
+                    "message": "Excelente",
+                    "is_anonymous": True,
+                    "captcha_token": "dev-bypass",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="Sucesso",
+                value={
+                    "id": 1,
+                    "tenant": 1,
+                    "category": "praise",
+                    "rating": 5,
+                    "message": "Excelente",
+                    "is_anonymous": True,
+                    "created_at": "2025-12-04T12:00:00Z",
+                    "updated_at": "2025-12-04T12:00:00Z",
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            OpenApiExample(
+                name="Captcha inválido",
+                value={"detail": "Captcha inválido."},
+                response_only=True,
+                status_codes=["400"],
+            ),
+            OpenApiExample(
+                name="Permissão necessária",
+                value={"detail": "Apenas owner pode criar feedback"},
+                response_only=True,
+                status_codes=["403"],
+            ),
+            OpenApiExample(
+                name="Duplicado recente",
+                value={"detail": "Feedback duplicado recente."},
+                response_only=True,
+                status_codes=["429"],
+            ),
+        ],
+    )
+    def post(self, request):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            return Response(
+                {"detail": "Captcha inválido."}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = FeedbackSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not getattr(user, "is_authenticated", False):
+            raise PermissionDenied("Autenticação necessária")
+        if not user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode criar feedback")
+        tenant = getattr(request, "tenant", None)
+        if not tenant and getattr(user, "tenant", None):
+            tenant = user.tenant
+        data = serializer.validated_data
+        cutoff = timezone.now() - timezone.timedelta(minutes=10)
+        dup_qs = Feedback.objects.filter(
+            tenant=tenant,
+            created_at__gte=cutoff,
+            message=data.get("message"),
+            rating=data.get("rating"),
+            category=data.get("category"),
+        )
+        customer = data.get("customer")
+        if customer is None:
+            dup_qs = dup_qs.filter(customer__isnull=True)
+        else:
+            dup_qs = dup_qs.filter(customer_id=getattr(customer, "id", customer))
+        if dup_qs.exists():
+            FEEDBACK_EVENTS_TOTAL.labels(
+                tenant_id=str(getattr(tenant, "id", "")),
+                action="create",
+                result="duplicate",
+                category=str(data.get("category") or "-"),
+            ).inc()
+            logger.warning(
+                "feedback_create_duplicate",
+                extra={
+                    "tenant_id": getattr(tenant, "id", None),
+                    "category": data.get("category"),
+                    "rating": data.get("rating"),
+                },
+            )
+            return Response(
+                {"detail": "Feedback duplicado recente."},
+                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        obj = serializer.save(tenant=tenant)
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id),
+            action="create",
+            result="success",
+            category=obj.category,
+        ).inc()
+        FEEDBACK_RATINGS_SUM.labels(tenant_id=str(tenant.id)).inc(obj.rating)
+        FEEDBACK_RATINGS_COUNT.labels(tenant_id=str(tenant.id)).inc()
+        FEEDBACK_CATEGORY_TOTAL.labels(
+            tenant_id=str(tenant.id), category=obj.category
+        ).inc()
+        try:
+            trigger_feedback_notifications(tenant, obj)
+        except Exception:
+            logger.exception(
+                "feedback_notifications_failed",
+                extra={"tenant_id": tenant.id, "feedback_id": obj.id},
+            )
+        logger.info(
+            "feedback_create_ok",
+            extra={
+                "tenant_id": tenant.id,
+                "feedback_id": obj.id,
+                "category": obj.category,
+                "rating": obj.rating,
+            },
+        )
+        return Response(
+            FeedbackSerializer(obj).data, status=drf_status.HTTP_201_CREATED
+        )
+
+
+class FeedbackDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Detalhar feedback",
+        responses={
+            200: FeedbackSerializer,
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sucesso",
+                value={
+                    "id": 1,
+                    "tenant": 1,
+                    "category": "bug",
+                    "rating": 2,
+                    "message": "Erro ao abrir relatório",
+                    "is_anonymous": False,
+                    "created_at": "2025-12-04T12:00:00Z",
+                    "updated_at": "2025-12-04T12:00:00Z",
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request, pk: int):
+        tenant = getattr(request, "tenant", None)
+        user = request.user
+        if not tenant and getattr(user, "tenant", None):
+            tenant = user.tenant
+        if not tenant:
+            raise PermissionDenied("Tenant não resolvido")
+        user = request.user
+        if not user.has_staff_role(
+            TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+        ):
+            raise PermissionDenied("Apenas owner/manager podem ver feedbacks")
+        obj = get_object_or_404(Feedback, pk=pk, tenant=tenant)
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id),
+            action="detail",
+            result="success",
+            category=obj.category,
+        ).inc()
+        logger.info(
+            "feedback_detail_ok",
+            extra={
+                "tenant_id": tenant.id,
+                "feedback_id": obj.id,
+                "category": obj.category,
+            },
+        )
+        return Response(FeedbackSerializer(obj).data)
+
+
+class FeedbackExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Exportar feedbacks por cliente",
+        parameters=[
+            OpenApiParameter(
+                name="customer_id",
+                description="ID do cliente",
+                required=False,
+                type=OpenApiTypes.INT,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sucesso",
+                value={
+                    "count": 2,
+                    "items": [
+                        {
+                            "id": 1,
+                            "tenant": 1,
+                            "category": "praise",
+                            "rating": 5,
+                            "message": "Excelente",
+                            "is_anonymous": True,
+                            "created_at": "2025-12-04T12:00:00Z",
+                            "updated_at": "2025-12-04T12:00:00Z",
+                        }
+                    ],
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            raise PermissionDenied("Tenant não resolvido")
+        user = request.user
+        if not user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode exportar feedbacks")
+        customer_id = request.query_params.get("customer_id")
+        qs = Feedback.objects.filter(tenant=tenant)
+        if customer_id:
+            try:
+                qs = qs.filter(customer_id=int(customer_id))
+            except Exception:
+                pass
+        data = FeedbackSerializer(qs.order_by("-created_at"), many=True).data
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id), action="export", result="success", category="-"
+        ).inc()
+        logger.info(
+            "feedback_export_ok",
+            extra={
+                "tenant_id": tenant.id,
+                "count": len(data),
+                "customer_id": customer_id,
+            },
+        )
+        return Response({"count": len(data), "items": data})
+
+
+class FeedbackPurgeByCustomerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Apagar feedbacks por cliente",
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sucesso",
+                value={"deleted": 3},
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def delete(self, request, customer_id: int):
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            raise PermissionDenied("Tenant não resolvido")
+        user = request.user
+        if not user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode apagar feedbacks")
+        qs = Feedback.objects.filter(tenant=tenant, customer_id=customer_id)
+        deleted, _ = qs.delete()
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id), action="purge", result="success", category="-"
+        ).inc()
+        logger.info(
+            "feedback_purge_ok",
+            extra={
+                "tenant_id": tenant.id,
+                "customer_id": customer_id,
+                "deleted": deleted,
+            },
+        )
+        return Response({"deleted": deleted})
+
+
+class FeedbackRetentionEnforceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Feedback"],
+        summary="Aplicar retenção RGPD (apagar antigos)",
+        request=None,
+        responses={
+            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            403: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sucesso",
+                value={"deleted": 10, "retention_days": 365},
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def post(self, request):
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            raise PermissionDenied("Tenant não resolvido")
+        user = request.user
+        if not user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode aplicar retenção")
+        days = getattr(settings, "FEEDBACK_RETENTION_DAYS", 365)
+        cutoff = timezone.now() - timezone.timedelta(days=int(days))
+        qs = Feedback.objects.filter(tenant=tenant, created_at__lt=cutoff)
+        deleted, _ = qs.delete()
+        FEEDBACK_EVENTS_TOTAL.labels(
+            tenant_id=str(tenant.id), action="retention", result="success", category="-"
+        ).inc()
+        logger.info(
+            "feedback_retention_ok",
+            extra={"tenant_id": tenant.id, "deleted": deleted, "days": int(days)},
+        )
+        return Response({"deleted": deleted, "retention_days": int(days)})
