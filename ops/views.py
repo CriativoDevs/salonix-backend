@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 
 PLAN_PRICING_EUR: Dict[str, Decimal] = {
     Tenant.PLAN_BASIC: Decimal("29.00"),
-    Tenant.PLAN_STANDARD: Decimal("59.00"),
-    Tenant.PLAN_PRO: Decimal("99.00"),
+    Tenant.PLAN_STANDARD: Decimal("55.00"),
+    Tenant.PLAN_PRO: Decimal("95.00"),
 }
 
 
