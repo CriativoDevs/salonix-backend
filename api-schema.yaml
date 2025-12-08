@@ -1486,6 +1486,208 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/import/customers/:
+    post:
+      operationId: import_customers_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: query
+        name: dry_run
+        schema:
+          type: boolean
+        description: Valida sem gravar quando true
+      tags:
+      - Import
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    format: binary
+                required:
+                - file
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity:
+                    type: string
+                    example: customers
+                  summary:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                      created:
+                        type: integer
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            line:
+                              type: integer
+                            error:
+                              type: string
+                            row:
+                              type: object
+          description: ''
+  /api/import/services/:
+    post:
+      operationId: import_services_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: query
+        name: dry_run
+        schema:
+          type: boolean
+        description: Valida sem gravar quando true
+      tags:
+      - Import
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    format: binary
+                required:
+                - file
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity:
+                    type: string
+                    example: services
+                  summary:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                      created:
+                        type: integer
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            line:
+                              type: integer
+                            error:
+                              type: string
+                            row:
+                              type: object
+          description: ''
+  /api/import/staff/:
+    post:
+      operationId: import_staff_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: query
+        name: dry_run
+        schema:
+          type: boolean
+        description: Valida sem gravar quando true
+      tags:
+      - Import
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    format: binary
+                required:
+                - file
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity:
+                    type: string
+                    example: staff
+                  summary:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                      created:
+                        type: integer
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            line:
+                              type: integer
+                            error:
+                              type: string
+                            row:
+                              type: object
+          description: ''
+  /api/import/templates/{entity}.csv:
+    get:
+      operationId: import_templates_.csv_retrieve
+      parameters:
+      - in: path
+        name: entity
+        schema:
+          type: string
+        required: true
+      tags:
+      - Import
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/me/appointments/:
     get:
       operationId: me_appointments_list
