@@ -803,6 +803,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/TenantMeta'
           description: ''
+  /api/auth/tenant/modules/:
+    patch:
+      operationId: auth_tenant_modules_partial_update
+      description: 'Atualiza módulos do tenant (ex.: PWA Cliente). Só permitido para
+        owner/manager e plano Standard+.'
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: ok
   /api/auth/tenant/notifications/:
     patch:
       operationId: auth_tenant_notifications_partial_update
@@ -826,6 +849,57 @@ paths:
       responses:
         '200':
           description: ok
+  /api/auth/tenant/profile/:
+    get:
+      operationId: auth_tenant_profile_retrieve
+      description: |-
+        GET /api/users/tenant/profile/
+        PATCH /api/users/tenant/profile/
+
+        Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+        GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantProfile'
+          description: ''
+    patch:
+      operationId: auth_tenant_profile_partial_update
+      description: |-
+        GET /api/users/tenant/profile/
+        PATCH /api/users/tenant/profile/
+
+        Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+        GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantProfile'
+          description: ''
   /api/auth/token/:
     post:
       operationId: auth_token_create
@@ -967,6 +1041,128 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/clients/me/appointments/:
+    post:
+      operationId: clients_me_appointments_create
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AppointmentRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentDetail'
+          description: ''
+  /api/clients/me/appointments/{id}/cancel/:
+    patch:
+      operationId: clients_me_appointments_cancel_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - clients
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+          description: ''
+  /api/clients/me/appointments/history/:
+    get:
+      operationId: clients_me_appointments_history_list
+      tags:
+      - clients
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppointmentDetail'
+          description: ''
+  /api/clients/me/appointments/upcoming/:
+    get:
+      operationId: clients_me_appointments_upcoming_list
+      tags:
+      - clients
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppointmentDetail'
+          description: ''
+  /api/clients/me/profile/:
+    get:
+      operationId: clients_me_profile_retrieve
+      tags:
+      - clients
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
+    patch:
+      operationId: clients_me_profile_partial_update
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSalonCustomerRequest'
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalonCustomer'
+          description: ''
   /api/clients/session/refresh/:
     post:
       operationId: clients_session_refresh_create
@@ -1004,6 +1200,291 @@ paths:
                   value:
                     detail: Sessão inválida
                   summary: Sessão inválida
+          description: ''
+  /api/feedbacks/:
+    get:
+      operationId: feedbacks_retrieve
+      summary: Listar feedbacks
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+        description: Filtro de categoria
+      - in: query
+        name: from
+        schema:
+          type: string
+        description: Data/hora inicial (ISO)
+      - in: query
+        name: max_rating
+        schema:
+          type: integer
+        description: Rating máximo (1-5)
+      - in: query
+        name: min_rating
+        schema:
+          type: integer
+        description: Rating mínimo (1-5)
+      - in: query
+        name: rating
+        schema:
+          type: integer
+        description: Filtro por rating exato (1-5)
+      - in: query
+        name: to
+        schema:
+          type: string
+        description: Data/hora final (ISO)
+      tags:
+      - Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Feedback'
+              examples:
+                ListarPorCategoriaERatingMínimo:
+                  value:
+                  - results: []
+                  summary: Listar por categoria e rating mínimo
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    post:
+      operationId: feedbacks_create
+      summary: Criar feedback
+      tags:
+      - Feedback
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+            examples:
+              Request(anônimo):
+                value:
+                  category: praise
+                  rating: 5
+                  message: Excelente
+                  is_anonymous: true
+                  captcha_token: dev-bypass
+                summary: Request (anônimo)
+                description: Criação de feedback anônimo
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feedback'
+              examples:
+                Sucesso:
+                  value:
+                    id: 1
+                    tenant: 1
+                    category: praise
+                    rating: 5
+                    message: Excelente
+                    is_anonymous: true
+                    created_at: '2025-12-04T12:00:00Z'
+                    updated_at: '2025-12-04T12:00:00Z'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                CaptchaInválido:
+                  value:
+                    detail: Captcha inválido.
+                  summary: Captcha inválido
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                PermissãoNecessária:
+                  value:
+                    detail: Apenas owner pode criar feedback
+                  summary: Permissão necessária
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                DuplicadoRecente:
+                  value:
+                    detail: Feedback duplicado recente.
+                  summary: Duplicado recente
+          description: ''
+  /api/feedbacks/{id}/:
+    get:
+      operationId: feedbacks_retrieve_2
+      summary: Detalhar feedback
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feedback'
+              examples:
+                Sucesso:
+                  value:
+                    id: 1
+                    tenant: 1
+                    category: bug
+                    rating: 2
+                    message: Erro ao abrir relatório
+                    is_anonymous: false
+                    created_at: '2025-12-04T12:00:00Z'
+                    updated_at: '2025-12-04T12:00:00Z'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/feedbacks/export/:
+    get:
+      operationId: feedbacks_export_retrieve
+      summary: Exportar feedbacks por cliente
+      parameters:
+      - in: query
+        name: customer_id
+        schema:
+          type: integer
+        description: ID do cliente
+      tags:
+      - Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                Sucesso:
+                  value:
+                    count: 2
+                    items:
+                    - id: 1
+                      tenant: 1
+                      category: praise
+                      rating: 5
+                      message: Excelente
+                      is_anonymous: true
+                      created_at: '2025-12-04T12:00:00Z'
+                      updated_at: '2025-12-04T12:00:00Z'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/feedbacks/purge/{customer_id}/:
+    delete:
+      operationId: feedbacks_purge_destroy
+      summary: Apagar feedbacks por cliente
+      parameters:
+      - in: path
+        name: customer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                Sucesso:
+                  value:
+                    deleted: 3
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/feedbacks/retention/enforce/:
+    post:
+      operationId: feedbacks_retention_enforce_create
+      summary: Aplicar retenção RGPD (apagar antigos)
+      tags:
+      - Feedback
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+              examples:
+                Sucesso:
+                  value:
+                    deleted: 10
+                    retention_days: 365
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/me/appointments/:
     get:
@@ -4295,6 +4776,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/TenantMeta'
           description: ''
+  /api/users/tenant/modules/:
+    patch:
+      operationId: users_tenant_modules_partial_update
+      description: 'Atualiza módulos do tenant (ex.: PWA Cliente). Só permitido para
+        owner/manager e plano Standard+.'
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantModulesUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: ok
   /api/users/tenant/notifications/:
     patch:
       operationId: users_tenant_notifications_partial_update
@@ -4318,6 +4822,57 @@ paths:
       responses:
         '200':
           description: ok
+  /api/users/tenant/profile/:
+    get:
+      operationId: users_tenant_profile_retrieve
+      description: |-
+        GET /api/users/tenant/profile/
+        PATCH /api/users/tenant/profile/
+
+        Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+        GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantProfile'
+          description: ''
+    patch:
+      operationId: users_tenant_profile_partial_update
+      description: |-
+        GET /api/users/tenant/profile/
+        PATCH /api/users/tenant/profile/
+
+        Endpoint para obter/atualizar dados de contato do tenant (email/telefone).
+        GET é público (resolve via 'tenant' ou 'X-Tenant-Slug'); PATCH exige owner/manager.
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTenantProfileRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantProfile'
+          description: ''
   /api/users/token/:
     post:
       operationId: users_token_create
@@ -4822,16 +5377,6 @@ components:
             minLength: 1
       required:
       - prefixes
-    CategoryEnum:
-      enum:
-      - notification_failure
-      - security_incident
-      - system
-      type: string
-      description: |-
-        * `notification_failure` - Notification Failure
-        * `security_incident` - Security Incident
-        * `system` - System
     Channel307Enum:
       enum:
       - email
@@ -5280,6 +5825,79 @@ components:
       required:
       - email
       - password
+    Feedback:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        tenant:
+          type: integer
+          readOnly: true
+        customer:
+          type: integer
+          nullable: true
+        category:
+          $ref: '#/components/schemas/FeedbackCategoryEnum'
+        rating:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        message:
+          type: string
+        is_anonymous:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - category
+      - created_at
+      - id
+      - message
+      - rating
+      - tenant
+      - updated_at
+    FeedbackCategoryEnum:
+      enum:
+      - bug
+      - suggestion
+      - praise
+      - other
+      type: string
+      description: |-
+        * `bug` - Bug
+        * `suggestion` - Suggestion
+        * `praise` - Praise
+        * `other` - Other
+    FeedbackRequest:
+      type: object
+      properties:
+        customer:
+          type: integer
+          nullable: true
+        category:
+          $ref: '#/components/schemas/FeedbackCategoryEnum'
+        rating:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+        message:
+          type: string
+          minLength: 1
+        is_anonymous:
+          type: boolean
+      required:
+      - category
+      - message
+      - rating
     MixedBulkAppointmentItemRequest:
       type: object
       description: 'Item para criação mista: requer service_id e professional_id por
@@ -5731,7 +6349,7 @@ components:
           readOnly: true
         category:
           allOf:
-          - $ref: '#/components/schemas/CategoryEnum'
+          - $ref: '#/components/schemas/OpsAlertCategoryEnum'
           readOnly: true
         severity:
           allOf:
@@ -5787,6 +6405,16 @@ components:
       - tenant
       - tenant_name
       - updated_at
+    OpsAlertCategoryEnum:
+      enum:
+      - notification_failure
+      - security_incident
+      - system
+      type: string
+      description: |-
+        * `notification_failure` - Notification Failure
+        * `security_incident` - Security Incident
+        * `system` - System
     OpsClearLockoutRequest:
       type: object
       properties:
@@ -6130,6 +6758,51 @@ components:
           maxLength: 100
         auto_invite_enabled:
           type: boolean
+        address_street:
+          type: string
+          nullable: true
+          description: Rua/Logradouro do estabelecimento
+          maxLength: 255
+        address_number:
+          type: string
+          nullable: true
+          description: Número
+          maxLength: 50
+        address_complement:
+          type: string
+          nullable: true
+          description: Complemento (sala, bloco, etc.)
+          maxLength: 255
+        address_neighborhood:
+          type: string
+          nullable: true
+          description: Bairro/Distrito
+          maxLength: 255
+        address_city:
+          type: string
+          nullable: true
+          description: Cidade
+          maxLength: 255
+        address_state:
+          type: string
+          nullable: true
+          description: Estado/Província/UF
+          maxLength: 255
+        address_zip:
+          type: string
+          nullable: true
+          description: CEP/Código postal
+          maxLength: 20
+        address_country:
+          type: string
+          nullable: true
+          description: País
+          maxLength: 100
+    PatchedTenantModulesUpdateRequest:
+      type: object
+      properties:
+        pwa_client_enabled:
+          type: boolean
     PatchedTenantNotificationsUpdateRequest:
       type: object
       properties:
@@ -6139,6 +6812,17 @@ components:
           type: boolean
         push_mobile_enabled:
           type: boolean
+    PatchedTenantProfileRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+          maxLength: 32
     PatchedUserFeatureFlagsUpdateRequest:
       type: object
       description: 'Para PATCH: permite editar apenas os módulos opcionais.'
@@ -6323,7 +7007,7 @@ components:
       properties:
         tenant_slug:
           type: string
-          minLength: 1
+          nullable: true
           pattern: ^[-a-zA-Z0-9_]+$
         email:
           type: string
@@ -6335,7 +7019,6 @@ components:
           default: email
       required:
       - email
-      - tenant_slug
     PurchaseCreditsRequest:
       type: object
       description: Serializer para compra de créditos (futuro uso com Stripe).
@@ -6737,6 +7420,46 @@ components:
           type: string
           readOnly: true
           description: Moeda padrão (ISO 4217)
+        address_street:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Rua/Logradouro do estabelecimento
+        address_number:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Número
+        address_complement:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Complemento (sala, bloco, etc.)
+        address_neighborhood:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Bairro/Distrito
+        address_city:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Cidade
+        address_state:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Estado/Província/UF
+        address_zip:
+          type: string
+          readOnly: true
+          nullable: true
+          description: CEP/Código postal
+        address_country:
+          type: string
+          readOnly: true
+          nullable: true
+          description: País
         plan_tier:
           allOf:
           - $ref: '#/components/schemas/PlanTierEnum'
@@ -6756,7 +7479,19 @@ components:
         auto_invite_enabled:
           type: boolean
           readOnly: true
+        profile:
+          type: object
+          additionalProperties: {}
+          readOnly: true
       required:
+      - address_city
+      - address_complement
+      - address_country
+      - address_neighborhood
+      - address_number
+      - address_state
+      - address_street
+      - address_zip
       - app_name
       - auto_invite_enabled
       - currency
@@ -6765,8 +7500,20 @@ components:
       - logo_url
       - name
       - plan_tier
+      - profile
       - slug
       - timezone
+    TenantProfile:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+          maxLength: 32
     TenantSelfService:
       type: object
       properties:

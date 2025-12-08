@@ -31,6 +31,11 @@ from core.views import (
     ClientsMeAppointmentCreateView,
     ClientsMeProfileView,
     ClientAppointmentCancelView,
+    FeedbackListCreateView,
+    FeedbackDetailView,
+    FeedbackExportView,
+    FeedbackPurgeByCustomerView,
+    FeedbackRetentionEnforceView,
 )
 
 router = DefaultRouter()
@@ -143,5 +148,19 @@ urlpatterns = [
         "appointments/<int:pk>/ics/",
         AppointmentICSDownloadView.as_view(),
         name="appointment-ics-download",
+    ),
+    # Feedback
+    path("feedbacks/", FeedbackListCreateView.as_view(), name="feedback-list-create"),
+    path("feedbacks/<int:pk>/", FeedbackDetailView.as_view(), name="feedback-detail"),
+    path("feedbacks/export/", FeedbackExportView.as_view(), name="feedback-export"),
+    path(
+        "feedbacks/purge/<int:customer_id>/",
+        FeedbackPurgeByCustomerView.as_view(),
+        name="feedback-purge-by-customer",
+    ),
+    path(
+        "feedbacks/retention/enforce/",
+        FeedbackRetentionEnforceView.as_view(),
+        name="feedback-retention-enforce",
     ),
 ]

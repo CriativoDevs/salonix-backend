@@ -9,6 +9,7 @@ from typing import Any, cast
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+from datetime import time
 
 from .managers import CustomUserManager
 from .validators import validate_logo_image
@@ -173,6 +174,35 @@ class Tenant(models.Model):
     )
     whatsapp_enabled = models.BooleanField(
         default=cast(Any, False), help_text="Habilita notificações WhatsApp"
+    )
+
+    # Feedback notifications config
+    feedback_webhook_url = models.URLField(
+        blank=True,
+        null=True,
+        help_text="URL de webhook para eventos de feedback",
+    )
+    feedback_digest_enabled = models.BooleanField(
+        default=cast(Any, False),
+        help_text="Habilita digest de feedback por e-mail",
+    )
+    feedback_digest_frequency = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="Frequência do digest (daily/weekly)",
+        default="daily",
+    )
+    feedback_digest_time = models.TimeField(
+        blank=True,
+        null=True,
+        help_text="Horário local do tenant para envio do digest",
+        default=time(9, 0),
+    )
+    feedback_digest_last_sent = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Último envio de digest de feedback",
     )
 
     # Feature Flags - Sistema de Créditos de Comunicação

@@ -3,13 +3,16 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Optional, Any
+import requests
+import time as pytime
+import pytz
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.core import signing
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from users.models import Tenant
-from core.models import CustomerCommunicationConsent
+from core.models import CustomerCommunicationConsent, Feedback
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
 
@@ -563,3 +566,144 @@ class WhatsAppDriver(NotificationDriverBase):
 
 # Instância global do serviço
 notification_service = NotificationService()
+
+
+def trigger_feedback_notifications(tenant: Tenant, feedback: Feedback) -> None:
+    if not tenant.can_use_advanced_notifications():
+        return
+    if tenant.feedback_webhook_url:
+        try:
+            send_feedback_webhook(tenant, feedback)
+        except Exception:
+            logger.exception(
+                "feedback_webhook_failed",
+                extra={"tenant_id": tenant.id, "feedback_id": feedback.id},
+            )
+    if tenant.feedback_digest_enabled:
+        try:
+            send_feedback_digest_email_if_due(tenant)
+        except Exception:
+            logger.exception("feedback_digest_failed", extra={"tenant_id": tenant.id})
+
+
+def send_feedback_webhook(tenant: Tenant, feedback: Feedback) -> bool:
+    url = (tenant.feedback_webhook_url or "").strip()
+    if not url:
+        return False
+    payload: Dict[str, Any] = {
+        "id": feedback.id,
+        "tenant_id": tenant.id,
+        "category": feedback.category,
+        "rating": feedback.rating,
+        "message": feedback.message,
+        "is_anonymous": feedback.is_anonymous,
+        "created_at": getattr(
+            feedback.created_at, "isoformat", lambda: str(feedback.created_at)
+        )(),
+    }
+    try:
+        customer = getattr(feedback, "customer", None)
+        if customer and not feedback.is_anonymous:
+            payload["customer"] = {
+                "id": getattr(customer, "id", None),
+                "email": getattr(customer, "email", None),
+                "name": getattr(customer, "name", None),
+            }
+    except Exception:
+        pass
+    success = False
+    for i in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=5)
+            if 200 <= resp.status_code < 300:
+                success = True
+                break
+        except Exception:
+            pass
+        try:
+            pytime.sleep(2**i)
+        except Exception:
+            pass
+    return success
+
+
+def send_feedback_digest_email_if_due(tenant: Tenant) -> bool:
+    tz = pytz.timezone(tenant.timezone or "Europe/Lisbon")
+    now = timezone.now().astimezone(tz)
+    digest_time = tenant.feedback_digest_time
+    if not digest_time:
+        return False
+    if tenant.feedback_digest_frequency == "weekly" and now.weekday() != 0:
+        return False
+    target = now.replace(
+        hour=digest_time.hour, minute=digest_time.minute, second=0, microsecond=0
+    )
+    last = tenant.feedback_digest_last_sent
+    if last is not None:
+        last_local = last.astimezone(tz)
+        if last_local >= target:
+            return False
+    if now < target:
+        return False
+    if tenant.feedback_digest_frequency == "daily":
+        cutoff = now - timezone.timedelta(days=1)
+    else:
+        cutoff = now - timezone.timedelta(days=7)
+    qs = Feedback.objects.filter(tenant=tenant, created_at__gte=cutoff).order_by(
+        "-created_at"
+    )
+    items = list(qs[:50])
+    if not items:
+        tenant.feedback_digest_last_sent = timezone.now()
+        tenant.save(update_fields=["feedback_digest_last_sent", "updated_at"])
+        return False
+    to_email = None
+    if tenant.contact_email:
+        to_email = tenant.contact_email
+    else:
+        try:
+            from users.models import TenantStaffMember
+
+            owner_member = (
+                TenantStaffMember.objects.select_related("user")
+                .filter(tenant=tenant, role=TenantStaffMember.Role.OWNER)
+                .first()
+            )
+            to_email = getattr(getattr(owner_member, "user", None), "email", None)
+        except Exception:
+            to_email = None
+    if not to_email:
+        tenant.feedback_digest_last_sent = timezone.now()
+        tenant.save(update_fields=["feedback_digest_last_sent", "updated_at"])
+        return False
+    subject = "Digest de feedbacks"
+    sender_email = settings.EMAIL_HOST_USER or getattr(
+        settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
+    )
+    text_lines: List[str] = []
+    html_lines: List[str] = []
+    for f in items:
+        dt = f.created_at.astimezone(tz)
+        line = f"[{dt.strftime('%d/%m %H:%M')}] {f.category} • {f.rating}/5 — {f.message[:200]}"
+        text_lines.append(line)
+        html_lines.append(f"<li>{line}</li>")
+    text_body = "\n".join(text_lines)
+    html_body = f"""
+    <div style=\"font-family: Arial, sans-serif;\">
+      <p>Resumo de feedbacks recentes:</p>
+      <ul style=\"padding-left:16px;\">{''.join(html_lines)}</ul>
+    </div>
+    """
+    msg = EmailMultiAlternatives(subject, text_body, sender_email, [to_email])
+    msg.attach_alternative(html_body, "text/html")
+    if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
+        tenant.feedback_digest_last_sent = timezone.now()
+        tenant.save(update_fields=["feedback_digest_last_sent", "updated_at"])
+        return False
+    try:
+        msg.send()
+        tenant.feedback_digest_last_sent = timezone.now()
+        tenant.save(update_fields=["feedback_digest_last_sent", "updated_at"])
+        return True
+    except Exception:
+        return False
