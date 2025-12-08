@@ -84,6 +84,13 @@ from typing import Any, Dict, List, Optional, cast
 
 from users.throttling import UsersClientAccessLinkThrottle, FeedbackCreateThrottle
 from users.security import enforce_captcha_or_raise
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.response import Response
+from rest_framework import status as drf_status
+from users.models import TenantStaffMember, CustomUser
+from salonix_backend.validators import validate_phone_number, sanitize_text_input
+import secrets
 
 
 def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
@@ -3175,6 +3182,453 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
             )
 
         return Response({"status": "queued"}, status=drf_status.HTTP_202_ACCEPTED)
+
+
+class ImportCSVBaseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _require_owner(self, request):
+        if not request.user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode importar dados.")
+
+    def _get_tenant(self, request):
+        return getattr(request, "tenant", None) or getattr(request.user, "tenant", None)
+
+    def _parse_bool(self, value):
+        return str(value).lower() in {"1", "true", "t", "yes", "y"}
+
+    def _read_csv(self, request):
+        f = request.FILES.get("file")
+        if not f:
+            raise ValidationError({"file": ["Arquivo CSV obrigatório."]})
+        content = f.read().decode("utf-8", errors="replace")
+        reader = csv.DictReader(io.StringIO(content))
+        rows = list(reader)
+        return rows
+
+
+class ImportCustomersCSVView(TenantIsolatedMixin, ImportCSVBaseView):
+    @extend_schema(
+        tags=["Import"],
+        parameters=[
+            OpenApiParameter(
+                name="dry_run",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Valida sem gravar quando true",
+            )
+        ],
+        request={
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"file": {"type": "string", "format": "binary"}},
+                    "required": ["file"],
+                }
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "string", "example": "customers"},
+                    "summary": {
+                        "type": "object",
+                        "properties": {
+                            "processed": {"type": "integer"},
+                            "created": {"type": "integer"},
+                            "updated": {"type": "integer"},
+                            "skipped": {"type": "integer"},
+                            "errors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "line": {"type": "integer"},
+                                        "error": {"type": "string"},
+                                        "row": {"type": "object"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        },
+    )
+    def post(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        dry_run = self._parse_bool(request.query_params.get("dry_run", "false"))
+        rows = self._read_csv(request)
+        processed = 0
+        created = 0
+        updated = 0
+        skipped = 0
+        errors = []
+        for idx, row in enumerate(rows, start=2):
+            processed += 1
+            name = sanitize_text_input((row.get("name") or "").strip())
+            email = (row.get("email") or "").strip().lower() or None
+            phone = (row.get("phone") or "").strip() or None
+            if phone:
+                try:
+                    validate_phone_number(phone)
+                except Exception:
+                    errors.append({"line": idx, "error": "phone inválido", "row": row})
+                    skipped += 1
+                    continue
+            if not name:
+                errors.append({"line": idx, "error": "name obrigatório", "row": row})
+                skipped += 1
+                continue
+            existing = None
+            if email:
+                existing = SalonCustomer.objects.filter(
+                    tenant=tenant, email__iexact=email
+                ).first()
+            if not existing and phone:
+                existing = SalonCustomer.objects.filter(
+                    tenant=tenant, phone_number=phone
+                ).first()
+            if dry_run:
+                if existing:
+                    updated += 1
+                else:
+                    created += 1
+                continue
+            if existing:
+                changed = False
+                if existing.name != name:
+                    existing.name = name
+                    changed = True
+                if email and existing.email != email:
+                    existing.email = email
+                    changed = True
+                if phone and existing.phone_number != phone:
+                    existing.phone_number = phone
+                    changed = True
+                if changed:
+                    existing.save(
+                        update_fields=["name", "email", "phone_number", "updated_at"]
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                SalonCustomer.objects.create(
+                    tenant=tenant,
+                    name=name,
+                    email=email or None,
+                    phone_number=phone or None,
+                )
+                created += 1
+        return Response(
+            {
+                "entity": "customers",
+                "summary": {
+                    "processed": processed,
+                    "created": created,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "errors": errors,
+                },
+            }
+        )
+
+
+class ImportServicesCSVView(TenantIsolatedMixin, ImportCSVBaseView):
+    @extend_schema(
+        tags=["Import"],
+        parameters=[
+            OpenApiParameter(
+                name="dry_run",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Valida sem gravar quando true",
+            )
+        ],
+        request={
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"file": {"type": "string", "format": "binary"}},
+                    "required": ["file"],
+                }
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "string", "example": "services"},
+                    "summary": {
+                        "type": "object",
+                        "properties": {
+                            "processed": {"type": "integer"},
+                            "created": {"type": "integer"},
+                            "updated": {"type": "integer"},
+                            "skipped": {"type": "integer"},
+                            "errors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "line": {"type": "integer"},
+                                        "error": {"type": "string"},
+                                        "row": {"type": "object"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        },
+    )
+    def post(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        dry_run = self._parse_bool(request.query_params.get("dry_run", "false"))
+        rows = self._read_csv(request)
+        processed = 0
+        created = 0
+        updated = 0
+        skipped = 0
+        errors = []
+        for idx, row in enumerate(rows, start=2):
+            processed += 1
+            name = sanitize_text_input((row.get("name") or "").strip())
+            duration_val = (row.get("duration_minutes") or "").strip()
+            price_val = (row.get("price_eur") or "").strip()
+            if not name or not duration_val or not price_val:
+                errors.append(
+                    {"line": idx, "error": "campos obrigatórios ausentes", "row": row}
+                )
+                skipped += 1
+                continue
+            try:
+                duration = int(duration_val)
+            except Exception:
+                errors.append({"line": idx, "error": "duration inválido", "row": row})
+                skipped += 1
+                continue
+            try:
+                from decimal import Decimal
+
+                price = Decimal(price_val)
+            except Exception:
+                errors.append({"line": idx, "error": "price inválido", "row": row})
+                skipped += 1
+                continue
+            existing = Service.objects.filter(
+                tenant=tenant, name__iexact=name, duration_minutes=duration
+            ).first()
+            if dry_run:
+                if existing:
+                    updated += 1
+                else:
+                    created += 1
+                continue
+            if existing:
+                changed = False
+                if existing.price_eur != price:
+                    existing.price_eur = price
+                    changed = True
+                if changed:
+                    (
+                        existing.save(update_fields=["price_eur", "updated_at"])
+                        if hasattr(existing, "updated_at")
+                        else existing.save()
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                Service.objects.create(
+                    tenant=tenant,
+                    user=request.user,
+                    name=name,
+                    duration_minutes=duration,
+                    price_eur=price,
+                )
+                created += 1
+        return Response(
+            {
+                "entity": "services",
+                "summary": {
+                    "processed": processed,
+                    "created": created,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "errors": errors,
+                },
+            }
+        )
+
+
+class ImportStaffCSVView(TenantIsolatedMixin, ImportCSVBaseView):
+    @extend_schema(
+        tags=["Import"],
+        parameters=[
+            OpenApiParameter(
+                name="dry_run",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Valida sem gravar quando true",
+            )
+        ],
+        request={
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"file": {"type": "string", "format": "binary"}},
+                    "required": ["file"],
+                }
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "string", "example": "staff"},
+                    "summary": {
+                        "type": "object",
+                        "properties": {
+                            "processed": {"type": "integer"},
+                            "created": {"type": "integer"},
+                            "updated": {"type": "integer"},
+                            "skipped": {"type": "integer"},
+                            "errors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "line": {"type": "integer"},
+                                        "error": {"type": "string"},
+                                        "row": {"type": "object"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        },
+    )
+    def post(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        dry_run = self._parse_bool(request.query_params.get("dry_run", "false"))
+        rows = self._read_csv(request)
+        processed = 0
+        created = 0
+        updated = 0
+        skipped = 0
+        errors = []
+        for idx, row in enumerate(rows, start=2):
+            processed += 1
+            name = sanitize_text_input((row.get("name") or "").strip())
+            email = (row.get("email") or "").strip().lower()
+            role = (row.get("role") or "collaborator").strip().lower()
+            if not email:
+                errors.append({"line": idx, "error": "email obrigatório", "row": row})
+                skipped += 1
+                continue
+            if role not in {
+                TenantStaffMember.Role.OWNER,
+                TenantStaffMember.Role.MANAGER,
+                TenantStaffMember.Role.COLLABORATOR,
+            }:
+                errors.append({"line": idx, "error": "role inválido", "row": row})
+                skipped += 1
+                continue
+            staff = (
+                TenantStaffMember.objects.filter(
+                    tenant=tenant, user__email__iexact=email
+                )
+                .select_related("user")
+                .first()
+            )
+            if dry_run:
+                if staff:
+                    updated += 1
+                else:
+                    created += 1
+                continue
+            if staff:
+                changed = False
+                if staff.role != role:
+                    staff.role = role
+                    changed = True
+                if changed:
+                    (
+                        staff.save(update_fields=["role", "updated_at"])
+                        if hasattr(staff, "updated_at")
+                        else staff.save()
+                    )
+                    updated += 1
+                else:
+                    skipped += 1
+            else:
+                user = CustomUser.objects.filter(email__iexact=email).first()
+                if not user:
+                    username_seed = (name or email.split("@")[0] or "user")[:150]
+                    unique_suffix = secrets.token_hex(3)
+                    username = f"{username_seed}-{unique_suffix}"[:150]
+                    user = CustomUser.objects.create(
+                        username=username,
+                        email=email,
+                        first_name=(name or "").split(" ")[0],
+                    )
+                TenantStaffMember.objects.create(
+                    tenant=tenant,
+                    user=user,
+                    role=role,
+                    status=TenantStaffMember.Status.INVITED,
+                    invited_by=request.user,
+                )
+                created += 1
+        return Response(
+            {
+                "entity": "staff",
+                "summary": {
+                    "processed": processed,
+                    "created": created,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "errors": errors,
+                },
+            }
+        )
+
+
+class ImportTemplateCSVView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(tags=["Import"], responses={200: OpenApiTypes.BINARY})
+    def get(self, request, entity):
+        if entity not in {"customers", "services", "staff"}:
+            return Response(
+                {"detail": "template não disponível"},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+        output = io.StringIO()
+        writer = csv.writer(output)
+        if entity == "customers":
+            writer.writerow(["name", "email", "phone"])
+        elif entity == "services":
+            writer.writerow(["name", "duration_minutes", "price_eur"])
+        else:
+            writer.writerow(["name", "email", "role"])
+        response = StreamingHttpResponse(
+            iter([output.getvalue()]), content_type="text/csv"
+        )
+        response["Content-Disposition"] = f"attachment; filename={entity}-template.csv"
+        return response
 
 
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):

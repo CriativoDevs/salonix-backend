@@ -36,6 +36,10 @@ from core.views import (
     FeedbackExportView,
     FeedbackPurgeByCustomerView,
     FeedbackRetentionEnforceView,
+    ImportCustomersCSVView,
+    ImportServicesCSVView,
+    ImportStaffCSVView,
+    ImportTemplateCSVView,
 )
 
 router = DefaultRouter()
@@ -163,4 +167,8 @@ urlpatterns = [
         FeedbackRetentionEnforceView.as_view(),
         name="feedback-retention-enforce",
     ),
+    path("import/customers/", ImportCustomersCSVView.as_view(), name="import-customers"),
+    path("import/services/", ImportServicesCSVView.as_view(), name="import-services"),
+    path("import/staff/", ImportStaffCSVView.as_view(), name="import-staff"),
+    path("import/templates/<str:entity>.csv", ImportTemplateCSVView.as_view(), name="import-template"),
 ]
