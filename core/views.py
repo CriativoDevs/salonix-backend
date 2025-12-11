@@ -87,6 +87,7 @@ from users.security import enforce_captcha_or_raise
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from reports.throttling import PerUserScopedRateThrottle
 from rest_framework import status as drf_status
 from users.models import TenantStaffMember, CustomUser
 from salonix_backend.validators import validate_phone_number, sanitize_text_input
@@ -3205,6 +3206,243 @@ class ImportCSVBaseView(APIView):
         reader = csv.DictReader(io.StringIO(content))
         rows = list(reader)
         return rows
+
+
+class ExportCSVBaseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _require_owner(self, request):
+        if not request.user.has_staff_role(TenantStaffMember.Role.OWNER):
+            raise PermissionDenied("Apenas owner pode exportar dados.")
+
+    def _get_tenant(self, request):
+        header_slug = request.headers.get("X-Tenant-Slug")
+        user_tenant = getattr(request.user, "tenant", None)
+        if header_slug:
+            try:
+                tenant = Tenant.objects.get(slug=header_slug, is_active=True)
+            except Tenant.DoesNotExist:
+                raise ValidationError(
+                    {"tenant": ["Tenant especificado no header inválido"]}
+                )
+            if (
+                user_tenant
+                and tenant.id != user_tenant.id
+                and not getattr(request.user, "is_superuser", False)
+            ):
+                raise PermissionDenied(
+                    "Tenant do header não corresponde ao seu tenant."
+                )
+            return tenant
+        return getattr(request, "tenant", None) or user_tenant
+
+
+class ExportCustomersCSVView(TenantIsolatedMixin, ExportCSVBaseView):
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    @extend_schema(
+        tags=["Export"],
+        parameters=[
+            OpenApiParameter(
+                name="updated_since",
+                type=OpenApiTypes.DATETIME,
+                required=False,
+                location="query",
+                description="Exportar registros com updated_at >= valor",
+            ),
+            OpenApiParameter(
+                name="active",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Filtrar clientes ativos (is_active=true)",
+            ),
+            OpenApiParameter(
+                name="X-Tenant-Slug",
+                type=OpenApiTypes.STR,
+                required=False,
+                location="header",
+                description="Slug do tenant (opcional, deve corresponder ao do usuário)",
+            ),
+        ],
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def get(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        qs = SalonCustomer.objects.filter(tenant=tenant)
+        updated_since = request.query_params.get("updated_since")
+        if updated_since:
+            dt = parse_datetime(updated_since)
+            if not dt:
+                d = parse_date(updated_since)
+                if d:
+                    from datetime import datetime, time as dt_time
+
+                    dt = timezone.make_aware(datetime.combine(d, dt_time.min))
+            if dt:
+                qs = qs.filter(updated_at__gte=dt)
+        active = request.query_params.get("active")
+        if active is not None:
+            val = str(active).lower() in {"1", "true", "t", "yes", "y"}
+            qs = qs.filter(is_active=val)
+
+        qs = qs.order_by("name", "id")
+
+        def _iter():
+            yield ",".join(["name", "email", "phone"]) + "\n"
+            for c in qs.iterator():
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow([c.name, c.email or "", c.phone_number or ""])
+                yield buf.getvalue()
+
+        resp = StreamingHttpResponse(_iter(), content_type="text/csv")
+        resp["Content-Disposition"] = "attachment; filename=customers-export.csv"
+        logging.getLogger(__name__).info(
+            "csv_export_customers",
+            extra={
+                "request_id": getattr(request, "request_id", "-"),
+                "tenant_id": getattr(tenant, "id", None),
+                "count": qs.count(),
+            },
+        )
+        return resp
+
+
+class ExportServicesCSVView(TenantIsolatedMixin, ExportCSVBaseView):
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    @extend_schema(
+        tags=["Export"],
+        parameters=[
+            OpenApiParameter(
+                name="X-Tenant-Slug",
+                type=OpenApiTypes.STR,
+                required=False,
+                location="header",
+                description="Slug do tenant (opcional, deve corresponder ao do usuário)",
+            ),
+        ],
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def get(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        qs = Service.objects.filter(tenant=tenant).order_by("name", "id")
+
+        def _iter():
+            yield ",".join(["name", "duration_minutes", "price_eur"]) + "\n"
+            for s in qs.iterator():
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow([s.name, int(s.duration_minutes), str(s.price_eur)])
+                yield buf.getvalue()
+
+        resp = StreamingHttpResponse(_iter(), content_type="text/csv")
+        resp["Content-Disposition"] = "attachment; filename=services-export.csv"
+        logging.getLogger(__name__).info(
+            "csv_export_services",
+            extra={
+                "request_id": getattr(request, "request_id", "-"),
+                "tenant_id": getattr(tenant, "id", None),
+                "count": qs.count(),
+            },
+        )
+        return resp
+
+
+class ExportStaffCSVView(TenantIsolatedMixin, ExportCSVBaseView):
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "export_csv"
+
+    @extend_schema(
+        tags=["Export"],
+        parameters=[
+            OpenApiParameter(
+                name="updated_since",
+                type=OpenApiTypes.DATETIME,
+                required=False,
+                location="query",
+                description="Exportar registros com updated_at >= valor",
+            ),
+            OpenApiParameter(
+                name="active",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Filtrar membros ativos (status=active)",
+            ),
+            OpenApiParameter(
+                name="X-Tenant-Slug",
+                type=OpenApiTypes.STR,
+                required=False,
+                location="header",
+                description="Slug do tenant (opcional, deve corresponder ao do usuário)",
+            ),
+        ],
+        responses={200: OpenApiTypes.BINARY},
+    )
+    def get(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        qs = TenantStaffMember.objects.filter(tenant=tenant).select_related("user")
+        updated_since = request.query_params.get("updated_since")
+        if updated_since:
+            dt = parse_datetime(updated_since)
+            if not dt:
+                d = parse_date(updated_since)
+                if d:
+                    from datetime import datetime, time as dt_time
+
+                    dt = timezone.make_aware(datetime.combine(d, dt_time.min))
+            if dt:
+                qs = qs.filter(updated_at__gte=dt)
+        active = request.query_params.get("active")
+        if active is not None:
+            val = str(active).lower() in {"1", "true", "t", "yes", "y"}
+            qs = qs.filter(
+                status=(
+                    TenantStaffMember.Status.ACTIVE
+                    if val
+                    else TenantStaffMember.Status.DISABLED
+                )
+            )
+        qs = qs.order_by("id")
+
+        def _iter():
+            yield ",".join(["name", "email", "role"]) + "\n"
+            for staff in qs.iterator():
+                user = getattr(staff, "user", None)
+                full_name = None
+                if user is not None:
+                    try:
+                        full_name = user.get_full_name()
+                    except Exception:
+                        full_name = None
+                name_val = (
+                    full_name
+                    or getattr(user, "first_name", "")
+                    or getattr(user, "username", "")
+                ).strip()
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                w.writerow([name_val, getattr(user, "email", ""), staff.role])
+                yield buf.getvalue()
+
+        resp = StreamingHttpResponse(_iter(), content_type="text/csv")
+        resp["Content-Disposition"] = "attachment; filename=staff-export.csv"
+        logging.getLogger(__name__).info(
+            "csv_export_staff",
+            extra={
+                "request_id": getattr(request, "request_id", "-"),
+                "tenant_id": getattr(tenant, "id", None),
+                "count": qs.count(),
+            },
+        )
+        return resp
 
 
 class ImportCustomersCSVView(TenantIsolatedMixin, ImportCSVBaseView):
