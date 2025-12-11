@@ -3606,12 +3606,253 @@ class ImportStaffCSVView(TenantIsolatedMixin, ImportCSVBaseView):
         )
 
 
+class ImportAppointmentsCSVView(TenantIsolatedMixin, ImportCSVBaseView):
+    @extend_schema(
+        tags=["Import"],
+        parameters=[
+            OpenApiParameter(
+                name="dry_run",
+                type=OpenApiTypes.BOOL,
+                required=False,
+                location="query",
+                description="Valida sem gravar quando true",
+            )
+        ],
+        request={
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"file": {"type": "string", "format": "binary"}},
+                    "required": ["file"],
+                }
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "string", "example": "appointments"},
+                    "summary": {
+                        "type": "object",
+                        "properties": {
+                            "processed": {"type": "integer"},
+                            "created": {"type": "integer"},
+                            "updated": {"type": "integer"},
+                            "skipped": {"type": "integer"},
+                            "errors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "line": {"type": "integer"},
+                                        "error": {"type": "string"},
+                                        "row": {"type": "object"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        },
+    )
+    def post(self, request):
+        self._require_owner(request)
+        tenant = self._get_tenant(request)
+        dry_run = self._parse_bool(request.query_params.get("dry_run", "false"))
+        rows = self._read_csv(request)
+        processed = 0
+        created = 0
+        updated = 0
+        skipped = 0
+        errors = []
+
+        for idx, row in enumerate(rows, start=2):
+            processed += 1
+            customer_email = (
+                (row.get("customer_email") or row.get("email") or "").strip().lower()
+            )
+            customer_phone = (
+                row.get("customer_phone") or row.get("phone") or ""
+            ).strip()
+            service_name = (row.get("service_name") or row.get("service") or "").strip()
+            professional_name = (
+                row.get("professional_name") or row.get("professional") or ""
+            ).strip()
+            start_dt_str = (row.get("start_datetime") or row.get("start") or "").strip()
+            duration_val = (
+                row.get("duration_minutes") or row.get("duration") or ""
+            ).strip()
+
+            if not (
+                service_name
+                and professional_name
+                and start_dt_str
+                and (customer_email or customer_phone)
+            ):
+                errors.append(
+                    {"line": idx, "error": "campos obrigatórios ausentes", "row": row}
+                )
+                skipped += 1
+                continue
+
+            dt = parse_datetime(start_dt_str)
+            if dt is None:
+                errors.append(
+                    {"line": idx, "error": "start_datetime inválido", "row": row}
+                )
+                skipped += 1
+                continue
+            try:
+                from zoneinfo import ZoneInfo
+
+                tz_name = getattr(tenant, "timezone", None) or "UTC"
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=ZoneInfo(tz_name))
+            except Exception:
+                errors.append({"line": idx, "error": "timezone inválida", "row": row})
+                skipped += 1
+                continue
+
+            customer = None
+            if customer_email:
+                customer = SalonCustomer.objects.filter(
+                    tenant=tenant, email__iexact=customer_email
+                ).first()
+            if customer is None and customer_phone:
+                customer = SalonCustomer.objects.filter(
+                    tenant=tenant, phone_number=customer_phone
+                ).first()
+            if customer is None:
+                errors.append(
+                    {"line": idx, "error": "cliente não encontrado", "row": row}
+                )
+                skipped += 1
+                continue
+
+            service = Service.objects.filter(
+                tenant=tenant, name__iexact=service_name
+            ).first()
+            professional = Professional.objects.filter(
+                tenant=tenant, name__iexact=professional_name
+            ).first()
+            if not service or not professional:
+                errors.append(
+                    {
+                        "line": idx,
+                        "error": "serviço/profissional não encontrado",
+                        "row": row,
+                    }
+                )
+                skipped += 1
+                continue
+
+            slot = ScheduleSlot.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                start_time=dt,
+            ).first()
+            if slot is None:
+                errors.append({"line": idx, "error": "slot não encontrado", "row": row})
+                skipped += 1
+                continue
+            if not slot.is_available:
+                errors.append({"line": idx, "error": "slot indisponível", "row": row})
+                skipped += 1
+                continue
+
+            use_duration = None
+            if duration_val:
+                try:
+                    use_duration = int(duration_val)
+                except Exception:
+                    errors.append(
+                        {"line": idx, "error": "duration_minutes inválido", "row": row}
+                    )
+                    skipped += 1
+                    continue
+            else:
+                use_duration = service.duration_minutes
+
+            slot_minutes = int((slot.end_time - slot.start_time).total_seconds() // 60)
+            if use_duration > slot_minutes:
+                errors.append(
+                    {"line": idx, "error": "duração maior que o slot", "row": row}
+                )
+                skipped += 1
+                continue
+
+            existing = None
+            if slot:
+                existing = Appointment.objects.filter(
+                    tenant=tenant,
+                    customer=customer,
+                    service=service,
+                    professional=professional,
+                    slot=slot,
+                ).first()
+
+            if dry_run:
+                if existing:
+                    updated += 1
+                else:
+                    created += 1
+                continue
+
+            if existing:
+                skipped += 1
+            else:
+                notes_val = str(row.get("notes") or "")
+                slot.mark_booked()
+                Appointment.objects.create(
+                    client=request.user,
+                    service=service,
+                    professional=professional,
+                    slot=slot,
+                    notes=notes_val,
+                    status="scheduled",
+                    tenant=tenant,
+                    customer=customer,
+                )
+                created += 1
+
+        payload = {
+            "entity": "appointments",
+            "summary": {
+                "processed": processed,
+                "created": created,
+                "updated": updated,
+                "skipped": skipped,
+                "errors": errors,
+            },
+            "request_id": getattr(request, "request_id", None),
+        }
+        try:
+            import_logger = logging.getLogger("core.import")
+            import_logger.info(
+                "import.appointments",
+                extra={
+                    "tenant_id": getattr(tenant, "id", None),
+                    "tenant_slug": getattr(tenant, "slug", None),
+                    "request_id": getattr(request, "request_id", None),
+                    "processed": processed,
+                    "created": created,
+                    "updated": updated,
+                    "skipped": skipped,
+                    "errors_count": len(errors),
+                },
+            )
+        except Exception:
+            pass
+        return Response(payload)
+
+
 class ImportTemplateCSVView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(tags=["Import"], responses={200: OpenApiTypes.BINARY})
     def get(self, request, entity):
-        if entity not in {"customers", "services", "staff"}:
+        if entity not in {"customers", "services", "staff", "appointments"}:
             return Response(
                 {"detail": "template não disponível"},
                 status=drf_status.HTTP_404_NOT_FOUND,
@@ -3622,8 +3863,20 @@ class ImportTemplateCSVView(APIView):
             writer.writerow(["name", "email", "phone"])
         elif entity == "services":
             writer.writerow(["name", "duration_minutes", "price_eur"])
-        else:
+        elif entity == "staff":
             writer.writerow(["name", "email", "role"])
+        else:  # appointments
+            writer.writerow(
+                [
+                    "customer_email",
+                    "customer_phone",
+                    "service_name",
+                    "professional_name",
+                    "start_datetime",
+                    "duration_minutes",
+                    "notes",
+                ]
+            )
         response = StreamingHttpResponse(
             iter([output.getvalue()]), content_type="text/csv"
         )

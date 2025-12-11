@@ -1486,6 +1486,66 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/import/appointments/:
+    post:
+      operationId: import_appointments_create
+      description: Mixin que automaticamente filtra querysets por tenant do usuário
+        logado.
+      parameters:
+      - in: query
+        name: dry_run
+        schema:
+          type: boolean
+        description: Valida sem gravar quando true
+      tags:
+      - Import
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                    format: binary
+                required:
+                - file
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entity:
+                    type: string
+                    example: appointments
+                  summary:
+                    type: object
+                    properties:
+                      processed:
+                        type: integer
+                      created:
+                        type: integer
+                      updated:
+                        type: integer
+                      skipped:
+                        type: integer
+                      errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            line:
+                              type: integer
+                            error:
+                              type: string
+                            row:
+                              type: object
+          description: ''
   /api/import/customers/:
     post:
       operationId: import_customers_create

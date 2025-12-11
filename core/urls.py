@@ -39,6 +39,7 @@ from core.views import (
     ImportCustomersCSVView,
     ImportServicesCSVView,
     ImportStaffCSVView,
+    ImportAppointmentsCSVView,
     ImportTemplateCSVView,
 )
 
@@ -167,8 +168,19 @@ urlpatterns = [
         FeedbackRetentionEnforceView.as_view(),
         name="feedback-retention-enforce",
     ),
-    path("import/customers/", ImportCustomersCSVView.as_view(), name="import-customers"),
+    path(
+        "import/customers/", ImportCustomersCSVView.as_view(), name="import-customers"
+    ),
     path("import/services/", ImportServicesCSVView.as_view(), name="import-services"),
     path("import/staff/", ImportStaffCSVView.as_view(), name="import-staff"),
-    path("import/templates/<str:entity>.csv", ImportTemplateCSVView.as_view(), name="import-template"),
+    path(
+        "import/appointments/",
+        ImportAppointmentsCSVView.as_view(),
+        name="import-appointments",
+    ),
+    path(
+        "import/templates/<str:entity>.csv",
+        ImportTemplateCSVView.as_view(),
+        name="import-template",
+    ),
 ]
