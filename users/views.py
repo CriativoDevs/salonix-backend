@@ -13,7 +13,7 @@ from rest_framework.exceptions import (
     PermissionDenied,
 )
 
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 
 from rest_framework.exceptions import NotFound
@@ -226,7 +226,21 @@ class TenantMetaView(APIView):
                 code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
             )
 
-    @extend_schema(responses=TenantMetaSerializer)
+    @extend_schema(
+        responses=OpenApiResponse(
+            response=TenantMetaSerializer,
+            description="Retorna metadados do tenant. Cabeçalho de resposta: Content-Language",
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="Accept-Language",
+                location=OpenApiParameter.HEADER,
+                required=False,
+                type=OpenApiTypes.STR,
+                description="Idioma preferido da resposta (suportado: pt-PT, en)",
+            )
+        ],
+    )
     def get(self, request):
         """Retornar metadados do tenant especificado"""
         # TenantError será tratado automaticamente pelo custom_exception_handler
@@ -379,7 +393,21 @@ class TenantProfileView(APIView):
             )
         return tenant
 
-    @extend_schema(responses=TenantProfileSerializer)
+    @extend_schema(
+        responses=OpenApiResponse(
+            response=TenantProfileSerializer,
+            description="Retorna dados de contato do tenant. Cabeçalho de resposta: Content-Language",
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="Accept-Language",
+                location=OpenApiParameter.HEADER,
+                required=False,
+                type=OpenApiTypes.STR,
+                description="Idioma preferido da resposta (suportado: pt-PT, en)",
+            )
+        ],
+    )
     def get(self, request):
         tenant = self._resolve_tenant_for_get(request)
         try:
@@ -443,8 +471,19 @@ class MeTenantView(APIView):
     CACHE_TTL = 30
 
     @extend_schema(
-        responses=TenantSelfServiceSerializer,
-        description="Retorna metadados do tenant do usuário logado",
+        responses=OpenApiResponse(
+            response=TenantSelfServiceSerializer,
+            description="Retorna metadados do tenant do usuário logado. Cabeçalho de resposta: Content-Language",
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="Accept-Language",
+                location=OpenApiParameter.HEADER,
+                required=False,
+                type=OpenApiTypes.STR,
+                description="Idioma preferido da resposta (suportado: pt-PT, en)",
+            )
+        ],
     )
     def get(self, request):
         user = request.user
@@ -501,7 +540,19 @@ class MeProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        responses=UserSelfSerializer, description="Retorna perfil do usuário logado"
+        responses=OpenApiResponse(
+            response=UserSelfSerializer,
+            description="Retorna perfil do usuário logado. Cabeçalho de resposta: Content-Language",
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="Accept-Language",
+                location=OpenApiParameter.HEADER,
+                required=False,
+                type=OpenApiTypes.STR,
+                description="Idioma preferido da resposta (suportado: pt-PT, en)",
+            )
+        ],
     )
     def get(self, request):
         user = request.user

@@ -4368,11 +4368,18 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 type=str,
                 description="Ordenação: start_time, -start_time, created_at, -created_at, slot_time, -slot_time",
             ),
+            OpenApiParameter(
+                name="Accept-Language",
+                location=OpenApiParameter.HEADER,
+                required=False,
+                type=OpenApiTypes.STR,
+                description="Idioma preferido da resposta (suportado: pt-PT, en)",
+            ),
         ],
         responses={
             200: OpenApiResponse(
                 response=AppointmentSerializer(many=True),
-                description="Lista paginada. Headers de resposta: X-Total-Count, X-Limit, X-Offset, Link (RFC 5988).",
+                description="Lista paginada. Headers de resposta: X-Total-Count, X-Limit, X-Offset, Link (RFC 5988), Content-Language.",
             )
         },
     )

@@ -126,12 +126,14 @@ MIDDLEWARE = [
     "django_prometheus.middleware.PrometheusAfterMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "salonix_backend.middleware.ScopeAccessMiddleware",  # Isolamento de escopos Ops/Tenant
     "core.middleware.TenantMiddleware",  # Adicionar tenant ao request
     "core.middleware.TenantIsolationMiddleware",  # Validar tenant
+    "salonix_backend.middleware.LanguageNegotiationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -253,6 +255,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGE_CODE = "en-us"
+LANGUAGES = [
+    ("pt-PT", "Português"),
+    ("en", "English"),
+]
 
 TIME_ZONE = "Europe/Lisbon"
 

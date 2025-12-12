@@ -3,6 +3,7 @@
 import logging
 import time
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.utils import translation
 from django.utils.deprecation import MiddlewareMixin
 from rest_framework.exceptions import (
     AuthenticationFailed,
@@ -278,3 +279,68 @@ class ScopeAccessMiddleware(MiddlewareMixin):
             }
         }
         return JsonResponse(payload, status=status_code)
+
+
+class LanguageNegotiationMiddleware(MiddlewareMixin):
+    SUPPORTED = {"pt-PT", "en"}
+
+    def __init__(self, get_response):
+        super().__init__(get_response)
+
+    def process_request(self, request: HttpRequest) -> None:
+        header = request.headers.get("Accept-Language", "")
+        chosen = self._negotiate(header)
+        chosen = chosen or None
+        request.language_code = chosen
+        if chosen:
+            try:
+                translation.activate(self._activate_code(chosen))
+            except Exception:
+                translation.activate("en")
+
+    def process_view(self, request: HttpRequest, view_func, view_args, view_kwargs):
+        return None
+
+    def process_response(
+        self, request: HttpRequest, response: HttpResponse
+    ) -> HttpResponse:
+        code = getattr(request, "language_code", None)
+        if not code:
+            user = getattr(request, "user", None)
+            if user and getattr(user, "is_authenticated", False):
+                pref = getattr(user, "language_preference", None)
+                if pref and pref != "system":
+                    code = pref
+            if not code:
+                tenant = getattr(getattr(request, "user", None), "tenant", None)
+                if tenant:
+                    code = getattr(tenant, "preferred_language", None) or None
+            code = code or "en"
+        try:
+            translation.activate(self._activate_code(code))
+        except Exception:
+            translation.activate("en")
+        if code:
+            response["Content-Language"] = code
+        return response
+
+    def _negotiate(self, header: str) -> str | None:
+        items = [p.strip() for p in header.split(",") if p.strip()]
+        for it in items:
+            lang = it.split(";")[0].strip().lower()
+            norm = self._normalize(lang)
+            if norm in self.SUPPORTED:
+                return norm
+        return None
+
+    def _normalize(self, lang: str) -> str:
+        if lang.startswith("pt"):
+            return "pt-PT"
+        if lang.startswith("en"):
+            return "en"
+        return lang
+
+    def _activate_code(self, code: str) -> str:
+        if code == "pt-PT":
+            return "pt"
+        return code

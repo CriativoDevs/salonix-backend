@@ -2,6 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from django.conf import settings
+from django.utils.translation import gettext as _
 from django.core import signing
 from notifications.views import UNSUBSCRIBE_TOKEN_SALT
 from core.utils.ics import compute_public_ics_token
@@ -19,23 +20,29 @@ def send_appointment_confirmation_email(
         service_name (str): Nome do serviço agendado
         date_time (datetime): Data e hora do agendamento
     """
-    subject = "Confirmação do seu agendamento"
+    subject = _("Confirmação do seu agendamento")
     sender_email = settings.EMAIL_HOST_USER
     receiver_email = to_email
 
     formatted_date = date_time.strftime("%d/%m/%Y às %H:%M")
 
-    body = f"""
-    Olá {client_name},
-
-    Seu agendamento para o serviço "{service_name}" foi confirmado com sucesso!
-
-    📅 Data e hora: {formatted_date}
-
-    Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.
-
-    Obrigado por escolher {salon_name}! 💈
-    """
+    body = (
+        _("Olá %(client_name)s,")
+        % {"client_name": client_name}
+        + "\n\n"
+        + _(
+            'Seu agendamento para o serviço "%(service_name)s" foi confirmado com sucesso!'
+        )
+        % {"service_name": service_name}
+        + "\n\n"
+        + _("📅 Data e hora: %(formatted_date)s") % {"formatted_date": formatted_date}
+        + "\n\n"
+        + _(
+            "Caso precise remarcar ou cancelar, entre em contato conosco com antecedência."
+        )
+        + "\n\n"
+        + _("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}
+    )
 
     # Cria a mensagem
     message = MIMEMultipart()
@@ -78,21 +85,28 @@ def send_appointment_cancellation_email(
         service_name (str): Nome do serviço
         date_time (datetime): Data e hora do agendamento cancelado
     """
-    subject = "Cancelamento de agendamento"
+    subject = _("Cancelamento de agendamento")
     sender_email = settings.EMAIL_HOST_USER
 
     formatted_date = date_time.strftime("%d/%m/%Y às %H:%M")
 
-    body = f"""
-    Olá {client_name},
-
-    O seu agendamento para o serviço "{service_name}", marcado para {formatted_date}, foi cancelado com sucesso.
-
-    Se você não solicitou esse cancelamento ou deseja remarcar, entre em contato conosco.
-
-    Atenciosamente,
-    Equipe {salon_name} 💈
-    """
+    body = (
+        _("Olá %(client_name)s,")
+        % {"client_name": client_name}
+        + "\n\n"
+        + _(
+            'O seu agendamento para o serviço "%(service_name)s", marcado para %(formatted_date)s, foi cancelado com sucesso.'
+        )
+        % {"service_name": service_name, "formatted_date": formatted_date}
+        + "\n\n"
+        + _(
+            "Se você não solicitou esse cancelamento ou deseja remarcar, entre em contato conosco."
+        )
+        + "\n\n"
+        + _("Atenciosamente,")
+        + "\n"
+        + _("Equipe %(salon_name)s 💈") % {"salon_name": salon_name}
+    )
 
     # Cria a mensagem
     message = MIMEMultipart()
@@ -131,7 +145,7 @@ def send_bulk_appointment_confirmation_email(
         - start_time: datetime
         - professional_name: str (opcional)
     """
-    subject = "Confirmação dos seus agendamentos"
+    subject = _("Confirmação dos seus agendamentos")
     sender_email = settings.EMAIL_HOST_USER
     receiver_email = to_email
 
@@ -163,10 +177,12 @@ def send_bulk_appointment_confirmation_email(
         if prof:
             if ics_link:
                 lines.append(
-                    f"• {formatted_date} — {svc} (com {prof}) — Adicionar ao calendário: {ics_link}"
+                    "• "
+                    + f"{formatted_date} — {svc} (com {prof}) — "
+                    + _("Adicionar ao calendário: %(link)s") % {"link": ics_link}
                 )
                 html_lines.append(
-                    f'<li>{formatted_date} — {svc} (com {prof}) — <a href="{ics_link}">Adicionar ao calendário</a></li>'
+                    f'<li>{formatted_date} — {svc} (com {prof}) — <a href="{ics_link}">{_("Adicionar ao calendário")}</a></li>'
                 )
             else:
                 lines.append(f"• {formatted_date} — {svc} (com {prof})")
@@ -174,38 +190,43 @@ def send_bulk_appointment_confirmation_email(
         else:
             if ics_link:
                 lines.append(
-                    f"• {formatted_date} — {svc} — Adicionar ao calendário: {ics_link}"
+                    "• "
+                    + f"{formatted_date} — {svc} — "
+                    + _("Adicionar ao calendário: %(link)s") % {"link": ics_link}
                 )
                 html_lines.append(
-                    f'<li>{formatted_date} — {svc} — <a href="{ics_link}">Adicionar ao calendário</a></li>'
+                    f'<li>{formatted_date} — {svc} — <a href="{ics_link}">{_("Adicionar ao calendário")}</a></li>'
                 )
             else:
                 lines.append(f"• {formatted_date} — {svc}")
                 html_lines.append(f"<li>{formatted_date} — {svc}</li>")
 
     joined_lines = "\n".join(lines)
-    body = f"""
-    Olá {client_name},
-
-    Seguem as confirmações dos seus agendamentos:
-
-    {joined_lines}
-
-    Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.
-
-    Obrigado por escolher {salon_name}! 💈
-    """
+    body = (
+        _("Olá %(client_name)s,")
+        % {"client_name": client_name}
+        + "\n\n"
+        + _("Seguem as confirmações dos seus agendamentos:")
+        + "\n\n"
+        + joined_lines
+        + "\n\n"
+        + _(
+            "Caso precise remarcar ou cancelar, entre em contato conosco com antecedência."
+        )
+        + "\n\n"
+        + _("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}
+    )
     # Versão HTML (com âncoras)
     html_list = "\n".join(html_lines)
     body_html = f"""
         <div style=\"font-family: Arial, sans-serif; font-size: 14px; color: #222;\">
-          <p>Olá {client_name},</p>
-          <p>Seguem as confirmações dos seus agendamentos:</p>
+          <p>{_("Olá %(client_name)s,") % {"client_name": client_name}}</p>
+          <p>{_("Seguem as confirmações dos seus agendamentos:")}</p>
           <ul style=\"padding-left: 16px;\">
             {html_list}
           </ul>
-          <p>Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.</p>
-          <p>Obrigado por escolher {salon_name}! 💈</p>
+          <p>{_("Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.")}</p>
+          <p>{_("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}}</p>
         </div>
         """
 
@@ -274,14 +295,17 @@ def send_marketing_email(
     )
 
     footer_plain = (
-        f"\n\nSe não deseja receber comunicações de marketing do {salon_name}, "
-        f"acesse: {unsubscribe_link}"
+        "\n\n"
+        + _(
+            "Se não deseja receber comunicações de marketing do %(salon_name)s, acesse: %(link)s"
+        )
+        % {"salon_name": salon_name, "link": unsubscribe_link}
         if unsubscribe_link
         else ""
     )
     footer_html = (
-        f'<p style="margin-top:16px;color:#555;">Se não deseja receber comunicações de marketing do {salon_name}, '
-        f'<a href="{unsubscribe_link}">clique aqui</a>.</p>'
+        f'<p style="margin-top:16px;color:#555;">{_("Se não deseja receber comunicações de marketing do %(salon_name)s, ") % {"salon_name": salon_name}}'
+        + f'<a href="{unsubscribe_link}">{_("clique aqui")}</a>.</p>'
         if unsubscribe_link
         else ""
     )
@@ -348,12 +372,12 @@ Equipe {salon_name}
 
     body_html = f"""
         <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
-          <p>Olá,</p>
+          <p>{_("Olá,")}</p>
           <p>{inviter_line}</p>
-          <p>Para ativar seu acesso, defina sua senha clicando no link abaixo:</p>
-          <p><a href="{accept_url}" target="_blank" rel="noopener">Ativar acesso</a></p>
-          <p style="font-size:12px;color:#555">Se você não esperava este convite, ignore este e-mail.</p>
-          <p>Obrigado,<br/>Equipe {salon_name}</p>
+          <p>{_("Para ativar seu acesso, defina sua senha clicando no link abaixo:")}</p>
+          <p><a href="{accept_url}" target="_blank" rel="noopener">{_("Ativar acesso")}</a></p>
+          <p style="font-size:12px;color:#555">{_("Se você não esperava este convite, ignore este e-mail.")}</p>
+          <p>{_("Obrigado,")}<br/>{_("Equipe %(salon_name)s") % {"salon_name": salon_name}}</p>
         </div>
     """
 
@@ -385,7 +409,7 @@ def send_staff_access_link_email(
     access_url: str,
     salon_name: str = "Salonix",
 ):
-    subject = "Acesso ao painel"
+    subject = _("Acesso ao painel")
     sender_email = settings.EMAIL_HOST_USER
     receiver_email = to_email
 
@@ -398,10 +422,10 @@ Se você não solicitou esta ação, ignore este e-mail.
 
     body_html = f"""
         <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
-          <p>Use o link abaixo para acessar o painel redefinindo sua senha:</p>
-          <p><a href="{access_url}" target="_blank" rel="noopener">Acessar</a></p>
-          <p style="font-size:12px;color:#555">Se você não solicitou esta ação, ignore este e-mail.</p>
-          <p>Obrigado,<br/>Equipe {salon_name}</p>
+          <p>{_("Use o link abaixo para acessar o painel redefinindo sua senha:")}</p>
+          <p><a href="{access_url}" target="_blank" rel="noopener">{_("Acessar")}</a></p>
+          <p style="font-size:12px;color:#555">{_("Se você não solicitou esta ação, ignore este e-mail.")}</p>
+          <p>{_("Obrigado,")}<br/>{_("Equipe %(salon_name)s") % {"salon_name": salon_name}}</p>
         </div>
     """
 
