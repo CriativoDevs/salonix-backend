@@ -57,6 +57,11 @@ class Tenant(models.Model):
     currency = models.CharField(
         max_length=3, default="EUR", help_text="Moeda padrão (ISO 4217)"
     )
+    preferred_language = models.CharField(
+        max_length=10,
+        default="pt-PT",
+        help_text="Idioma preferido do tenant (ex.: pt-PT, en)",
+    )
 
     # Endereço do estabelecimento
     address_street = models.CharField(
@@ -361,6 +366,11 @@ class CustomUser(AbstractUser):
         DARK = "dark", "Dark"
         SYSTEM = "system", "System"
 
+    class LanguagePreference(models.TextChoices):
+        SYSTEM = "system", "System"
+        PT = "pt-PT", "Português"
+        EN = "en", "English"
+
     tenant = models.ForeignKey(
         Tenant,
         on_delete=models.CASCADE,
@@ -382,6 +392,12 @@ class CustomUser(AbstractUser):
         choices=ThemePreference.choices,
         default=ThemePreference.SYSTEM,
         help_text="Preferência de tema do usuário (light/dark/system)",
+    )
+    language_preference = models.CharField(
+        max_length=10,
+        choices=LanguagePreference.choices,
+        default=LanguagePreference.SYSTEM,
+        help_text="Preferência de idioma do usuário (pt-PT/en/system)",
     )
     objects: Any = CustomUserManager()
 

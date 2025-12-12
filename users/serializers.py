@@ -93,6 +93,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "plan",
             "timezone",
             "currency",
+            "preferred_language",
             "feature_flags",
             "branding",
         ]
@@ -577,6 +578,7 @@ class UserSelfSerializer(serializers.Serializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     theme_preference = serializers.CharField(read_only=True)
+    language_preference = serializers.CharField(read_only=True)
 
     def to_representation(self, instance):
         return {
@@ -586,6 +588,7 @@ class UserSelfSerializer(serializers.Serializer):
             "first_name": instance.first_name or "",
             "last_name": instance.last_name or "",
             "theme_preference": instance.theme_preference,
+            "language_preference": getattr(instance, "language_preference", "system"),
         }
 
 
@@ -642,6 +645,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "first_name": user.first_name or "",
                 "last_name": user.last_name or "",
                 "theme_preference": user.theme_preference,
+                "language_preference": getattr(user, "language_preference", "system"),
             },
         }
 
@@ -667,6 +671,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "app_name",
             "timezone",
             "currency",
+            "preferred_language",
             "address_street",
             "address_number",
             "address_complement",
@@ -688,6 +693,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "app_name",
             "timezone",
             "currency",
+            "preferred_language",
             "address_street",
             "address_number",
             "address_complement",
