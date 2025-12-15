@@ -243,6 +243,9 @@ class StripeWebhookView(APIView):
                 price = items[0].get("price")
                 price_id = price.get("id") if isinstance(price, dict) else price
 
+            prev = Subscription.objects.filter(stripe_subscription_id=sub_id).first()
+            prev_price_id = prev.price_id if prev else None
+
             sub, _ = Subscription.objects.update_or_create(
                 stripe_subscription_id=sub_id,
                 defaults={
@@ -253,7 +256,7 @@ class StripeWebhookView(APIView):
                     "current_period_end": cpe_dt,
                 },
             )
-            return sub, cpe_dt
+            return sub, cpe_dt, prev_price_id
 
         def update_feature_flags(user, stripe_sub, current_period_end_dt):
             from users.models import UserFeatureFlags
@@ -345,7 +348,9 @@ class StripeWebhookView(APIView):
                                 sub = sub.to_dict()
                         except Exception:
                             return HttpResponse(status=200)
-                        saved_sub, cpe_dt = upsert_subscription(pc.user, sub)
+                        saved_sub, cpe_dt, _prev_price_id = upsert_subscription(
+                            pc.user, sub
+                        )
                         update_feature_flags(pc.user, sub, cpe_dt)
 
                         try:
@@ -517,8 +522,7 @@ class StripeWebhookView(APIView):
                     .first()
                 )
                 if pc:
-                    # aqui 'data' já é o objeto de assinatura enviado pelo webhook
-                    saved_sub, cpe_dt = upsert_subscription(pc.user, data)
+                    saved_sub, cpe_dt, prev_price_id = upsert_subscription(pc.user, data)
                     update_feature_flags(pc.user, data, cpe_dt)
 
                     try:
@@ -544,6 +548,28 @@ class StripeWebhookView(APIView):
                         )
                         trial_end_ts = data.get("trial_end")
                         subscription_id = data.get("id")
+                        if (
+                            etype == "customer.subscription.updated"
+                            and credits_included > 0
+                            and subscription_id
+                            and prev_price_id != price_id
+                        ):
+                            from users.models import CommLedger
+                            ref = f"plan_change_bonus:{subscription_id}:{price_id}"
+                            exists = CommLedger.objects.filter(
+                                tenant=pc.user.tenant,
+                                transaction_type=CommLedger.TransactionType.BONUS,
+                                reference_id=ref,
+                            ).exists()
+                            if not exists and status in ("active", "trialing", "past_due"):
+                                cs = CreditService(pc.user.tenant)
+                                cs.add_credits(
+                                    amount=credits_included,
+                                    transaction_type="bonus",
+                                    description=f"Créditos incluídos do plano {plan_code} (mudança de plano)",
+                                    reference_id=ref,
+                                    created_by=pc.user,
+                                )
                         if (
                             status == "trialing"
                             and credits_included > 0
