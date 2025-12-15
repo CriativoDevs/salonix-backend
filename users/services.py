@@ -162,3 +162,38 @@ class CreditService:
             "total_consumed": total_consumed,
             "total_bonus": total_bonus,
         }
+
+    @transaction.atomic
+    def expire_credits(
+        self,
+        amount: Decimal,
+        description: str,
+        reference_id: Optional[str] = None,
+        created_by: Optional[Any] = None,
+    ) -> CommLedger:
+        if amount <= 0:
+            raise ValueError("Valor deve ser maior que zero")
+
+        current_balance = self.get_credit_balance()
+        expire_amount = amount if amount <= current_balance else current_balance
+        if expire_amount <= 0:
+            raise ValueError("Saldo insuficiente para expiração")
+
+        new_balance = current_balance - expire_amount
+
+        transaction_record = CommLedger.objects.create(
+            tenant=self.tenant,
+            transaction_type="expiration",
+            amount_eur=expire_amount,
+            balance_before=current_balance,
+            balance_after=new_balance,
+            status="completed",
+            description=description,
+            reference_id=reference_id,
+            created_by=created_by,
+        )
+
+        self.tenant.comm_credit_eur = new_balance
+        self.tenant.save(update_fields=["comm_credit_eur"])
+
+        return transaction_record
