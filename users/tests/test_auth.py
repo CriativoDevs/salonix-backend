@@ -262,7 +262,7 @@ class TestAuthEndpoints:
 
         response = self.client.patch(self.me_profile_url, {})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "theme_preference é obrigatório" in response.data["detail"]
+        assert "Nenhum campo para atualização informado" in response.data["detail"]
 
     def test_update_theme_preference_requires_authentication(self):
         response = self.client.patch(self.me_profile_url, {"theme_preference": "light"})

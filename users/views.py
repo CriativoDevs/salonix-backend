@@ -560,7 +560,7 @@ class MeProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        description="Atualiza preferência de tema do usuário",
+        description="Atualiza preferência de tema do usuário ou status de onboarding",
         request={
             "application/json": {
                 "type": "object",
@@ -569,9 +569,13 @@ class MeProfileView(APIView):
                         "type": "string",
                         "enum": ["light", "dark", "system"],
                         "description": "Preferência de tema do usuário",
+                    },
+                    "onboarding_status": {
+                        "type": "object",
+                        "description": "Status do onboarding do usuário (JSON)",
                     }
                 },
-                "required": ["theme_preference"],
+                "required": [],
             }
         },
         responses={200: UserSelfSerializer},
@@ -579,27 +583,46 @@ class MeProfileView(APIView):
     def patch(self, request):
         user = request.user
         theme_preference = request.data.get("theme_preference")
+        onboarding_status = request.data.get("onboarding_status")
 
-        if not theme_preference:
+        if not theme_preference and onboarding_status is None:
             return Response(
-                {"detail": "theme_preference é obrigatório"},
+                {"detail": "Nenhum campo para atualização informado"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Validar se o valor é válido
-        from .models import CustomUser
+        updated_fields = []
 
-        valid_choices = [choice[0] for choice in CustomUser.ThemePreference.choices]
-        if theme_preference not in valid_choices:
-            return Response(
-                {
-                    "detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if theme_preference:
+            # Validar se o valor é válido
+            from .models import CustomUser
 
-        user.theme_preference = theme_preference
-        user.save(update_fields=["theme_preference"])
+            valid_choices = [choice[0] for choice in CustomUser.ThemePreference.choices]
+            if theme_preference not in valid_choices:
+                return Response(
+                    {
+                        "detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.theme_preference = theme_preference
+            updated_fields.append("theme_preference")
+
+        if onboarding_status is not None:
+            if not isinstance(onboarding_status, dict):
+                return Response(
+                    {"detail": "onboarding_status deve ser um objeto JSON"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            # Merge com o status atual para preservar outros dados de onboarding
+            current_status = user.onboarding_status or {}
+            current_status.update(onboarding_status)
+            user.onboarding_status = current_status
+            updated_fields.append("onboarding_status")
+
+        if updated_fields:
+            user.save(update_fields=updated_fields)
 
         serializer = UserSelfSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)

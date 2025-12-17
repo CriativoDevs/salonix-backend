@@ -399,6 +399,11 @@ class CustomUser(AbstractUser):
         default=LanguagePreference.SYSTEM,
         help_text="Preferência de idioma do usuário (pt-PT/en/system)",
     )
+    onboarding_status = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Status do onboarding do usuário (ex: {'tour_completed': True})"
+    )
     objects: Any = CustomUserManager()
 
     class Meta:
