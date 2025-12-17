@@ -579,6 +579,7 @@ class UserSelfSerializer(serializers.Serializer):
     last_name = serializers.CharField(read_only=True)
     theme_preference = serializers.CharField(read_only=True)
     language_preference = serializers.CharField(read_only=True)
+    onboarding_status = serializers.JSONField(read_only=True)
 
     def to_representation(self, instance):
         return {
@@ -589,6 +590,7 @@ class UserSelfSerializer(serializers.Serializer):
             "last_name": instance.last_name or "",
             "theme_preference": instance.theme_preference,
             "language_preference": getattr(instance, "language_preference", "system"),
+            "onboarding_status": instance.onboarding_status,
         }
 
 

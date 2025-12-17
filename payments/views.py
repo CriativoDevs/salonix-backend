@@ -243,6 +243,9 @@ class StripeWebhookView(APIView):
                 price = items[0].get("price")
                 price_id = price.get("id") if isinstance(price, dict) else price
 
+            prev = Subscription.objects.filter(stripe_subscription_id=sub_id).first()
+            prev_price_id = prev.price_id if prev else None
+
             sub, _ = Subscription.objects.update_or_create(
                 stripe_subscription_id=sub_id,
                 defaults={
@@ -253,7 +256,7 @@ class StripeWebhookView(APIView):
                     "current_period_end": cpe_dt,
                 },
             )
-            return sub, cpe_dt
+            return sub, cpe_dt, prev_price_id
 
         def update_feature_flags(user, stripe_sub, current_period_end_dt):
             from users.models import UserFeatureFlags
@@ -345,8 +348,63 @@ class StripeWebhookView(APIView):
                                 sub = sub.to_dict()
                         except Exception:
                             return HttpResponse(status=200)
-                        saved_sub, cpe_dt = upsert_subscription(pc.user, sub)
+                        saved_sub, cpe_dt, _prev_price_id = upsert_subscription(
+                            pc.user, sub
+                        )
                         update_feature_flags(pc.user, sub, cpe_dt)
+
+                        try:
+                            status = sub.get("status")
+                            items = sub.get("items", {}).get("data", [])
+                            price_id = None
+                            if items:
+                                price = items[0].get("price")
+                                price_id = (
+                                    price.get("id")
+                                    if isinstance(price, dict)
+                                    else price
+                                )
+                            md = sub.get("metadata") or {}
+                            plan_code = md.get("plan_code") or md.get("plan")
+                            if not plan_code:
+                                plan_code = stripe_utils.get_plan_code_from_price(
+                                    price_id
+                                )
+                            plan_info = SubscriptionService.AVAILABLE_PLANS.get(
+                                plan_code or ""
+                            )
+                            credits_included = (
+                                Decimal(str(plan_info.get("credits_included")))
+                                if plan_info
+                                else Decimal("0.00")
+                            )
+                            trial_end_ts = sub.get("trial_end")
+                            if (
+                                status == "trialing"
+                                and credits_included > 0
+                                and trial_end_ts
+                            ):
+                                from users.models import CommLedger
+
+                                ref = f"trial_bonus:{subscription_id}:{trial_end_ts}"
+                                exists = CommLedger.objects.filter(
+                                    tenant=pc.user.tenant,
+                                    transaction_type=CommLedger.TransactionType.BONUS,
+                                    reference_id=ref,
+                                ).exists()
+                                if not exists:
+                                    cs = CreditService(pc.user.tenant)
+                                    cs.add_credits(
+                                        amount=credits_included,
+                                        transaction_type="bonus",
+                                        description=f"Créditos incluídos do plano {plan_code} (trial)",
+                                        reference_id=ref,
+                                        created_by=pc.user,
+                                    )
+                        except Exception:
+                            logger.exception(
+                                "trial bonus grant failed on checkout.session.completed"
+                            )
 
                         # Cancelar assinaturas anteriores ativas do mesmo tenant (apenas se nova estiver ativa/trial)
                         try:
@@ -405,7 +463,9 @@ class StripeWebhookView(APIView):
                         price_id = meta.get("price_id")
                         credits_amount = meta.get("credits_amount")
                         pc = (
-                            PaymentCustomer.objects.filter(stripe_customer_id=customer_id)
+                            PaymentCustomer.objects.filter(
+                                stripe_customer_id=customer_id
+                            )
                             .select_related("user")
                             .first()
                         )
@@ -420,7 +480,9 @@ class StripeWebhookView(APIView):
                                     "amount": Decimal(str(credits_amount or "0")),
                                     "currency": "EUR",
                                     "status": "pending",
-                                    "credits_purchased": Decimal(str(credits_amount or "0")),
+                                    "credits_purchased": Decimal(
+                                        str(credits_amount or "0")
+                                    ),
                                     "metadata": {"created_via": "checkout_session"},
                                 },
                             )
@@ -460,13 +522,204 @@ class StripeWebhookView(APIView):
                     .first()
                 )
                 if pc:
-                    # aqui 'data' já é o objeto de assinatura enviado pelo webhook
-                    saved_sub, cpe_dt = upsert_subscription(pc.user, data)
+                    saved_sub, cpe_dt, prev_price_id = upsert_subscription(pc.user, data)
                     update_feature_flags(pc.user, data, cpe_dt)
 
+                    try:
+                        status = data.get("status")
+                        items = data.get("items", {}).get("data", [])
+                        price_id = None
+                        if items:
+                            price = items[0].get("price")
+                            price_id = (
+                                price.get("id") if isinstance(price, dict) else price
+                            )
+                        md = data.get("metadata") or {}
+                        plan_code = md.get("plan_code") or md.get("plan")
+                        if not plan_code:
+                            plan_code = stripe_utils.get_plan_code_from_price(price_id)
+                        plan_info = SubscriptionService.AVAILABLE_PLANS.get(
+                            plan_code or ""
+                        )
+                        credits_included = (
+                            Decimal(str(plan_info.get("credits_included")))
+                            if plan_info
+                            else Decimal("0.00")
+                        )
+                        trial_end_ts = data.get("trial_end")
+                        subscription_id = data.get("id")
+                        if (
+                            etype == "customer.subscription.updated"
+                            and credits_included > 0
+                            and subscription_id
+                            and prev_price_id != price_id
+                        ):
+                            from users.models import CommLedger
+                            ref = f"plan_change_bonus:{subscription_id}:{price_id}"
+                            exists = CommLedger.objects.filter(
+                                tenant=pc.user.tenant,
+                                transaction_type=CommLedger.TransactionType.BONUS,
+                                reference_id=ref,
+                            ).exists()
+                            if not exists and status in ("active", "trialing", "past_due"):
+                                cs = CreditService(pc.user.tenant)
+                                cs.add_credits(
+                                    amount=credits_included,
+                                    transaction_type="bonus",
+                                    description=f"Créditos incluídos do plano {plan_code} (mudança de plano)",
+                                    reference_id=ref,
+                                    created_by=pc.user,
+                                )
+                        if (
+                            status == "trialing"
+                            and credits_included > 0
+                            and trial_end_ts
+                            and subscription_id
+                        ):
+                            from users.models import CommLedger
+
+                            ref = f"trial_bonus:{subscription_id}:{trial_end_ts}"
+                            exists = CommLedger.objects.filter(
+                                tenant=pc.user.tenant,
+                                transaction_type=CommLedger.TransactionType.BONUS,
+                                reference_id=ref,
+                            ).exists()
+                            if not exists:
+                                cs = CreditService(pc.user.tenant)
+                                cs.add_credits(
+                                    amount=credits_included,
+                                    transaction_type="bonus",
+                                    description=f"Créditos incluídos do plano {plan_code} (trial)",
+                                    reference_id=ref,
+                                    created_by=pc.user,
+                                )
+                        if etype == "customer.subscription.deleted" and subscription_id:
+                            from users.models import CommLedger
+
+                            tenant = pc.user.tenant
+                            ref_prefix = f"trial_bonus:{subscription_id}:"
+                            bonus_entries = CommLedger.objects.filter(
+                                tenant=tenant,
+                                transaction_type=CommLedger.TransactionType.BONUS,
+                                reference_id__startswith=ref_prefix,
+                            )
+                            bonus_total = sum(
+                                (be.amount_eur for be in bonus_entries), Decimal("0.00")
+                            )
+                            if bonus_total > 0:
+                                cs = CreditService(tenant)
+                                current_balance = cs.get_credit_balance()
+                                expire_amount = min(bonus_total, current_balance)
+                                if expire_amount > 0:
+                                    try:
+                                        cs.expire_credits(
+                                            amount=expire_amount,
+                                            description="Expiração de créditos de trial ao cancelar assinatura",
+                                            reference_id=f"trial_expire:{subscription_id}:{trial_end_ts or ''}",
+                                            created_by=pc.user,
+                                        )
+                                    except Exception:
+                                        logger.exception(
+                                            "failed to expire trial bonus on cancellation"
+                                        )
+                                consumed_amount = bonus_total - expire_amount
+                                if consumed_amount > 0:
+                                    try:
+                                        amount_cents = int(
+                                            (consumed_amount * 100).to_integral_value()
+                                        )
+                                        if amount_cents > 0:
+                                            stripe.InvoiceItem.create(
+                                                customer=customer_id,
+                                                currency="eur",
+                                                amount=amount_cents,
+                                                description="Créditos consumidos durante o trial",
+                                            )
+                                            inv = stripe.Invoice.create(
+                                                customer=customer_id, auto_advance=True
+                                            )
+                                            stripe.Invoice.finalize_invoice(inv["id"])
+                                    except Exception:
+                                        logger.exception(
+                                            "failed to invoice consumed trial credits on cancellation"
+                                        )
+                    except Exception:
+                        logger.exception(
+                            "trial bonus/cleanup handling failed on subscription event"
+                        )
+
             elif etype in {"invoice.payment_succeeded", "invoice.payment_failed"}:
-                # opcional: logs/telemetria; assinatura atualiza via customer.subscription.updated
-                pass
+                if etype == "invoice.payment_succeeded":
+                    customer_id = data.get("customer")
+                    subscription_id = data.get("subscription")
+                    amount_paid = data.get("amount_paid") or data.get("total") or 0
+                    if customer_id and subscription_id and amount_paid:
+                        pc = (
+                            PaymentCustomer.objects.filter(
+                                stripe_customer_id=customer_id
+                            )
+                            .select_related("user")
+                            .first()
+                        )
+                        if pc:
+                            try:
+                                sub = stripe.Subscription.retrieve(
+                                    subscription_id, expand=["items.data.price"]
+                                )
+                                if hasattr(sub, "to_dict"):
+                                    sub = sub.to_dict()
+                            except Exception:
+                                sub = None
+                            price_id = None
+                            current_period_end = None
+                            status = None
+                            if isinstance(sub, dict):
+                                status = sub.get("status")
+                                current_period_end = sub.get("current_period_end")
+                                items = sub.get("items", {}).get("data", [])
+                                if items:
+                                    price = items[0].get("price")
+                                    price_id = (
+                                        price.get("id")
+                                        if isinstance(price, dict)
+                                        else price
+                                    )
+                            plan_code = None
+                            if isinstance(sub, dict):
+                                md = sub.get("metadata") or {}
+                                plan_code = md.get("plan_code") or md.get("plan")
+                            if not plan_code:
+                                plan_code = stripe_utils.get_plan_code_from_price(
+                                    price_id
+                                )
+                            plan_info = SubscriptionService.AVAILABLE_PLANS.get(
+                                plan_code or ""
+                            )
+                            credits_included = (
+                                Decimal(str(plan_info.get("credits_included")))
+                                if plan_info
+                                else Decimal("0.00")
+                            )
+                            if credits_included > 0 and current_period_end:
+                                from users.models import CommLedger
+
+                                ref = (
+                                    f"plan_bonus:{subscription_id}:{current_period_end}"
+                                )
+                                exists = CommLedger.objects.filter(
+                                    tenant=pc.user.tenant,
+                                    transaction_type=CommLedger.TransactionType.BONUS,
+                                    reference_id=ref,
+                                ).exists()
+                                if not exists and status in ("active", "past_due"):
+                                    cs = CreditService(pc.user.tenant)
+                                    cs.add_credits(
+                                        amount=credits_included,
+                                        transaction_type="bonus",
+                                        description=f"Créditos incluídos do plano {plan_code}",
+                                        reference_id=ref,
+                                        created_by=pc.user,
+                                    )
             elif etype == "payment_intent.succeeded":
                 try:
                     cp = CreditPayment.objects.get(
@@ -668,7 +921,9 @@ class CreateCreditCheckoutSessionView(APIView):
             or staff_member.role != TenantStaffMember.Role.OWNER
             or staff_member.status != TenantStaffMember.Status.ACTIVE
         ):
-            return Response({"detail": "Apenas OWNER ativo pode comprar créditos."}, status=403)
+            return Response(
+                {"detail": "Apenas OWNER ativo pode comprar créditos."}, status=403
+            )
 
         serializer = CreditPurchaseRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -684,12 +939,16 @@ class CreateCreditCheckoutSessionView(APIView):
 
         price_id = amount_to_price_id.get(amount_eur)
         if not price_id:
-            return Response({"detail": f"Valor não suportado: {amount_eur}"}, status=400)
+            return Response(
+                {"detail": f"Valor não suportado: {amount_eur}"}, status=400
+            )
 
         stripe_client = stripe_utils.get_stripe()
         customer_id = stripe_utils.get_or_create_customer(user)
 
-        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
+            "/"
+        )
         success_url = getattr(settings, "STRIPE_SUCCESS_URL", f"{base}/billing/success")
         cancel_url = getattr(settings, "STRIPE_CANCEL_URL", f"{base}/billing/cancel")
 
@@ -712,7 +971,9 @@ class CreateCreditCheckoutSessionView(APIView):
         }
 
         session = stripe_client.checkout.Session.create(**params)
-        return Response({"checkout_url": session.url, "session_id": session.id}, status=200)
+        return Response(
+            {"checkout_url": session.url, "session_id": session.id}, status=200
+        )
 
 
 class CurrentSubscriptionView(APIView):

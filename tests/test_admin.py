@@ -81,7 +81,7 @@ class TestDjangoAdmin:
         content = response.content.decode()
 
         # Verificar se estatísticas estão presentes
-        assert "Dashboard Salonix" in content
+        assert "Dashboard TimelyOne" in content
         assert "Tenants Ativos" in content
         assert "Total Usuários" in content
         assert "Agendamentos Hoje" in content
@@ -428,4 +428,4 @@ class TestAdminIntegration:
 
         # Verificar se estatísticas são atualizadas
         assert "1" in content  # Pelo menos 1 tenant ativo
-        assert "Dashboard Salonix" in content
+        assert "Dashboard TimelyOne" in content

@@ -401,3 +401,85 @@ def test_checkout_requires_owner_role(monkeypatch, settings):
     resp = c.post(url, {"plan": "standard"}, format="json")
     assert resp.status_code == 403
     assert "Somente OWNER" in resp.data.get("detail", "")
+
+
+@pytest.mark.django_db
+def test_webhook_invoice_payment_succeeded_applies_included_credits(
+    monkeypatch, settings, auth_client
+):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+
+    from payments import views as payments_views
+    from payments import stripe_utils as payments_stripe_utils
+    from users.models import Tenant, CommLedger
+
+    monkeypatch.setattr(payments_views, "stripe", _StripeSDK)
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(name="TB", slug="tb")
+    user.tenant = tenant
+    user.save()
+    PaymentCustomer.objects.create(user=user, stripe_customer_id="cus_test_123")
+
+    assert payments_stripe_utils.get_plan_code_from_price("price_pro_123") == "pro"
+
+    payload1 = json.dumps(
+        {
+            "id": "evt_invoice_1",
+            "type": "invoice.payment_succeeded",
+            "data": {
+                "object": {
+                    "id": "in_1",
+                    "customer": "cus_test_123",
+                    "subscription": "sub_abc",
+                    "amount_paid": 9500,
+                    "total": 9500,
+                }
+            },
+        }
+    )
+    sig = "t=0,v1=deadbeef"
+    url = "/api/payments/stripe/webhook/"
+    resp1 = c.post(
+        url, data=payload1, content_type="application/json", HTTP_STRIPE_SIGNATURE=sig
+    )
+    assert resp1.status_code == 200
+
+    bonus_tx = CommLedger.objects.filter(
+        tenant=tenant, transaction_type=CommLedger.TransactionType.BONUS
+    )
+    assert bonus_tx.count() == 1
+    assert str(bonus_tx.first().amount_eur) == "25.00"
+
+    tenant.refresh_from_db()
+    assert str(tenant.comm_credit_eur) == "25.00"
+
+    payload2 = json.dumps(
+        {
+            "id": "evt_invoice_2",
+            "type": "invoice.payment_succeeded",
+            "data": {
+                "object": {
+                    "id": "in_1",
+                    "customer": "cus_test_123",
+                    "subscription": "sub_abc",
+                    "amount_paid": 9500,
+                    "total": 9500,
+                }
+            },
+        }
+    )
+    resp2 = c.post(
+        url, data=payload2, content_type="application/json", HTTP_STRIPE_SIGNATURE=sig
+    )
+    assert resp2.status_code == 200
+
+    bonus_tx = CommLedger.objects.filter(
+        tenant=tenant, transaction_type=CommLedger.TransactionType.BONUS
+    )
+    assert bonus_tx.count() == 1
+    tenant.refresh_from_db()
+    assert str(tenant.comm_credit_eur) == "25.00"

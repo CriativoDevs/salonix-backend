@@ -246,9 +246,12 @@ class ReportsSummaryView(APIView):
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
-        # Filtrar appointments por período
+        # Filtrar appointments por período e por tenant
         appointments_qs = Appointment.objects.filter(
-            **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+            **date_gte,
+            **date_lte,
+            status__in=COMPLETED_STATUSES,
+            tenant=getattr(request.user, "tenant", None),
         )
 
         # Calcular total de appointments
@@ -352,7 +355,11 @@ class OverviewReportView(_BaseReports):
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
-        qs = Appointment.objects.filter(**date_gte, **date_lte)
+        qs = Appointment.objects.filter(
+            **date_gte,
+            **date_lte,
+            tenant=getattr(request.user, "tenant", None),
+        )
         total = qs.count()
         done = qs.filter(status__in=COMPLETED_STATUSES)
         done_count = done.count()
@@ -398,9 +405,15 @@ class TopServicesReportView(_BaseReports):
         date_lte = {f"{DATE_FIELD}__lte": end}
         limit, offset = _get_limit_offset(request)
 
-        base = Appointment.objects.filter(
-            **date_gte, **date_lte, status__in=COMPLETED_STATUSES
-        ).values("service_id", "service__name")
+        base = (
+            Appointment.objects.filter(
+                **date_gte,
+                **date_lte,
+                status__in=COMPLETED_STATUSES,
+                tenant=getattr(request.user, "tenant", None),
+            )
+            .values("service_id", "service__name")
+        )
 
         # agregados
         if APPT_PRICE_FIELD:
@@ -469,7 +482,10 @@ class RevenueReportView(_BaseReports):
 
         base = (
             Appointment.objects.filter(
-                **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+                **date_gte,
+                **date_lte,
+                status__in=COMPLETED_STATUSES,
+                tenant=getattr(request.user, "tenant", None),
             )
             .annotate(bucket=trunc(DATE_FIELD))
             .values("bucket")
@@ -534,7 +550,11 @@ class ExportOverviewCSVView(_BaseReports):
             date_lte = {f"{DATE_FIELD}__lte": end}
 
             try:
-                base_qs = Appointment.objects.filter(**date_gte, **date_lte)
+                base_qs = Appointment.objects.filter(
+                    **date_gte,
+                    **date_lte,
+                    tenant=getattr(request.user, "tenant", None),
+                )
                 total_count = base_qs.count()
 
                 done_qs = base_qs.filter(status__in=COMPLETED_STATUSES)
