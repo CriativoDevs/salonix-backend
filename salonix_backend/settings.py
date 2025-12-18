@@ -181,7 +181,7 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
         ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://5204f9eb7018.ngrok-free.app",
+    "https://297c0f3af756.ngrok-free.app",
 ]
 
 # opcional: flag ligada por padrão
@@ -339,9 +339,9 @@ REST_FRAMEWORK = {
         "tenant_meta_public": env_get(
             "USERS_TENANT_META_PUBLIC",
             (
-                "300/min"
+                "1000/min"
                 if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
-                else "60/min"
+                else "1000/min"
             ),
         ),
         # staff convites e reenvio
