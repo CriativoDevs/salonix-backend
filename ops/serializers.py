@@ -139,8 +139,44 @@ class OpsTokenRefreshSerializer(serializers.Serializer):
 class OpsUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "username", "ops_role", "is_active"]
+        fields = ["id", "email", "username", "ops_role", "is_active", "last_login"]
         read_only_fields = fields
+
+
+class OpsUserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ["id", "email", "username", "password", "ops_role", "is_active"]
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Este email já está em uso.")
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        # Ensure is_staff is True via model save() logic when ops_role is set
+        user = User.objects.create_user(password=password, **validated_data)
+        return user
+
+
+class OpsUserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["email", "username", "ops_role", "is_active"]
+
+    def validate_email(self, value):
+        # Unique email check excluding current user
+        user = self.instance
+        if (
+            User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists()
+            if user
+            else User.objects.filter(email__iexact=value).exists()
+        ):
+            raise serializers.ValidationError("Este email já está em uso.")
+        return value
 
 
 class OpsTenantSerializer(serializers.ModelSerializer):

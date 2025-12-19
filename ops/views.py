@@ -45,6 +45,8 @@ from ops.serializers import (
     OpsTokenObtainPairSerializer,
     OpsTokenRefreshSerializer,
     OpsUserSerializer,
+    OpsUserCreateSerializer,
+    OpsUserUpdateSerializer,
 )
 from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import ErrorCodes, TenantError
@@ -685,12 +687,24 @@ class OpsSupportViewSet(viewsets.ViewSet):
             )
 
 
-class OpsUserViewSet(viewsets.ReadOnlyModelViewSet):
+class OpsUserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsOpsSupportOrAdmin]
     serializer_class = OpsUserSerializer
     queryset = CustomUser.objects.filter(
         ops_role__in=[CustomUser.OpsRoles.OPS_ADMIN, CustomUser.OpsRoles.OPS_SUPPORT]
     )
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return OpsUserCreateSerializer
+        if self.action in ["update", "partial_update"]:
+            return OpsUserUpdateSerializer
+        return OpsUserSerializer
+
+    def get_permissions(self):
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsOpsAdmin()]
+        return [IsOpsSupportOrAdmin()]
 
     @extend_schema(
         description="Lista usuários com acesso ao console Ops",
