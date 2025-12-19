@@ -12,20 +12,13 @@ from users.models import CustomUser
 
 
 @pytest.mark.django_db
-@patch("ops.views.NotificationService")
 def test_resend_notification_success(
-    mock_notification_service,
     api_client,
     ops_user_factory,
     ops_authenticate,
     tenant_with_owner_factory,
 ):
-    # Mock the notification service to return success
-    mock_service_instance = mock_notification_service.return_value
-    mock_service_instance.send_notification.return_value = {
-        "sms": True
-    }  # Retornar dict com canal
-
+    # Setup test data
     support_user = ops_user_factory(
         CustomUser.OpsRoles.OPS_SUPPORT, "support_ops@example.com"
     )
@@ -46,7 +39,7 @@ def test_resend_notification_success(
 
     access = ops_authenticate(support_user.email)
     response = api_client.post(
-        reverse("ops_support_resend_notification"),
+        reverse("ops-support-resend-notification"),
         {"notification_id": failed_log.id},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -84,7 +77,7 @@ def test_resend_notification_requires_failed_status(
 
     access = ops_authenticate(support_user.email)
     response = api_client.post(
-        reverse("ops_support_resend_notification"),
+        reverse("ops-support-resend-notification"),
         {"notification_id": log.id},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -114,7 +107,7 @@ def test_clear_lockout_marks_resolved(
 
     access = ops_authenticate(admin.email)
     response = api_client.post(
-        reverse("ops_support_clear_lockout"),
+        reverse("ops-support-clear-lockout"),
         {"lockout_id": lockout.id, "note": "Unlock manual"},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -149,7 +142,7 @@ def test_support_cannot_clear_lockout(
 
     access = ops_authenticate(support_user.email)
     response = api_client.post(
-        reverse("ops_support_clear_lockout"),
+        reverse("ops-support-clear-lockout"),
         {"lockout_id": lockout.id},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",

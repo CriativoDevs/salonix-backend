@@ -13,7 +13,12 @@ from rest_framework.exceptions import (
     PermissionDenied,
 )
 
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiParameter
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiExample,
+    OpenApiResponse,
+    OpenApiParameter,
+)
 from drf_spectacular.types import OpenApiTypes
 
 from rest_framework.exceptions import NotFound
@@ -573,7 +578,7 @@ class MeProfileView(APIView):
                     "onboarding_status": {
                         "type": "object",
                         "description": "Status do onboarding do usuário (JSON)",
-                    }
+                    },
                 },
                 "required": [],
             }
@@ -614,7 +619,7 @@ class MeProfileView(APIView):
                     {"detail": "onboarding_status deve ser um objeto JSON"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            
+
             # Merge com o status atual para preservar outros dados de onboarding
             current_status = user.onboarding_status or {}
             current_status.update(onboarding_status)

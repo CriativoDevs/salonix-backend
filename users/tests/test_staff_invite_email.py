@@ -46,7 +46,10 @@ def test_invite_sends_email_and_metrics(monkeypatch):
     client = APIClient()
     client.force_authenticate(user=owner)
     url = reverse("tenant_staff")
-    payload = {"email": "collab@test.local", "role": TenantStaffMember.Role.COLLABORATOR}
+    payload = {
+        "email": "collab@test.local",
+        "role": TenantStaffMember.Role.COLLABORATOR,
+    }
     response = client.post(url, payload, format="json")
 
     assert response.status_code == status.HTTP_201_CREATED
@@ -57,7 +60,9 @@ def test_invite_sends_email_and_metrics(monkeypatch):
     # Assert counter increment for success invite
     samples = fake_counter.collect()[0].samples
     invite_success = [
-        s for s in samples if s.labels.get("event") == "invite" and s.labels.get("result") == "success"
+        s
+        for s in samples
+        if s.labels.get("event") == "invite" and s.labels.get("result") == "success"
     ]
     assert invite_success and invite_success[0].value == 1
 
@@ -116,7 +121,8 @@ def test_accept_invite_increments_metrics(monkeypatch):
     # Assert counter increment for accept success
     samples = fake_counter.collect()[0].samples
     accept_success = [
-        s for s in samples if s.labels.get("event") == "accept" and s.labels.get("result") == "success"
+        s
+        for s in samples
+        if s.labels.get("event") == "accept" and s.labels.get("result") == "success"
     ]
     assert accept_success and accept_success[0].value == 1
-

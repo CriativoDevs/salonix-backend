@@ -42,4 +42,3 @@ def test_fallback_to_tenant_when_user_system_and_no_header(user_fixture):
     resp = client.get("/api/users/me/profile/")
     assert resp.status_code == 200
     assert resp["Content-Language"] == "en"
-

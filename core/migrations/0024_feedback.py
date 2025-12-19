@@ -63,11 +63,17 @@ class Migration(migrations.Migration):
                 "ordering": ("-created_at", "id"),
                 "indexes": [
                     models.Index(fields=["tenant"], name="core_feedback_tenant_idx"),
-                    models.Index(fields=["tenant", "category"], name="core_feedback_cat_idx"),
-                    models.Index(fields=["tenant", "rating"], name="core_feedback_rating_idx"),
-                    models.Index(fields=["tenant", "created_at"], name="core_feedback_created_idx"),
+                    models.Index(
+                        fields=["tenant", "category"], name="core_feedback_cat_idx"
+                    ),
+                    models.Index(
+                        fields=["tenant", "rating"], name="core_feedback_rating_idx"
+                    ),
+                    models.Index(
+                        fields=["tenant", "created_at"],
+                        name="core_feedback_created_idx",
+                    ),
                 ],
             },
         ),
     ]
-

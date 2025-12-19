@@ -7,14 +7,16 @@ from ops.views import (
     OpsAuthMeView,
     OpsAuthRefreshView,
     OpsMetricsOverviewView,
-    OpsSupportClearLockoutView,
-    OpsSupportResendNotificationView,
     OpsTenantViewSet,
+    OpsUserViewSet,
+    OpsSupportViewSet,
 )
 
 router = SimpleRouter()
 router.register("tenants", OpsTenantViewSet, basename="ops-tenants")
 router.register("alerts", OpsAlertViewSet, basename="ops-alerts")
+router.register("users", OpsUserViewSet, basename="ops-users")
+router.register("support", OpsSupportViewSet, basename="ops-support")
 
 urlpatterns = [
     path("auth/login/", OpsAuthLoginView.as_view(), name="ops_auth_login"),
@@ -24,16 +26,6 @@ urlpatterns = [
         "metrics/overview/",
         OpsMetricsOverviewView.as_view(),
         name="ops_metrics_overview",
-    ),
-    path(
-        "support/resend-notification/",
-        OpsSupportResendNotificationView.as_view(),
-        name="ops_support_resend_notification",
-    ),
-    path(
-        "support/clear-lockout/",
-        OpsSupportClearLockoutView.as_view(),
-        name="ops_support_clear_lockout",
     ),
 ]
 

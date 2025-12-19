@@ -139,7 +139,7 @@ class OpsTokenRefreshSerializer(serializers.Serializer):
 class OpsUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "username", "ops_role"]
+        fields = ["id", "email", "username", "ops_role", "is_active"]
         read_only_fields = fields
 
 
@@ -234,7 +234,8 @@ class OpsTenantSerializer(serializers.ModelSerializer):
 
 class OpsTenantResetOwnerSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    username = serializers.CharField()
+    username = serializers.CharField(required=False)
+    name = serializers.CharField(required=False)
 
     def validate_email(self, value: str) -> str:
         # Verifica se email já existe em outro tenant?
@@ -273,7 +274,10 @@ class OpsAlertSerializer(serializers.ModelSerializer):
 
 class OpsResendNotificationSerializer(serializers.Serializer):
     notification_id = serializers.IntegerField()
+    channel = serializers.CharField(required=False)
 
 
 class OpsClearLockoutSerializer(serializers.Serializer):
-    lockout_id = serializers.IntegerField()
+    lockout_id = serializers.IntegerField(required=False)
+    user_id = serializers.IntegerField(required=False)
+    ip_address = serializers.IPAddressField(required=False)

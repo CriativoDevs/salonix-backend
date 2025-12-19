@@ -34,7 +34,9 @@ class TestTenantProfileEndpoint:
         return tenant, owner
 
     def test_get_profile_with_query_param_and_owner_fallback(self):
-        tenant, _owner = self._create_tenant_with_owner(contact_email=None, contact_phone="+351911111111")
+        tenant, _owner = self._create_tenant_with_owner(
+            contact_email=None, contact_phone="+351911111111"
+        )
 
         url = reverse("tenant_profile")
         resp = self.client.get(url, {"tenant": tenant.slug})
@@ -46,7 +48,9 @@ class TestTenantProfileEndpoint:
         assert data["email"] == "owner@example.com"
 
     def test_get_profile_with_header(self):
-        tenant, _owner = self._create_tenant_with_owner(contact_email="salon@example.com", contact_phone=None)
+        tenant, _owner = self._create_tenant_with_owner(
+            contact_email="salon@example.com", contact_phone=None
+        )
 
         url = reverse("tenant_profile")
         resp = self.client.get(url, HTTP_X_TENANT_SLUG=tenant.slug)
@@ -63,14 +67,22 @@ class TestTenantProfileEndpoint:
         assert "error" in resp.data
 
     def test_patch_requires_auth(self):
-        tenant, _owner = self._create_tenant_with_owner(contact_email="old@example.com", contact_phone="+351900000000")
+        tenant, _owner = self._create_tenant_with_owner(
+            contact_email="old@example.com", contact_phone="+351900000000"
+        )
 
         url = reverse("tenant_profile")
-        resp = self.client.patch(url, {"profile": {"email": "new@example.com", "phone": "+351912345678"}}, format="json")
+        resp = self.client.patch(
+            url,
+            {"profile": {"email": "new@example.com", "phone": "+351912345678"}},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_patch_denied_for_collaborator(self):
-        tenant, owner = self._create_tenant_with_owner(contact_email="old@example.com", contact_phone="+351900000000")
+        tenant, owner = self._create_tenant_with_owner(
+            contact_email="old@example.com", contact_phone="+351900000000"
+        )
         # Criar colaborador associado ao mesmo tenant
         collab = CustomUser.objects.create_user(
             username="collab",
@@ -88,15 +100,18 @@ class TestTenantProfileEndpoint:
         # Autenticar como colaborador
         self.client.force_authenticate(user=collab)
         url = reverse("tenant_profile")
-        resp = self.client.patch(url, {"profile": {"email": "new@example.com"}}, format="json")
+        resp = self.client.patch(
+            url, {"profile": {"email": "new@example.com"}}, format="json"
+        )
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
         # Sanity: como owner deve permitir
         self.client.force_authenticate(user=owner)
-        resp2 = self.client.patch(url, {"profile": {"email": "new@example.com", "phone": ""}}, format="json")
+        resp2 = self.client.patch(
+            url, {"profile": {"email": "new@example.com", "phone": ""}}, format="json"
+        )
         assert resp2.status_code == status.HTTP_200_OK
         data = resp2.data["profile"]
         assert data["email"] == "new@example.com"
         # Phone vazio deve resultar em None
         assert data["phone"] is None
-

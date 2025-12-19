@@ -133,9 +133,15 @@ class BillingOverviewSerializer(serializers.Serializer):
         help_text="Próximo valor a ser cobrado",
         allow_null=True,
     )
-    trial_eligible = serializers.BooleanField(help_text="Se é elegível ao período de teste")
-    trial_days = serializers.IntegerField(help_text="Dias de teste configurados", default=0)
-    trial_exhausted = serializers.BooleanField(help_text="Se o período de teste já foi utilizado")
+    trial_eligible = serializers.BooleanField(
+        help_text="Se é elegível ao período de teste"
+    )
+    trial_days = serializers.IntegerField(
+        help_text="Dias de teste configurados", default=0
+    )
+    trial_exhausted = serializers.BooleanField(
+        help_text="Se o período de teste já foi utilizado"
+    )
 
 
 class SubscriptionActionSerializer(serializers.Serializer):

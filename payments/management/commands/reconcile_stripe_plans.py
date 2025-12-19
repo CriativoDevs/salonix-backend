@@ -19,9 +19,7 @@ class Command(BaseCommand):
 
     def _get_any_user(self, tenant: Tenant) -> Optional[object]:
         User = get_user_model()
-        return (
-            User.objects.filter(tenant=tenant).order_by("id").first()
-        )
+        return User.objects.filter(tenant=tenant).order_by("id").first()
 
     def handle(self, *args, **options):
         only_slug = options.get("only_slug")

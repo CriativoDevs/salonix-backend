@@ -27,8 +27,7 @@ def send_appointment_confirmation_email(
     formatted_date = date_time.strftime("%d/%m/%Y às %H:%M")
 
     body = (
-        _("Olá %(client_name)s,")
-        % {"client_name": client_name}
+        _("Olá %(client_name)s,") % {"client_name": client_name}
         + "\n\n"
         + _(
             'Seu agendamento para o serviço "%(service_name)s" foi confirmado com sucesso!'
@@ -91,8 +90,7 @@ def send_appointment_cancellation_email(
     formatted_date = date_time.strftime("%d/%m/%Y às %H:%M")
 
     body = (
-        _("Olá %(client_name)s,")
-        % {"client_name": client_name}
+        _("Olá %(client_name)s,") % {"client_name": client_name}
         + "\n\n"
         + _(
             'O seu agendamento para o serviço "%(service_name)s", marcado para %(formatted_date)s, foi cancelado com sucesso.'
@@ -203,8 +201,7 @@ def send_bulk_appointment_confirmation_email(
 
     joined_lines = "\n".join(lines)
     body = (
-        _("Olá %(client_name)s,")
-        % {"client_name": client_name}
+        _("Olá %(client_name)s,") % {"client_name": client_name}
         + "\n\n"
         + _("Seguem as confirmações dos seus agendamentos:")
         + "\n\n"

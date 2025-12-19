@@ -25,9 +25,7 @@ class CacheInvalidateView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     class CacheInvalidateRequest(serializers.Serializer):
-        prefixes = serializers.ListField(
-            child=serializers.CharField(), required=True
-        )
+        prefixes = serializers.ListField(child=serializers.CharField(), required=True)
 
     @extend_schema(
         tags=["Reports • Admin"],
