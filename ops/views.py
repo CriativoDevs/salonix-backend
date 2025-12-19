@@ -46,6 +46,7 @@ from ops.serializers import (
     OpsTenantSerializer,
     OpsTokenObtainPairSerializer,
     OpsTokenRefreshSerializer,
+    OpsUserSerializer,
 )
 from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import BusinessError, ErrorCodes, TenantError
@@ -144,6 +145,18 @@ class OpsAuthLoginView(APIView):
                 **extra,
             },
         )
+
+
+class OpsAuthMeView(APIView):
+    permission_classes = [IsOpsSupportOrAdmin]
+
+    @extend_schema(
+        responses=OpsUserSerializer,
+        description="Retorna detalhes do usuário Ops autenticado",
+    )
+    def get(self, request, *args: Any, **kwargs: Any) -> Response:
+        serializer = OpsUserSerializer(request.user)
+        return Response(serializer.data)
 
 
 class OpsAuthRefreshView(APIView):
@@ -426,8 +439,8 @@ class OpsTenantViewSet(
                     item.get("is_active"),
                     item.get("user_counts", {}).get("total"),
                     item.get("user_counts", {}).get("active"),
-                    item.get("notification_consumption", {}).get("sms_total"),
-                    item.get("notification_consumption", {}).get("whatsapp_total"),
+                    item.get("notification_consumption", {}).get("sms"),
+                    item.get("notification_consumption", {}).get("whatsapp"),
                     history.get("last_login"),
                     history.get("trial_until"),
                     item.get("created_at"),
@@ -615,7 +628,9 @@ class OpsTenantViewSet(
 class OpsMetricsOverviewView(APIView):
     permission_classes = [IsOpsSupportOrAdmin]
 
-    @extend_schema(responses=OpenApiTypes.OBJECT, description="Resumo de métricas da plataforma")
+    @extend_schema(
+        responses=OpenApiTypes.OBJECT, description="Resumo de métricas da plataforma"
+    )
     def get(self, request, *args: Any, **kwargs: Any) -> Response:
         now = timezone.now()
 
@@ -758,7 +773,7 @@ class OpsSupportResendNotificationView(APIView):
     def post(self, request, *args: Any, **kwargs: Any) -> Response:
         serializer = OpsResendNotificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        log_id = serializer.validated_data["notification_log_id"]
+        log_id = serializer.validated_data["notification_id"]
 
         try:
             log = NotificationLog.objects.select_related("tenant", "user").get(

@@ -47,7 +47,7 @@ def test_resend_notification_success(
     access = ops_authenticate(support_user.email)
     response = api_client.post(
         reverse("ops_support_resend_notification"),
-        {"notification_log_id": failed_log.id},
+        {"notification_id": failed_log.id},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
     )
@@ -85,7 +85,7 @@ def test_resend_notification_requires_failed_status(
     access = ops_authenticate(support_user.email)
     response = api_client.post(
         reverse("ops_support_resend_notification"),
-        {"notification_log_id": log.id},
+        {"notification_id": log.id},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
     )

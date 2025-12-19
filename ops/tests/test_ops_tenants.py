@@ -54,8 +54,8 @@ class TestOpsTenantsEndpoints:
 
         assert tenant_data["plan_tier"] == Tenant.PLAN_PRO
         assert tenant_data["user_counts"]["total"] == 1
-        assert tenant_data["notification_consumption"]["sms_total"] == 1
-        assert tenant_data["notification_consumption"]["whatsapp_total"] == 1
+        assert tenant_data["notification_consumption"]["sms"] == 1
+        assert tenant_data["notification_consumption"]["whatsapp"] == 1
         assert tenant_data["owner"]["email"].endswith("@owner.test")
 
     def test_filters_and_ordering(

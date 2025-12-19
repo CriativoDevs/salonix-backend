@@ -4,6 +4,7 @@ from rest_framework.routers import SimpleRouter
 from ops.views import (
     OpsAlertViewSet,
     OpsAuthLoginView,
+    OpsAuthMeView,
     OpsAuthRefreshView,
     OpsMetricsOverviewView,
     OpsSupportClearLockoutView,
@@ -18,6 +19,7 @@ router.register("alerts", OpsAlertViewSet, basename="ops-alerts")
 urlpatterns = [
     path("auth/login/", OpsAuthLoginView.as_view(), name="ops_auth_login"),
     path("auth/refresh/", OpsAuthRefreshView.as_view(), name="ops_auth_refresh"),
+    path("auth/me/", OpsAuthMeView.as_view(), name="ops_auth_me"),
     path(
         "metrics/overview/",
         OpsMetricsOverviewView.as_view(),

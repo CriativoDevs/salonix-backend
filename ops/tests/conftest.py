@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import CustomUser, Tenant, UserFeatureFlags
+from users.models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def ops_authenticate(api_client):
     def authenticate(email: str, password: str = "OpsPass123!") -> str:
         response = api_client.post(
             reverse("ops_auth_login"),
-            {"email": email, "password": password},
+            {"username": email, "password": password},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
@@ -79,6 +79,13 @@ def tenant_with_owner_factory(db):
         owner.last_login = timezone.now() - timedelta(days=1)
         owner.phone_number = "+351999000111"
         owner.save(update_fields=["last_login", "phone_number"])
+
+        TenantStaffMember.objects.create(
+            tenant=tenant,
+            user=owner,
+            role=TenantStaffMember.Role.OWNER,
+            status=TenantStaffMember.Status.ACTIVE,
+        )
 
         UserFeatureFlags.objects.update_or_create(
             user=owner,
