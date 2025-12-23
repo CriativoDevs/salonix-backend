@@ -23,10 +23,13 @@ class Migration(migrations.Migration):
             field=models.CharField(
                 max_length=10,
                 default="system",
-                choices=[("system", "System"), ("pt-PT", "Português"), ("en", "English")],
+                choices=[
+                    ("system", "System"),
+                    ("pt-PT", "Português"),
+                    ("en", "English"),
+                ],
                 help_text="Preferência de idioma do usuário (pt-PT/en/system)",
             ),
             preserve_default=True,
         ),
     ]
-

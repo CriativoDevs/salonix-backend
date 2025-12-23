@@ -187,7 +187,13 @@ urlpatterns = [
         name="import-template",
     ),
     # Export CSV
-    path("export/customers.csv", ExportCustomersCSVView.as_view(), name="export-customers"),
-    path("export/services.csv", ExportServicesCSVView.as_view(), name="export-services"),
+    path(
+        "export/customers.csv",
+        ExportCustomersCSVView.as_view(),
+        name="export-customers",
+    ),
+    path(
+        "export/services.csv", ExportServicesCSVView.as_view(), name="export-services"
+    ),
     path("export/staff.csv", ExportStaffCSVView.as_view(), name="export-staff"),
 ]

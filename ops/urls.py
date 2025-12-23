@@ -4,34 +4,30 @@ from rest_framework.routers import SimpleRouter
 from ops.views import (
     OpsAlertViewSet,
     OpsAuthLoginView,
+    OpsAuthMeView,
     OpsAuthRefreshView,
     OpsMetricsOverviewView,
-    OpsSupportClearLockoutView,
-    OpsSupportResendNotificationView,
     OpsTenantViewSet,
+    OpsUserViewSet,
+    OpsSupportViewSet,
+    OpsSupportAuditLogViewSet,
 )
 
 router = SimpleRouter()
 router.register("tenants", OpsTenantViewSet, basename="ops-tenants")
 router.register("alerts", OpsAlertViewSet, basename="ops-alerts")
+router.register("users", OpsUserViewSet, basename="ops-users")
+router.register("support", OpsSupportViewSet, basename="ops-support")
+router.register("audit-logs", OpsSupportAuditLogViewSet, basename="ops-audit-logs")
 
 urlpatterns = [
     path("auth/login/", OpsAuthLoginView.as_view(), name="ops_auth_login"),
     path("auth/refresh/", OpsAuthRefreshView.as_view(), name="ops_auth_refresh"),
+    path("auth/me/", OpsAuthMeView.as_view(), name="ops_auth_me"),
     path(
         "metrics/overview/",
         OpsMetricsOverviewView.as_view(),
         name="ops_metrics_overview",
-    ),
-    path(
-        "support/resend-notification/",
-        OpsSupportResendNotificationView.as_view(),
-        name="ops_support_resend_notification",
-    ),
-    path(
-        "support/clear-lockout/",
-        OpsSupportClearLockoutView.as_view(),
-        name="ops_support_clear_lockout",
     ),
 ]
 

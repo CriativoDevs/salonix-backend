@@ -100,7 +100,9 @@ class FeedbackCreateThrottle(_BaseUsersThrottle):
             except Exception:
                 pass
 
-        if tenant_id and getattr(getattr(request, "user", None), "is_authenticated", False):
+        if tenant_id and getattr(
+            getattr(request, "user", None), "is_authenticated", False
+        ):
             try:
                 ident = f"{int(tenant_id)}:{int(request.user.pk)}"
                 return self.cache_format % {"scope": self.scope, "ident": ident}

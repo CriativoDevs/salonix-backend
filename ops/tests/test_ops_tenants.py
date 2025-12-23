@@ -46,16 +46,19 @@ class TestOpsTenantsEndpoints:
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert "results" in response.data
 
-        tenant_data = next(
-            item for item in response.data["results"] if item["id"] == tenant.id
+        results = (
+            response.data.get("results")
+            if isinstance(response.data, dict)
+            else response.data
         )
+
+        tenant_data = next(item for item in results if item["id"] == tenant.id)
 
         assert tenant_data["plan_tier"] == Tenant.PLAN_PRO
         assert tenant_data["user_counts"]["total"] == 1
-        assert tenant_data["notification_consumption"]["sms_total"] == 1
-        assert tenant_data["notification_consumption"]["whatsapp_total"] == 1
+        assert tenant_data["notification_consumption"]["sms"] == 1
+        assert tenant_data["notification_consumption"]["whatsapp"] == 1
         assert tenant_data["owner"]["email"].endswith("@owner.test")
 
     def test_filters_and_ordering(
@@ -90,7 +93,14 @@ class TestOpsTenantsEndpoints:
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_200_OK
-        ids = [item["id"] for item in response.data["results"]]
+
+        results = (
+            response.data.get("results")
+            if isinstance(response.data, dict)
+            else response.data
+        )
+        ids = [item["id"] for item in results]
+
         assert tenant_basic.id in ids
         assert tenant_pro.id not in ids
 
@@ -100,7 +110,13 @@ class TestOpsTenantsEndpoints:
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_200_OK
-        first = response.data["results"][0]
+
+        results_ordered = (
+            response.data.get("results")
+            if isinstance(response.data, dict)
+            else response.data
+        )
+        first = results_ordered[0]
         assert first["id"] == tenant_pro.id
 
     def test_export_csv_sets_headers(
@@ -146,18 +162,19 @@ class TestOpsTenantsEndpoints:
         )
 
         access = ops_authenticate(admin.email)
-        url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
+        url = reverse("ops-tenants-update-plan", kwargs={"id": tenant.id})
 
-        response = api_client.patch(
+        response = api_client.post(
             url,
             {"plan_tier": Tenant.PLAN_STANDARD},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "conflicts" in response.data["error"]["details"]
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "conflicts" in response.data
+        assert len(response.data["conflicts"]) > 0
 
-        response = api_client.patch(
+        response = api_client.post(
             url,
             {"plan_tier": Tenant.PLAN_STANDARD, "force": True},
             format="json",
@@ -182,7 +199,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(admin.email)
 
         block_resp = api_client.post(
-            reverse("ops-tenants-block-tenant", kwargs={"pk": tenant.id}),
+            reverse("ops-tenants-block-tenant", kwargs={"id": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert block_resp.status_code == status.HTTP_200_OK
@@ -190,7 +207,7 @@ class TestOpsTenantsEndpoints:
         assert tenant.is_active is False
 
         unblock_resp = api_client.post(
-            reverse("ops-tenants-unblock-tenant", kwargs={"pk": tenant.id}),
+            reverse("ops-tenants-unblock-tenant", kwargs={"id": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert unblock_resp.status_code == status.HTTP_200_OK
@@ -211,7 +228,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(support.email)
 
         response = api_client.post(
-            reverse("ops-tenants-block-tenant", kwargs={"pk": tenant.id}),
+            reverse("ops-tenants-block-tenant", kwargs={"id": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -229,7 +246,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(admin.email)
 
         response = api_client.post(
-            reverse("ops-tenants-reset-owner", kwargs={"pk": tenant.id}),
+            reverse("ops-tenants-reset-owner", kwargs={"id": tenant.id}),
             {"email": "new.owner@example.com", "username": "newowner"},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -237,12 +254,12 @@ class TestOpsTenantsEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.data
         assert data["email"] == "new.owner@example.com"
-        assert "temporary_password" in data
+        assert "password" in data
 
         owner.refresh_from_db()
         assert owner.email == "new.owner@example.com"
         assert owner.username == "newowner"
-        temp_password = data["temporary_password"]
+        temp_password = data["password"]
 
         token_response = api_client.post(
             reverse("token_obtain_pair"),

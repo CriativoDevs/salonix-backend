@@ -4,13 +4,16 @@ import logging
 from typing import Any, Dict, Optional
 
 from django.contrib.auth import get_user_model
+from django.db.models import Count
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.settings import api_settings
 
-from ops.models import OpsAlert
+from ops.models import OpsAlert, OpsSupportAuditLog
+from notifications.models import NotificationLog
 from users.models import Tenant
 
 User = get_user_model()
@@ -39,20 +42,29 @@ def _base_ops_token_claims(
 
 
 class OpsTokenObtainPairSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
-        email = attrs.get("email")
+        username = attrs.get("username")
         password = attrs.get("password")
 
-        if not email or not password:
+        if not username or not password:
             raise AuthenticationFailed("Credenciais inválidas.")
 
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise AuthenticationFailed("Credenciais inválidas.")
+        # Tenta buscar por username primeiro, depois por email
+        user = None
+        if "@" in username:
+            try:
+                user = User.objects.get(email=username)
+            except User.DoesNotExist:
+                pass
+
+        if not user:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                raise AuthenticationFailed("Credenciais inválidas.")
 
         if not user.check_password(password):
             raise AuthenticationFailed("Credenciais inválidas.")
@@ -98,30 +110,73 @@ class OpsTokenRefreshSerializer(serializers.Serializer):
 
         user_id_raw = refresh.get("user_id")
         try:
-            user_id_int = int(user_id_raw)
-        except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
-            raise AuthenticationFailed("Token inválido: utilizador ausente.") from exc
+            user_id = int(user_id_raw)
+            user = User.objects.get(pk=user_id)
+        except (ValueError, TypeError, User.DoesNotExist) as exc:
+            raise AuthenticationFailed("Usuário não encontrado.") from exc
 
-        tokens = _base_ops_token_claims(refresh, scope, user_id_int)
+        if not user.is_active:
+            raise AuthenticationFailed("Conta inativa.")
 
-        data: Dict[str, Any] = {
+        # Recalcula ops_role atual do banco (pode ter mudado)
+        current_ops_role = user.ops_role or User.OpsRoles.OPS_SUPPORT
+
+        # Gera novos tokens com refresh rotation (novo par)
+        refresh.set_jti()
+        refresh.set_exp()
+        tokens = _base_ops_token_claims(refresh, current_ops_role, user.id)
+
+        self.user = user  # type: ignore[attr-defined]
+        self.ops_role = current_ops_role  # type: ignore[attr-defined]
+
+        return {
+            "refresh": str(tokens["refresh"]),
             "access": str(tokens["access"]),
-            "ops_role": scope,
-            "user_id": str(user_id_int),
+            "ops_role": current_ops_role,
         }
 
-        if api_settings.ROTATE_REFRESH_TOKENS:
-            refresh.set_jti()
-            refresh.set_exp()
-            refresh.set_iat()
-            if api_settings.BLACKLIST_AFTER_ROTATION:
-                try:
-                    refresh.blacklist()
-                except AttributeError:
-                    pass
-            data["refresh"] = str(refresh)
 
-        return data
+class OpsUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "email", "username", "ops_role", "is_active", "last_login"]
+        read_only_fields = fields
+
+
+class OpsUserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ["id", "email", "username", "password", "ops_role", "is_active"]
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Este email já está em uso.")
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        # Ensure is_staff is True via model save() logic when ops_role is set
+        user = User.objects.create_user(password=password, **validated_data)
+        return user
+
+
+class OpsUserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["email", "username", "ops_role", "is_active"]
+
+    def validate_email(self, value):
+        # Unique email check excluding current user
+        user = self.instance
+        if (
+            User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists()
+            if user
+            else User.objects.filter(email__iexact=value).exists()
+        ):
+            raise serializers.ValidationError("Este email já está em uso.")
+        return value
 
 
 class OpsTenantSerializer(serializers.ModelSerializer):
@@ -160,57 +215,80 @@ class OpsTenantSerializer(serializers.ModelSerializer):
         return obj.get_feature_flags_dict()
 
     def get_user_counts(self, obj: Tenant) -> Dict[str, int]:
+        # Exemplo simples, poderia ser otimizado
         return {
-            "total": getattr(obj, "users_total", 0) or 0,
-            "active": getattr(obj, "users_active", 0) or 0,
-            "staff": getattr(obj, "users_staff", 0) or 0,
+            "total": obj.users.count(),
+            "active": obj.users.filter(is_active=True).count(),
         }
 
-    def get_notification_consumption(self, obj: Tenant) -> Dict[str, Any]:
-        return {
-            "sms_total": getattr(obj, "notification_sms_total", 0) or 0,
-            "whatsapp_total": getattr(obj, "notification_whatsapp_total", 0) or 0,
-            "sms_30d": getattr(obj, "notification_sms_30d", 0) or 0,
-            "whatsapp_30d": getattr(obj, "notification_whatsapp_30d", 0) or 0,
-        }
+    def get_notification_consumption(self, obj: Tenant) -> Dict[str, int]:
+        # Retorna contagem de notificações do mês atual
+        now = timezone.now()
+        start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    def get_history(self, obj: Tenant) -> Dict[str, Optional[str]]:
-        dt = self._datetime
-        return {
-            "last_login": dt(getattr(obj, "tenant_last_login", None)),
-            "owner_last_login": dt(getattr(obj, "owner_last_login", None)),
-            "owner_joined_at": dt(getattr(obj, "owner_date_joined", None)),
-            "trial_until": dt(getattr(obj, "owner_trial_until", None)),
-            "trial_status": getattr(obj, "owner_trial_status", None),
-        }
+        # Agrega por canal
+        # Nota: isso pode ser pesado se tiver muitos logs, ideal ter tabela de métricas agregada
+        # Mas para MVP Ops serve
+        qs = NotificationLog.objects.filter(tenant=obj, created_at__gte=start_month)
+        stats = qs.values("channel").annotate(count=Count("id"))
 
-    def get_owner(self, obj: Tenant) -> Dict[str, Optional[Any]]:
-        return {
-            "id": getattr(obj, "owner_id", None),
-            "username": getattr(obj, "owner_username", None),
-            "email": getattr(obj, "owner_email", None),
+        result = {
+            "sms": 0,
+            "whatsapp": 0,
+            "email": 0,
+            "push": 0,
+            "total": 0,
         }
+        total = 0
+        for item in stats:
+            ch = item["channel"]
+            c = item["count"]
+            if ch in result:
+                result[ch] = c
+            total += c
+        result["total"] = total
+        return result
 
-    def _datetime(self, value) -> Optional[str]:
-        if not value:
+    def get_history(self, obj: Tenant) -> list | dict:
+        # Exemplo: últimos 5 alertas ou ações de suporte
+        # Por enquanto vazio ou mock
+        return {}
+
+    def get_owner(self, obj: Tenant) -> Optional[Dict[str, str]]:
+        # Busca o owner atual
+        owner_staff = obj.staff_members.filter(role="owner").first()
+        if not owner_staff:
             return None
-        return self._datetime_field.to_representation(value)
 
-
-class OpsTenantPlanUpdateSerializer(serializers.Serializer):
-    plan_tier = serializers.ChoiceField(choices=Tenant.PLAN_CHOICES)
-    force = serializers.BooleanField(default=False, required=False)
+        owner = owner_staff.user
+        return {
+            "id": str(owner.id),
+            "email": owner.email,
+            "username": owner.username,
+        }
 
 
 class OpsTenantResetOwnerSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    username = serializers.CharField(required=False, allow_blank=False, max_length=150)
-    name = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    username = serializers.CharField(required=False)
+    name = serializers.CharField(required=False)
+
+    def validate_email(self, value: str) -> str:
+        # Verifica se email já existe em outro tenant?
+        # Para simplificar, assumimos que o owner novo pode ser um user novo ou existente
+        # Se existente, deve ser atualizado
+        return value
+
+
+class OpsTenantPlanUpdateSerializer(serializers.Serializer):
+    plan_tier = serializers.ChoiceField(choices=Tenant.PLAN_CHOICES)
+    addons_enabled = serializers.JSONField(required=False)
+    force = serializers.BooleanField(required=False, default=False)
 
 
 class OpsAlertSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source="tenant.name", read_only=True)
-    resolved = serializers.SerializerMethodField()
+    tenant_slug = serializers.CharField(source="tenant.slug", read_only=True)
 
     class Meta:
         model = OpsAlert
@@ -219,26 +297,52 @@ class OpsAlertSerializer(serializers.ModelSerializer):
             "category",
             "severity",
             "message",
+            "is_resolved",
+            "created_at",
+            "resolved_at",
             "metadata",
             "tenant",
             "tenant_name",
-            "notification_log",
-            "resolved",
-            "resolved_at",
-            "resolved_by",
-            "created_at",
-            "updated_at",
+            "tenant_slug",
         ]
-        read_only_fields = fields
-
-    def get_resolved(self, obj: OpsAlert) -> bool:
-        return obj.is_resolved
+        read_only_fields = ["created_at", "resolved_at", "tenant_name", "tenant_slug"]
 
 
 class OpsResendNotificationSerializer(serializers.Serializer):
-    notification_log_id = serializers.IntegerField()
+    notification_id = serializers.IntegerField()
+    channel = serializers.CharField(required=False)
 
 
 class OpsClearLockoutSerializer(serializers.Serializer):
-    lockout_id = serializers.IntegerField()
-    note = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    lockout_id = serializers.IntegerField(required=False)
+    user_id = serializers.IntegerField(required=False)
+    ip_address = serializers.IPAddressField(required=False)
+
+
+class OpsSupportAuditLogSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.username", read_only=True)
+    actor_email = serializers.CharField(source="actor.email", read_only=True)
+    target_tenant_name = serializers.CharField(
+        source="target_tenant.name", read_only=True
+    )
+    target_user_email = serializers.CharField(
+        source="target_user.email", read_only=True
+    )
+
+    class Meta:
+        model = OpsSupportAuditLog
+        fields = [
+            "id",
+            "action",
+            "actor",
+            "actor_name",
+            "actor_email",
+            "target_user",
+            "target_user_email",
+            "target_tenant",
+            "target_tenant_name",
+            "payload",
+            "result",
+            "created_at",
+        ]
+        read_only_fields = fields

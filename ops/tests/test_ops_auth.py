@@ -28,12 +28,34 @@ class TestOpsAuth:
         user.save()
         return user
 
+    def test_ops_me_returns_user_details(self):
+        user = self._create_ops_user(CustomUser.OpsRoles.OPS_ADMIN)
+        login = self.client.post(
+            self.login_url,
+            {"username": user.email, "password": "StrongPass!123"},
+            format="json",
+        )
+        assert login.status_code == status.HTTP_200_OK
+        access_token = login.data["access"]
+
+        response = self.client.get(
+            reverse("ops_auth_me"),
+            HTTP_AUTHORIZATION=f"Bearer {access_token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.data
+        assert data["id"] == user.id
+        assert data["email"] == user.email
+        assert data["username"] == user.username
+        assert data["ops_role"] == CustomUser.OpsRoles.OPS_ADMIN
+
     def test_ops_login_success_returns_scoped_tokens(self):
         user = self._create_ops_user(CustomUser.OpsRoles.OPS_ADMIN)
 
         response = self.client.post(
             self.login_url,
-            {"email": user.email, "password": "StrongPass!123"},
+            {"username": user.email, "password": "StrongPass!123"},
             format="json",
         )
 
@@ -54,7 +76,7 @@ class TestOpsAuth:
 
         response = self.client.post(
             self.login_url,
-            {"email": user.email, "password": "wrong"},
+            {"username": user.email, "password": "wrong"},
             format="json",
         )
 
@@ -69,7 +91,7 @@ class TestOpsAuth:
 
         response = self.client.post(
             self.login_url,
-            {"email": "tenant@example.com", "password": "TenantPass123"},
+            {"username": "tenant@example.com", "password": "TenantPass123"},
             format="json",
         )
 
@@ -79,7 +101,7 @@ class TestOpsAuth:
         user = self._create_ops_user(CustomUser.OpsRoles.OPS_SUPPORT)
         login = self.client.post(
             self.login_url,
-            {"email": user.email, "password": "StrongPass!123"},
+            {"username": user.email, "password": "StrongPass!123"},
             format="json",
         )
         assert login.status_code == status.HTTP_200_OK
@@ -101,7 +123,7 @@ class TestOpsAuth:
         user = self._create_ops_user(CustomUser.OpsRoles.OPS_ADMIN)
         login = self.client.post(
             self.login_url,
-            {"email": user.email, "password": "StrongPass!123"},
+            {"username": user.email, "password": "StrongPass!123"},
             format="json",
         )
         assert login.status_code == status.HTTP_200_OK

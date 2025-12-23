@@ -522,7 +522,9 @@ class StripeWebhookView(APIView):
                     .first()
                 )
                 if pc:
-                    saved_sub, cpe_dt, prev_price_id = upsert_subscription(pc.user, data)
+                    saved_sub, cpe_dt, prev_price_id = upsert_subscription(
+                        pc.user, data
+                    )
                     update_feature_flags(pc.user, data, cpe_dt)
 
                     try:
@@ -555,13 +557,18 @@ class StripeWebhookView(APIView):
                             and prev_price_id != price_id
                         ):
                             from users.models import CommLedger
+
                             ref = f"plan_change_bonus:{subscription_id}:{price_id}"
                             exists = CommLedger.objects.filter(
                                 tenant=pc.user.tenant,
                                 transaction_type=CommLedger.TransactionType.BONUS,
                                 reference_id=ref,
                             ).exists()
-                            if not exists and status in ("active", "trialing", "past_due"):
+                            if not exists and status in (
+                                "active",
+                                "trialing",
+                                "past_due",
+                            ):
                                 cs = CreditService(pc.user.tenant)
                                 cs.add_credits(
                                     amount=credits_included,

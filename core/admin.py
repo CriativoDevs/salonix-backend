@@ -73,7 +73,14 @@ class ProfessionalAdmin(admin.ModelAdmin):
     """Admin para profissionais com filtro por tenant."""
 
     form = ProfessionalAdminForm
-    list_display = ("name", "tenant_name", "user", "user_email", "staff_member", "is_active")
+    list_display = (
+        "name",
+        "tenant_name",
+        "user",
+        "user_email",
+        "staff_member",
+        "is_active",
+    )
     list_filter = ("tenant", "is_active")
     search_fields = ("name", "user__username", "tenant__name")
     readonly_fields = ("tenant", "user", "user_email")
@@ -82,7 +89,17 @@ class ProfessionalAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Informações Básicas",
-            {"fields": ("staff_member", "name", "bio", "is_active", "tenant", "user", "user_email")},
+            {
+                "fields": (
+                    "staff_member",
+                    "name",
+                    "bio",
+                    "is_active",
+                    "tenant",
+                    "user",
+                    "user_email",
+                )
+            },
         ),
     )
 

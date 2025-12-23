@@ -79,4 +79,3 @@ class TenantProfileTests(TestCase):
         payload = resp2.json()["profile"]
         assert payload["email"] == "public@salonx.test"
         assert payload["phone"].startswith("+351")
-

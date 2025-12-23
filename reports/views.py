@@ -405,15 +405,12 @@ class TopServicesReportView(_BaseReports):
         date_lte = {f"{DATE_FIELD}__lte": end}
         limit, offset = _get_limit_offset(request)
 
-        base = (
-            Appointment.objects.filter(
-                **date_gte,
-                **date_lte,
-                status__in=COMPLETED_STATUSES,
-                tenant=getattr(request.user, "tenant", None),
-            )
-            .values("service_id", "service__name")
-        )
+        base = Appointment.objects.filter(
+            **date_gte,
+            **date_lte,
+            status__in=COMPLETED_STATUSES,
+            tenant=getattr(request.user, "tenant", None),
+        ).values("service_id", "service__name")
 
         # agregados
         if APPT_PRICE_FIELD:
