@@ -118,6 +118,11 @@ class OpsSupportAuditLog(models.Model):
         RESEND_NOTIFICATION = "resend_notification", "Resend Notification"
         CLEAR_LOCKOUT = "clear_lockout", "Clear Lockout"
         RESOLVE_ALERT = "resolve_alert", "Resolve Alert"
+        UPDATE_SETTING = "update_setting", "Update Setting"
+        UPDATE_TEMPLATE = "update_template", "Update Template"
+        CREATE_OPS_USER = "create_ops_user", "Create Ops User"
+        UPDATE_OPS_USER = "update_ops_user", "Update Ops User"
+        DELETE_OPS_USER = "delete_ops_user", "Delete Ops User"
 
     id = models.BigAutoField(primary_key=True)
     actor = models.ForeignKey(
@@ -164,3 +169,68 @@ class OpsSupportAuditLog(models.Model):
             "result": self.result,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class OpsGlobalSetting(models.Model):
+    """
+    Armazena configurações globais do sistema.
+    Ex: TRIAL_DAYS, MAINTENANCE_MODE, etc.
+    """
+
+    class Types(models.TextChoices):
+        STRING = "string", "Texto"
+        BOOLEAN = "boolean", "Booleano"
+        INTEGER = "integer", "Inteiro"
+        JSON = "json", "JSON"
+
+    key = models.CharField(
+        max_length=100, unique=True, help_text="Chave única da configuração"
+    )
+    value = models.TextField(help_text="Valor da configuração")
+    value_type = models.CharField(
+        max_length=20, choices=Types.choices, default=Types.STRING
+    )
+    description = models.TextField(blank=True, help_text="Descrição para o admin")
+    is_public = models.BooleanField(
+        default=False, help_text="Se visível para endpoints públicos"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="ops_settings_updates",
+    )
+
+    def __str__(self):
+        return self.key
+
+
+class OpsNotificationTemplate(models.Model):
+    """
+    Templates de notificação editáveis pelo Ops.
+    """
+
+    class Channels(models.TextChoices):
+        EMAIL = "email", "E-mail"
+        SMS = "sms", "SMS"
+        WHATSAPP = "whatsapp", "WhatsApp"
+        PUSH = "push", "Push Notification"
+
+    code = models.CharField(
+        max_length=100, help_text="Código único do template (ex: PWA_INVITE)"
+    )
+    channel = models.CharField(max_length=20, choices=Channels.choices)
+    subject = models.CharField(
+        max_length=255, blank=True, help_text="Assunto (apenas e-mail/push)"
+    )
+    body_text = models.TextField(help_text="Corpo em texto puro")
+    body_html = models.TextField(blank=True, help_text="Corpo em HTML (apenas e-mail)")
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ["code", "channel"]
+
+    def __str__(self):
+        return f"{self.code} ({self.channel})"

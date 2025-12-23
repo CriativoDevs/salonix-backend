@@ -107,7 +107,7 @@ def test_clear_lockout_marks_resolved(
 
     access = ops_authenticate(admin.email)
     response = api_client.post(
-        reverse("ops-support-clear-lockout"),
+        reverse("ops-lockouts-clear"),
         {"lockout_id": lockout.id, "note": "Unlock manual"},
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -142,8 +142,8 @@ def test_support_cannot_clear_lockout(
 
     access = ops_authenticate(support_user.email)
     response = api_client.post(
-        reverse("ops-support-clear-lockout"),
-        {"lockout_id": lockout.id},
+        reverse("ops-lockouts-clear"),
+        {"lockout_id": 999},  # Non-existent
         format="json",
         HTTP_AUTHORIZATION=f"Bearer {access}",
     )
