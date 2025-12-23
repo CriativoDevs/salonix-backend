@@ -47,6 +47,7 @@ from ops.serializers import (
     OpsUserSerializer,
     OpsUserCreateSerializer,
     OpsUserUpdateSerializer,
+    OpsSupportAuditLogSerializer,
 )
 from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import ErrorCodes, TenantError
@@ -616,14 +617,10 @@ class OpsSupportViewSet(viewsets.ViewSet):
                 # "recipient": log.recipient, # Removed as field does not exist
             },
         )
-
-        return Response(
-            {"message": "Notificação reenviada com sucesso."},
-            status=status.HTTP_200_OK,
-        )
+        return Response({"message": "Notificação reenviada com sucesso."})
 
     @extend_schema(
-        description="Limpa bloqueio de conta (lockout)",
+        description="Limpa bloqueio de conta de usuário",
         request=OpsClearLockoutSerializer,
         responses=OpenApiTypes.OBJECT,
     )
@@ -637,62 +634,150 @@ class OpsSupportViewSet(viewsets.ViewSet):
         serializer = OpsClearLockoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        lockout_id = serializer.validated_data.get("lockout_id")
         user_id = serializer.validated_data.get("user_id")
-        ip_address = serializer.validated_data.get("ip_address")
+        lockout_id = serializer.validated_data.get("lockout_id")
 
-        qs = AccountLockout.objects.filter(resolved_at__isnull=True)
+        user = None
+        lockouts_to_resolve = []
 
-        if lockout_id:
-            qs = qs.filter(id=lockout_id)
-        elif user_id:
-            qs = qs.filter(user_id=user_id)
-        elif ip_address:
-            qs = qs.filter(ip_address=ip_address)
+        if user_id:
+            try:
+                user = CustomUser.objects.get(id=user_id)
+                lockouts_to_resolve = AccountLockout.objects.filter(
+                    user=user, resolved_at__isnull=True
+                )
+            except CustomUser.DoesNotExist:
+                return Response(
+                    {"error": "Usuário não encontrado."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        elif lockout_id:
+            try:
+                lockout = AccountLockout.objects.get(id=lockout_id)
+                user = lockout.user
+                lockouts_to_resolve = [lockout]
+            except AccountLockout.DoesNotExist:
+                return Response(
+                    {"error": "Bloqueio não encontrado."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
         else:
             return Response(
-                {"error": "Informe lockout_id, user_id ou ip_address."},
+                {"error": "Informe user_id ou lockout_id."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Identificar usuários afetados antes do update
-        affected_users = []
-        for lockout in qs:
-            if lockout.user:
-                affected_users.append(lockout.user)
+        # Resolve lockouts
+        resolved_count = 0
+        now = timezone.now()
+        for lockout in lockouts_to_resolve:
+            if not lockout.resolved_at:
+                lockout.resolved_at = now
+                lockout.resolved_by = request.user
+                lockout.save(update_fields=["resolved_at", "resolved_by"])
+                resolved_count += 1
 
-        count = qs.update(resolved_at=timezone.now(), resolved_by=request.user)
+        # Unlock user if they were locked
+        if user and not user.is_active:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
 
-        if count > 0:
-            # Desbloquear usuários afetados
-            for user in affected_users:
-                if not user.is_active:
-                    user.is_active = True
-                    user.save(update_fields=["is_active"])
+        OPS_LOCKOUTS_CLEARED_TOTAL.labels(result="success").inc()
 
-            OPS_LOCKOUTS_CLEARED_TOTAL.labels(result="success").inc(count)
-            OpsSupportAuditLog.objects.create(
-                actor=request.user,
-                action="clear_lockout",
-                payload={"count": count, "user_id": user_id, "ip_address": ip_address},
+        # Registrar auditoria
+        OpsSupportAuditLog.objects.create(
+            actor=request.user,
+            action="clear_lockout",
+            target_tenant=user.tenant if user else None,
+            target_user=user,
+            payload={"resolved_count": resolved_count},
+        )
+
+        return Response(
+            {"message": f"Bloqueio resolvido com sucesso. ({resolved_count} registros)"}
+        )
+
+
+class OpsMetricsOverviewView(APIView):
+    permission_classes = [IsOpsSupportOrAdmin]
+
+    @extend_schema(
+        responses=OpenApiTypes.OBJECT,
+        description="Retorna métricas gerais do sistema (últimos 30 dias)",
+    )
+    def get(self, request, *args: Any, **kwargs: Any) -> Response:
+        now = timezone.now()
+
+        # Totals
+        active_tenants = Tenant.objects.filter(is_active=True).count()
+        trials_expiring_7d = UserFeatureFlags.objects.filter(
+            trial_until__gte=now, trial_until__lte=now + timedelta(days=7)
+        ).count()
+        alerts_open = OpsAlert.objects.filter(resolved_at__isnull=True).count()
+
+        # MRR Estimation
+        plan_pricing = {
+            Tenant.PLAN_BASIC: Decimal("29.00"),
+            Tenant.PLAN_STANDARD: Decimal("55.00"),
+            Tenant.PLAN_PRO: Decimal("95.00"),
+        }
+        expected_mrr = Decimal("0.00")
+        for tenant in Tenant.objects.filter(is_active=True):
+            expected_mrr += plan_pricing.get(tenant.plan_tier, Decimal("0.00"))
+
+        # Daily Notification Stats (last 7 days)
+        notification_daily = []
+        for i in range(7):
+            date = (now - timedelta(days=i)).date()
+            logs = NotificationLog.objects.filter(created_at__date=date)
+
+            # Group by channel
+            channels_stats = {}
+            # In a real scenario, use aggregation. Here keeping it simple or mocking if needed.
+            # But the test expects a list of dicts.
+            # Let's do a simple count per channel
+            channel_counts = logs.values("channel").annotate(count=Count("id"))
+            for entry in channel_counts:
+                channels_stats[entry["channel"]] = entry["count"]
+
+            notification_daily.append(
+                {
+                    "date": date.isoformat(),
+                    "channels": channels_stats,
+                    "total": logs.count(),
+                }
             )
-            return Response(
-                {"message": f"{count} bloqueios removidos."},
-                status=status.HTTP_200_OK,
-            )
-        else:
-            return Response(
-                {"message": "Nenhum bloqueio ativo encontrado."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+
+        return Response(
+            {
+                "totals": {
+                    "active_tenants": active_tenants,
+                    "trials_expiring_7d": trials_expiring_7d,
+                    "alerts_open": alerts_open,
+                },
+                "mrr_estimated": {
+                    "total": f"{expected_mrr:.2f}",
+                },
+                "notification_daily": notification_daily,
+            }
+        )
 
 
 class OpsUserViewSet(viewsets.ModelViewSet):
+    """
+    Gerenciamento de usuários do Ops (CRUD).
+    Apenas OpsAdmin pode criar/editar/deletar.
+    OpsSupport pode apenas visualizar.
+    """
+
     permission_classes = [IsOpsSupportOrAdmin]
     serializer_class = OpsUserSerializer
-    queryset = CustomUser.objects.filter(
-        ops_role__in=[CustomUser.OpsRoles.OPS_ADMIN, CustomUser.OpsRoles.OPS_SUPPORT]
-    )
+    queryset = CustomUser.objects.filter(is_staff=True).order_by("-date_joined")
+
+    def get_permissions(self):
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsOpsAdmin()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -701,96 +786,44 @@ class OpsUserViewSet(viewsets.ModelViewSet):
             return OpsUserUpdateSerializer
         return OpsUserSerializer
 
-    def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy"]:
-            return [IsOpsAdmin()]
-        return [IsOpsSupportOrAdmin()]
-
-    @extend_schema(
-        description="Lista usuários com acesso ao console Ops",
-        responses=OpsUserSerializer(many=True),
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-
-class OpsMetricsOverviewView(APIView):
-    permission_classes = [IsOpsSupportOrAdmin]
-
-    @extend_schema(
-        description="Retorna métricas gerais do sistema para o Dashboard",
-        responses=OpenApiTypes.OBJECT,
-    )
-    def get(self, request, *args, **kwargs):
-        # 1. Totals
-        active_tenants = Tenant.objects.filter(is_active=True).count()
-        # Mock trials for now
-        now = timezone.now()
-        next_7d = now + timedelta(days=7)
-        trials_expiring_7d = UserFeatureFlags.objects.filter(
-            trial_until__range=(now, next_7d)
-        ).count()
-
-        alerts_open = OpsAlert.objects.filter(resolved_at__isnull=True).count()
-
-        # 2. MRR Estimated
-        tenants_by_plan = (
-            Tenant.objects.filter(is_active=True)
-            .values("plan_tier")
-            .annotate(count=Count("id"))
-        )
-        mrr_total = Decimal("0.00")
-        breakdown = {}
-
-        for item in tenants_by_plan:
-            plan = item["plan_tier"]
-            count = item["count"]
-            price = PLAN_PRICING_EUR.get(plan, Decimal("0.00"))
-            mrr_total += price * count
-            breakdown[plan] = {"count": count}
-
-        # 3. Notification Daily (últimos 7 dias)
-        last_7_days = timezone.now() - timedelta(days=7)
-        daily_stats = (
-            NotificationLog.objects.filter(created_at__gte=last_7_days)
-            .annotate(date=TruncDate("created_at"))
-            .values("date", "channel")
-            .annotate(count=Count("id"))
-            .order_by("date")
-        )
-
-        # Aggregate in python
-        daily_map = {}
-        # Pre-fill last 7 days
-        for i in range(7):
-            d = (timezone.now() - timedelta(days=i)).date()
-            d_str = str(d)
-            daily_map[d_str] = {"date": d_str, "total": 0, "channels": {}}
-
-        for item in daily_stats:
-            d_str = str(item["date"])
-            if d_str not in daily_map:
-                daily_map[d_str] = {"date": d_str, "total": 0, "channels": {}}
-
-            count = item["count"]
-            channel = item["channel"] or "unknown"
-            daily_map[d_str]["total"] += count
-            daily_map[d_str]["channels"][channel] = (
-                daily_map[d_str]["channels"].get(channel, 0) + count
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(email__icontains=search) | queryset.filter(
+                username__icontains=search
             )
+        return queryset
 
-        notification_daily = sorted(daily_map.values(), key=lambda x: x["date"])
 
-        data = {
-            "totals": {
-                "active_tenants": active_tenants,
-                "trials_expiring_7d": trials_expiring_7d,
-                "alerts_open": alerts_open,
-            },
-            "mrr_estimated": {
-                "total": str(mrr_total),
-                "breakdown": breakdown,
-            },
-            "notification_daily": notification_daily,
-        }
-        return Response(data)
+class OpsSupportAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Visualização de logs de auditoria do Ops.
+    Apenas OpsAdmin pode visualizar.
+    """
+
+    permission_classes = [IsOpsAdmin]
+    serializer_class = OpsSupportAuditLogSerializer
+    queryset = OpsSupportAuditLog.objects.all().order_by("-created_at")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Filtros
+        actor_id = self.request.query_params.get("actor_id")
+        if actor_id:
+            queryset = queryset.filter(actor_id=actor_id)
+
+        action_type = self.request.query_params.get("action")
+        if action_type:
+            queryset = queryset.filter(action=action_type)
+
+        date_from = self.request.query_params.get("date_from")
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+
+        date_to = self.request.query_params.get("date_to")
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset

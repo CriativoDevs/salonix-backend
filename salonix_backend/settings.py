@@ -181,7 +181,7 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
         ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://bfa1401e8d29.ngrok-free.app ",
+    "https://2b37190b6eb1.ngrok-free.app",
 ]
 
 # opcional: flag ligada por padrão

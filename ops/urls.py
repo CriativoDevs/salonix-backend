@@ -10,6 +10,7 @@ from ops.views import (
     OpsTenantViewSet,
     OpsUserViewSet,
     OpsSupportViewSet,
+    OpsSupportAuditLogViewSet,
 )
 
 router = SimpleRouter()
@@ -17,6 +18,7 @@ router.register("tenants", OpsTenantViewSet, basename="ops-tenants")
 router.register("alerts", OpsAlertViewSet, basename="ops-alerts")
 router.register("users", OpsUserViewSet, basename="ops-users")
 router.register("support", OpsSupportViewSet, basename="ops-support")
+router.register("audit-logs", OpsSupportAuditLogViewSet, basename="ops-audit-logs")
 
 urlpatterns = [
     path("auth/login/", OpsAuthLoginView.as_view(), name="ops_auth_login"),

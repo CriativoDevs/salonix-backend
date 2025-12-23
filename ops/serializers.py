@@ -12,7 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.settings import api_settings
 
-from ops.models import OpsAlert
+from ops.models import OpsAlert, OpsSupportAuditLog
 from notifications.models import NotificationLog
 from users.models import Tenant
 
@@ -317,3 +317,32 @@ class OpsClearLockoutSerializer(serializers.Serializer):
     lockout_id = serializers.IntegerField(required=False)
     user_id = serializers.IntegerField(required=False)
     ip_address = serializers.IPAddressField(required=False)
+
+
+class OpsSupportAuditLogSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.username", read_only=True)
+    actor_email = serializers.CharField(source="actor.email", read_only=True)
+    target_tenant_name = serializers.CharField(
+        source="target_tenant.name", read_only=True
+    )
+    target_user_email = serializers.CharField(
+        source="target_user.email", read_only=True
+    )
+
+    class Meta:
+        model = OpsSupportAuditLog
+        fields = [
+            "id",
+            "action",
+            "actor",
+            "actor_name",
+            "actor_email",
+            "target_user",
+            "target_user_email",
+            "target_tenant",
+            "target_tenant_name",
+            "payload",
+            "result",
+            "created_at",
+        ]
+        read_only_fields = fields
