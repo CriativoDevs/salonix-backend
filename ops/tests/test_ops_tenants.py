@@ -162,7 +162,7 @@ class TestOpsTenantsEndpoints:
         )
 
         access = ops_authenticate(admin.email)
-        url = reverse("ops-tenants-update-plan", kwargs={"id": tenant.id})
+        url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
 
         response = api_client.post(
             url,
@@ -199,7 +199,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(admin.email)
 
         block_resp = api_client.post(
-            reverse("ops-tenants-block-tenant", kwargs={"id": tenant.id}),
+            reverse("ops-tenants-block-tenant", kwargs={"pk": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert block_resp.status_code == status.HTTP_200_OK
@@ -207,7 +207,7 @@ class TestOpsTenantsEndpoints:
         assert tenant.is_active is False
 
         unblock_resp = api_client.post(
-            reverse("ops-tenants-unblock-tenant", kwargs={"id": tenant.id}),
+            reverse("ops-tenants-unblock-tenant", kwargs={"pk": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert unblock_resp.status_code == status.HTTP_200_OK
@@ -228,7 +228,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(support.email)
 
         response = api_client.post(
-            reverse("ops-tenants-block-tenant", kwargs={"id": tenant.id}),
+            reverse("ops-tenants-block-tenant", kwargs={"pk": tenant.id}),
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -246,7 +246,7 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(admin.email)
 
         response = api_client.post(
-            reverse("ops-tenants-reset-owner", kwargs={"id": tenant.id}),
+            reverse("ops-tenants-reset-owner", kwargs={"pk": tenant.id}),
             {"email": "new.owner@example.com", "username": "newowner"},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
@@ -256,14 +256,15 @@ class TestOpsTenantsEndpoints:
         assert data["email"] == "new.owner@example.com"
         assert "password" in data
 
-        owner.refresh_from_db()
-        assert owner.email == "new.owner@example.com"
-        assert owner.username == "newowner"
+        tenant.refresh_from_db()
+        new_owner = tenant.staff_members.get(role="owner").user
+        assert new_owner.email == "new.owner@example.com"
+        assert new_owner.username == "newowner"
         temp_password = data["password"]
 
         token_response = api_client.post(
             reverse("token_obtain_pair"),
-            {"email": owner.email, "password": temp_password},
+            {"email": new_owner.email, "password": temp_password},
             format="json",
         )
         assert token_response.status_code == status.HTTP_200_OK

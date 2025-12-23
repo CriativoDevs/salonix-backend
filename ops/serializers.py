@@ -12,7 +12,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.settings import api_settings
 
-from ops.models import OpsAlert, OpsSupportAuditLog
+from ops.models import (
+    OpsAlert,
+    OpsSupportAuditLog,
+    OpsGlobalSetting,
+    OpsNotificationTemplate,
+)
 from notifications.models import NotificationLog
 from users.models import Tenant
 
@@ -100,95 +105,119 @@ class OpsTokenRefreshSerializer(serializers.Serializer):
 
         try:
             refresh = RefreshToken(raw_refresh)
-        except (TokenError, InvalidToken) as exc:
-            logger.warning("Ops refresh token inválido", extra={"error": str(exc)})
-            raise AuthenticationFailed("Token de refresh inválido.") from exc
+        except TokenError:
+            raise AuthenticationFailed("Token inválido ou expirado.")
 
-        scope = refresh.get("scope")
-        if scope not in (User.OpsRoles.OPS_ADMIN, User.OpsRoles.OPS_SUPPORT):
-            raise AuthenticationFailed("Token não pertence ao console Ops.")
-
-        user_id_raw = refresh.get("user_id")
+        user_id = refresh.payload.get("user_id")
         try:
-            user_id = int(user_id_raw)
-            user = User.objects.get(pk=user_id)
-        except (ValueError, TypeError, User.DoesNotExist) as exc:
-            raise AuthenticationFailed("Usuário não encontrado.") from exc
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            raise AuthenticationFailed("Usuário não encontrado.")
 
         if not user.is_active:
             raise AuthenticationFailed("Conta inativa.")
 
-        # Recalcula ops_role atual do banco (pode ter mudado)
-        current_ops_role = user.ops_role or User.OpsRoles.OPS_SUPPORT
+        if not getattr(user, "is_ops_user", False):
+            raise AuthenticationFailed("Acesso restrito.")
 
-        # Gera novos tokens com refresh rotation (novo par)
+        ops_role = user.ops_role or User.OpsRoles.OPS_SUPPORT
+
+        # Rotacionar refresh token?
+        # Por padrão simplejwt não rotaciona se ROTATE_REFRESH_TOKENS=False
+        # Vamos gerar um novo par
         refresh.set_jti()
         refresh.set_exp()
-        tokens = _base_ops_token_claims(refresh, current_ops_role, user.id)
+        refresh.set_iat()
 
-        self.user = user  # type: ignore[attr-defined]
-        self.ops_role = current_ops_role  # type: ignore[attr-defined]
+        tokens = _base_ops_token_claims(refresh, ops_role, user.id)
 
         return {
-            "refresh": str(tokens["refresh"]),
             "access": str(tokens["access"]),
-            "ops_role": current_ops_role,
+            "refresh": str(tokens["refresh"]),
+            "ops_role": ops_role,
         }
 
 
 class OpsUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "email", "username", "ops_role", "is_active", "last_login"]
-        read_only_fields = fields
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "is_active",
+            "ops_role",
+            "last_login",
+            "date_joined",
+        ]
+        read_only_fields = ["last_login", "date_joined"]
 
 
 class OpsUserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8)
+    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "username", "password", "ops_role", "is_active"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "password",
+            "ops_role",
+            "is_active",
+        ]
 
-    def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("Este email já está em uso.")
-        return value
-
-    def create(self, validated_data):
+    def create(self, validated_data: Dict[str, Any]) -> Any:
         password = validated_data.pop("password")
-        # Ensure is_staff is True via model save() logic when ops_role is set
-        user = User.objects.create_user(password=password, **validated_data)
+        user = User(**validated_data)
+        user.set_password(password)
+        user.is_ops_user = True
+        user.save()
         return user
 
 
 class OpsUserUpdateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False)
+
     class Meta:
         model = User
-        fields = ["email", "username", "ops_role", "is_active"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "password",
+            "ops_role",
+            "is_active",
+        ]
+        read_only_fields = ["username"]
 
-    def validate_email(self, value):
-        # Unique email check excluding current user
-        user = self.instance
-        if (
-            User.objects.filter(email__iexact=value).exclude(pk=user.pk).exists()
-            if user
-            else User.objects.filter(email__iexact=value).exists()
-        ):
-            raise serializers.ValidationError("Este email já está em uso.")
-        return value
+    def update(self, instance: Any, validated_data: Dict[str, Any]) -> Any:
+        password = validated_data.pop("password", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 
-class OpsTenantSerializer(serializers.ModelSerializer):
-    feature_flags = serializers.SerializerMethodField()
+class OpsMetricsOverviewSerializer(serializers.Serializer):
+    totals = serializers.DictField()
+    mrr_estimated = serializers.DictField()
+    notification_daily = serializers.ListField()
+
+
+class OpsTenantListSerializer(serializers.ModelSerializer):
+    owner = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
     user_counts = serializers.SerializerMethodField()
     notification_consumption = serializers.SerializerMethodField()
-    history = serializers.SerializerMethodField()
-    owner = serializers.SerializerMethodField()
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._datetime_field = serializers.DateTimeField(format=None)
 
     class Meta:
         model = Tenant
@@ -198,49 +227,85 @@ class OpsTenantSerializer(serializers.ModelSerializer):
             "slug",
             "plan_tier",
             "is_active",
-            "timezone",
-            "currency",
-            "addons_enabled",
             "created_at",
-            "updated_at",
-            "feature_flags",
+            "owner",
+            "history",
             "user_counts",
             "notification_consumption",
-            "history",
-            "owner",
         ]
-        read_only_fields = fields
-
-    def get_feature_flags(self, obj: Tenant) -> Dict[str, Any]:
-        return obj.get_feature_flags_dict()
 
     def get_user_counts(self, obj: Tenant) -> Dict[str, int]:
-        # Exemplo simples, poderia ser otimizado
-        return {
-            "total": obj.users.count(),
-            "active": obj.users.filter(is_active=True).count(),
-        }
+        total = obj.users.count()
+        return {"total": total}
 
     def get_notification_consumption(self, obj: Tenant) -> Dict[str, int]:
-        # Retorna contagem de notificações do mês atual
-        now = timezone.now()
-        start_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-        # Agrega por canal
-        # Nota: isso pode ser pesado se tiver muitos logs, ideal ter tabela de métricas agregada
-        # Mas para MVP Ops serve
-        qs = NotificationLog.objects.filter(tenant=obj, created_at__gte=start_month)
-        stats = qs.values("channel").annotate(count=Count("id"))
-
-        result = {
-            "sms": 0,
-            "whatsapp": 0,
-            "email": 0,
-            "push": 0,
-            "total": 0,
+        # This could be expensive for list view, but for now we implement it simply
+        sms = NotificationLog.objects.filter(tenant=obj, channel="sms").count()
+        whatsapp = NotificationLog.objects.filter(
+            tenant=obj, channel="whatsapp"
+        ).count()
+        email = NotificationLog.objects.filter(tenant=obj, channel="email").count()
+        return {
+            "sms": sms,
+            "whatsapp": whatsapp,
+            "email": email,
+            "total": sms + whatsapp + email,
         }
+
+    def get_owner(self, obj: Tenant) -> Optional[Dict[str, str]]:
+        # Busca o owner atual
+        owner_staff = obj.staff_members.filter(role="owner").first()
+        if not owner_staff:
+            return None
+
+        owner = owner_staff.user
+        return {
+            "id": str(owner.id),
+            "email": owner.email,
+            "username": owner.username,
+        }
+
+    def get_history(self, obj: Tenant) -> list | dict:
+        return {}
+
+
+class OpsTenantDetailSerializer(serializers.ModelSerializer):
+    owner = serializers.SerializerMethodField()
+    history = serializers.SerializerMethodField()
+    metrics = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tenant
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "plan_tier",
+            "is_active",
+            "created_at",
+            "owner",
+            "history",
+            "metrics",
+        ]
+
+    def get_metrics(self, obj: Tenant) -> Dict[str, Any]:
+        # Mock metrics for tenant detail
+        # Total notifications sent, alerts, etc.
+        # This is expensive, so maybe fetch async or cache
+
+        # Example: count notification logs
+        total_notifs = NotificationLog.objects.filter(tenant=obj).count()
+
+        # Breakdown by channel
+        breakdown = (
+            NotificationLog.objects.filter(tenant=obj)
+            .values("channel")
+            .annotate(count=Count("id"))
+        )
+
+        result = {"total_notifications": total_notifs}
         total = 0
-        for item in stats:
+        for item in breakdown:
             ch = item["channel"]
             c = item["count"]
             if ch in result:
@@ -346,3 +411,109 @@ class OpsSupportAuditLogSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class OpsGlobalSettingSerializer(serializers.ModelSerializer):
+    updated_by_email = serializers.CharField(source="updated_by.email", read_only=True)
+
+    class Meta:
+        model = OpsGlobalSetting
+        fields = [
+            "id",
+            "key",
+            "value",
+            "value_type",
+            "description",
+            "is_public",
+            "updated_at",
+            "updated_by",
+            "updated_by_email",
+        ]
+        read_only_fields = ["id", "updated_at", "updated_by", "updated_by_email"]
+
+    def create(self, validated_data):
+        validated_data["updated_by"] = self.context["request"].user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data["updated_by"] = self.context["request"].user
+        return super().update(instance, validated_data)
+
+
+class OpsNotificationTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OpsNotificationTemplate
+        fields = [
+            "id",
+            "code",
+            "channel",
+            "subject",
+            "body_text",
+            "body_html",
+            "is_active",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at"]
+
+
+class OpsUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "ops_role",
+            "is_active",
+            "last_login",
+            "date_joined",
+        ]
+        read_only_fields = ["id", "last_login", "date_joined"]
+
+
+class OpsUserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "password",
+            "ops_role",
+            "is_active",
+        ]
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User.objects.create_user(password=password, **validated_data)
+        return user
+
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Este email já está em uso.")
+        return value
+
+
+class OpsUserUpdateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            "first_name",
+            "last_name",
+            "password",
+            "ops_role",
+            "is_active",
+        ]
+
+    def update(self, instance, validated_data):
+        if "password" in validated_data:
+            password = validated_data.pop("password")
+            instance.set_password(password)
+        return super().update(instance, validated_data)
