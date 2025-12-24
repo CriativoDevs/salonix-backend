@@ -149,6 +149,7 @@ CORS_ALLOW_ALL_ORIGINS = str(env_get("CORS_ALLOW_ALL_ORIGINS", "true")).lower() 
 origins_raw = str(env_get("CORS_ALLOWED_ORIGINS", "")).strip()
 if origins_raw:
     CORS_ALLOWED_ORIGINS = [o.strip() for o in origins_raw.split(",") if o.strip()]
+
 try:
     from corsheaders.defaults import default_headers
 
@@ -180,9 +181,36 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
             "http://127.0.0.1:5173",
         ]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://2b37190b6eb1.ngrok-free.app",
-]
+# CSRF
+csrf_origins_raw = str(env_get("CSRF_TRUSTED_ORIGINS", "")).strip()
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_origins_raw.split(",") if o.strip()]
+
+if not CSRF_TRUSTED_ORIGINS and DEBUG:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://*.ngrok-free.app",
+    ]
+
+# Cookies & Security (Staging/Prod)
+# Para comunicação cross-site (FE Vercel <-> BE PythonAnywhere), precisamos de SameSite=None e Secure=True
+SECURE_SSL_REDIRECT = str(env_get("SECURE_SSL_REDIRECT", "false")).lower() == "true"
+SESSION_COOKIE_SECURE = SECURE_SSL_REDIRECT or (ENV != "dev")
+CSRF_COOKIE_SECURE = SECURE_SSL_REDIRECT or (ENV != "dev")
+
+# Permitir override manual do SameSite, mas defaultar para None em Prod/UAT se for cross-site
+_samesite_env = env_get("SESSION_COOKIE_SAMESITE", None)
+if _samesite_env:
+    SESSION_COOKIE_SAMESITE = _samesite_env
+    CSRF_COOKIE_SAMESITE = _samesite_env
+else:
+    # Em staging/prod com domínios diferentes, precisamos de 'None'
+    if ENV in ("prod", "uat", "staging"):
+        SESSION_COOKIE_SAMESITE = "None"
+        CSRF_COOKIE_SAMESITE = "None"
+    else:
+        SESSION_COOKIE_SAMESITE = "Lax"
+        CSRF_COOKIE_SAMESITE = "Lax"
 
 # opcional: flag ligada por padrão
 OBSERVABILITY_ENABLED = str(env_get("OBSERVABILITY_ENABLED", "true")).lower() == "true"
