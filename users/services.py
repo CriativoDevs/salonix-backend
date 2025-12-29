@@ -171,6 +171,18 @@ class CreditService:
         reference_id: Optional[str] = None,
         created_by: Optional[Any] = None,
     ) -> CommLedger:
+        """
+        Expira créditos do tenant.
+
+        Args:
+            amount: Valor em euros a ser expirado
+            description: Descrição da transação
+            reference_id: ID de referência externa (opcional)
+            created_by: Usuário que criou a transação (opcional)
+
+        Returns:
+            CommLedger: Registro da transação criada
+        """
         if amount <= 0:
             raise ValueError("Valor deve ser maior que zero")
 
@@ -197,3 +209,27 @@ class CreditService:
         self.tenant.save(update_fields=["comm_credit_eur"])
 
         return transaction_record
+
+
+class TenantService:
+    """Serviço para gerenciamento de Tenants."""
+
+    @staticmethod
+    @transaction.atomic
+    def cancel_tenant(tenant: Tenant, user: Any) -> None:
+        """
+        Realiza o cancelamento (soft-delete) do tenant.
+
+        Args:
+            tenant: O tenant a ser cancelado.
+            user: O usuário que solicitou o cancelamento (para logs/auditoria futura).
+        """
+        if not tenant.is_active:
+            # Já está inativo, nada a fazer
+            return
+
+        tenant.is_active = False
+        tenant.deleted_at = timezone.now()
+        tenant.save(update_fields=["is_active", "deleted_at", "updated_at"])
+
+        # Aqui poderíamos adicionar logs de auditoria ou disparar e-mails de "Adeus"

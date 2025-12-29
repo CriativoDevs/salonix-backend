@@ -239,6 +239,9 @@ class Tenant(models.Model):
 
     # Metadados
     is_active = models.BooleanField(default=cast(Any, True))
+    deleted_at = models.DateTimeField(
+        null=True, blank=True, help_text="Data de cancelamento do tenant (soft delete)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

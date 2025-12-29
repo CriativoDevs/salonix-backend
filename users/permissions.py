@@ -46,6 +46,28 @@ class IsSelf(BasePermission):
         return getattr(obj, "user", None) == request.user or obj == request.user
 
 
+class IsActiveTenant(BasePermission):
+    """
+    Permite acesso somente se o tenant do usuário estiver ativo.
+    """
+
+    message = "A conta do tenant está inativa."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Superusers e Ops ignoram essa regra
+        if request.user.is_superuser or getattr(request.user, "is_ops_user", False):
+            return True
+
+        tenant = getattr(request.user, "tenant", None)
+        if tenant and not tenant.is_active:
+            return False
+
+        return True
+
+
 class HasProFeature(BasePermission):
     """
     Exemplo de permissão para endpoints premium.
