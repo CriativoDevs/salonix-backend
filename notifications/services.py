@@ -137,6 +137,7 @@ class NotificationService:
             "push_mobile": MobilePushDriver(),
             "sms": SMSDriver(),
             "whatsapp": WhatsAppDriver(),
+            "email": EmailDriver(),
         }
 
     def send_notification(
@@ -562,6 +563,83 @@ class WhatsAppDriver(NotificationDriverBase):
             },
         )
         return True
+
+
+class EmailDriver(NotificationDriverBase):
+    """Driver para envio de e-mails via SMTP/Backend padrão do Django"""
+
+    def send(
+        self,
+        tenant: Tenant,
+        user: Any,
+        notification_type: str,
+        title: str,
+        message: str,
+        metadata: Dict[str, Any],
+    ) -> bool:
+        """Enviar e-mail transacional"""
+        to_email = (getattr(user, "email", None) or "").strip()
+        if not to_email:
+            logger.warning(
+                f"Usuário {user.username} não tem e-mail cadastrado",
+                extra={"tenant_id": tenant.id, "user_id": user.id},
+            )
+            return False
+
+        # Configurar remetente
+        sender_email = settings.EMAIL_HOST_USER or getattr(
+            settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
+        )
+
+        # Montar corpo do e-mail
+        # Se houver um template HTML específico no metadata, usar.
+        # Caso contrário, usar um template genérico simples.
+        html_content = metadata.get("html_body")
+        if not html_content:
+            # Template genérico simples
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; color: #333;">
+                <h2>{title}</h2>
+                <p>{message}</p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="font-size: 12px; color: #777;">
+                    {tenant.name}<br>
+                    Esta é uma mensagem automática, por favor não responda.
+                </p>
+            </div>
+            """
+
+        try:
+            email = EmailMultiAlternatives(
+                subject=title,
+                body=message,  # Versão texto plano
+                from_email=sender_email,
+                to=[to_email],
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send()
+
+            logger.info(
+                f"E-mail enviado para {user.username}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "email": to_email,
+                    "subject": title,
+                },
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Erro ao enviar e-mail: {e}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "email": to_email,
+                },
+            )
+            return False
 
 
 # Instância global do serviço

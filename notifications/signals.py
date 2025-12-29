@@ -58,7 +58,7 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
                 notification_type = "appointment_cancelled"
                 title = "Agendamento Cancelado"
                 message = f"Seu agendamento de {instance.service.name} foi cancelado"
-                channels.extend(["push_web", "push_mobile", "sms"])
+                channels.extend(["push_web", "push_mobile", "sms", "email"])
 
             elif instance.status == "completed":
                 notification_type = "appointment_completed"
