@@ -138,6 +138,21 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Throttling dedicado (`ops_auth_login`, `ops_auth_refresh`)
 - ✅ Comando `python manage.py bootstrap_ops_staff --email ... --role ...`
 
+#### **Padronização Rate Limit (BE-212C)**
+
+**Status**: ✅ Implementado
+**Arquivos**:
+
+- `salonix_backend/error_handling.py` - Custom Exception Handler
+- `core/tests/test_throttling_compliance.py` - Testes de compliance
+
+**Características**:
+
+- ✅ Header `Retry-After` obrigatório em todas as respostas 429
+- ✅ Corpo JSON padronizado com campo `wait` (segundos) e `retry_after`
+- ✅ Arredondamento seguro do tempo de espera (math.ceil)
+- ✅ Validado para usuários autenticados e anônimos (via Login)
+
 #### **Gestão de Tenants (OPS-BE-02)**
 
 **Status**: ✅ Implementado  

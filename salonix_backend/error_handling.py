@@ -365,6 +365,17 @@ def custom_exception_handler(exc, context):
         elif isinstance(exc.detail, list):
             error_message = "; ".join(map(str, exc.detail))
 
+    # Tratamento especial para Throttled
+    if isinstance(exc, Throttled):
+        # Adicionar tempo de espera aos detalhes
+        if hasattr(exc, "wait"):
+            # Arredondar para cima (teto) para garantir segurança
+            import math
+
+            wait_seconds = math.ceil(exc.wait) if exc.wait else 1
+            error_details["wait"] = wait_seconds
+            error_details["retry_after"] = wait_seconds  # Alias explícito
+
     # Para exceções do Salonix, incluir detalhes
     if isinstance(exc, SalonixError):
         error_details.update(exc.details)
