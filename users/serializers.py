@@ -6,6 +6,7 @@ from typing import Any, Dict, cast
 from enum import Enum
 
 from django.db import transaction
+from django.apps import apps
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
@@ -83,6 +84,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
     feature_flags = serializers.SerializerMethodField()
     branding = serializers.SerializerMethodField()
     plan = serializers.SerializerMethodField()
+    billing_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -91,6 +93,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "plan",
+            "billing_pending",
             "timezone",
             "currency",
             "preferred_language",
@@ -98,6 +101,22 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "branding",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_billing_pending(self, obj):
+        try:
+            Subscription = apps.get_model("payments", "Subscription")
+            sub = (
+                Subscription.objects.filter(user__tenant=obj)
+                .order_by("-updated_at", "-created_at")
+                .first()
+            )
+
+            if sub and sub.status in ["past_due", "unpaid", "incomplete"]:
+                return True
+            return False
+        except LookupError:
+            return False
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_feature_flags(self, obj):
