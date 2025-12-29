@@ -31,7 +31,8 @@ import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
-from .services import CreditService
+from .services import CreditService, TenantService
+from .permissions import IsActiveTenant
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -235,7 +236,7 @@ class TenantMetaView(APIView):
         """Permissões dinâmicas: público para GET, autenticado para PATCH"""
         if self.request.method == "GET":
             return [AllowAny()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated(), IsActiveTenant()]
 
     def get_throttles(self):
         # throttle apenas no GET público
@@ -532,7 +533,7 @@ class TenantProfileView(APIView):
 
 
 class MeTenantView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsActiveTenant]
     CACHE_TTL = 30
 
     @extend_schema(
@@ -599,6 +600,31 @@ class MeTenantView(APIView):
         )
 
         return Response(payload, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary="Cancelar conta",
+        description="Realiza o cancelamento (soft-delete) do tenant atual. Requer ser proprietário (Owner).",
+        responses={
+            204: OpenApiResponse(description="Conta cancelada com sucesso"),
+            403: OpenApiResponse(
+                description="Apenas o proprietário pode cancelar a conta"
+            ),
+            404: OpenApiResponse(description="Tenant não encontrado"),
+        },
+    )
+    def delete(self, request):
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+
+        if not tenant:
+            raise NotFound("Tenant não encontrado.")
+
+        if not user.is_owner:
+            raise PermissionDenied("Apenas o proprietário pode cancelar a conta.")
+
+        TenantService.cancel_tenant(tenant, user)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MeProfileView(APIView):
@@ -694,7 +720,7 @@ class MeProfileView(APIView):
 
 
 class TenantModulesSettingsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsActiveTenant]
 
     @extend_schema(
         description=(
@@ -744,7 +770,7 @@ class TenantModulesSettingsView(APIView):
 
 
 class TenantStaffView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsActiveTenant]
     # Listar staff não deve ser afetado pelo throttle de convites
     serializer_class = TenantStaffMemberSerializer
 
