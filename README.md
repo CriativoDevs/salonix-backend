@@ -19,6 +19,7 @@ This repository exposes the backend API consumed by the web frontend (React) and
 ---
 
 ## 📂 Project Structure
+
 ```
 salonix-backend/
 ├── core/              # Appointments, services, schedules, series
@@ -117,11 +118,13 @@ salonix-backend/
    ```
 
 Seeded credentials:
+
 - `pro_smoke@demo.local / Smoke@123`
 - `client_smoke@demo.local / Smoke@123`
 - Set `SMOKE_USER_PASSWORD=...` before `make seed` to override default.
 
 What does the script do?
+
 - Authenticates as `pro_smoke`.
 - Calls `/api/reports/overview/`, `/top-services/`, `/revenue/` and exports CSV with backoff.
 - Validates throttling and Prometheus metrics.
@@ -159,6 +162,7 @@ Note: run `make seed` to populate demo data before smoke.
 - Observability: `USERS_SSE_EVENTS_TOTAL{event,result}`; logs include `X-Request-ID`.
 
 Example (`curl`):
+
 ```bash
 curl -N \
   -H "Accept: text/event-stream" \
@@ -168,18 +172,20 @@ curl -N \
 ```
 
 Example (`EventSource`):
+
 ```js
-const es = new EventSource('/api/users/realtime/credits/');
-es.addEventListener('credit_update', (e) => {
+const es = new EventSource("/api/users/realtime/credits/");
+es.addEventListener("credit_update", (e) => {
   const payload = JSON.parse(e.data);
   // update UI with payload.balance and payload.ledger
 });
-es.addEventListener('heartbeat', () => {
+es.addEventListener("heartbeat", () => {
   // optional: show active connection
 });
 ```
 
 Notes:
+
 - SSE headers: `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
 - On error, `USERS_SSE_EVENTS_TOTAL{event="error", result}` captures outcomes.
 
@@ -227,11 +233,25 @@ Major improvements (advanced cache, full observability, AI, etc.) are planned po
 ## 🌱 Seed (demo data)
 
 Creates users, professionals, services, slots and some appointments (idempotent):
+
 ```bash
 make seed
 # or
 ./scripts/seed.sh
 ```
+
+**Tenants created:**
+
+- `default` (Standard Plan)
+- `basic-demo` (Basic Plan)
+- `pro-demo` (Pro Plan, Custom Domain)
+- `empty-credits` (Standard Plan, 0 credits)
+
+**Credentials:**
+
+- Admin: `admin@demo.local` / `admin`
+- Pro User: `pro_smoke@demo.local` / `Smoke@123`
+- Client: `client_smoke@demo.local` / `Smoke@123`
 
 ### 🚀 Mass seed (performance tests)
 
@@ -252,6 +272,7 @@ For large test data volumes:
 - Integração com Stripe para assinaturas
 
 ### 📂 Estrutura do projeto
+
 ```
 salonix-backend/
 ├── core/              # Agendamentos, serviços, horários, séries
@@ -344,11 +365,13 @@ salonix-backend/
    ```
 
 Credenciais seed:
+
 - `pro_smoke@demo.local / Smoke@123`
 - `client_smoke@demo.local / Smoke@123`
 - `SMOKE_USER_PASSWORD=...` antes de `make seed` altera a senha padrão.
 
 O script:
+
 - Autentica como `pro_smoke`.
 - Chama relatórios (`overview`, `top-services`, `revenue`) e exporta CSV.
 - Valida throttling e métricas Prometheus.
@@ -370,6 +393,7 @@ O script:
 - Observabilidade: `USERS_SSE_EVENTS_TOTAL{event,result}` e logs com `X-Request-ID`.
 
 Exemplo `curl`:
+
 ```bash
 curl -N \
   -H "Accept: text/event-stream" \
@@ -409,3 +433,16 @@ make seed
 # ou
 ./scripts/seed.sh
 ```
+
+**Tenants criados:**
+
+- `default` (Plano Standard)
+- `basic-demo` (Plano Basic)
+- `pro-demo` (Plano Pro, Domínio Personalizado)
+- `empty-credits` (Plano Standard, 0 créditos)
+
+**Credenciais:**
+
+- Admin: `admin@demo.local` / `admin`
+- Pro User: `pro_smoke@demo.local` / `Smoke@123`
+- Client: `client_smoke@demo.local` / `Smoke@123`
