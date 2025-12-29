@@ -25,8 +25,10 @@ from .views import (
     TenantModulesSettingsView,
     TenantProfileView,
 )
+from .views_captcha import CaptchaGenerateView
 
 urlpatterns = [
+    path("captcha/new/", CaptchaGenerateView.as_view(), name="captcha_new"),
     path("register/", UserRegistrationView.as_view(), name="register"),
     path("me/profile/", MeProfileView.as_view(), name="me_profile"),
     path("staff/", TenantStaffView.as_view(), name="tenant_staff"),

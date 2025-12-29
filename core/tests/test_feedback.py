@@ -36,7 +36,7 @@ def test_create_feedback_requires_owner_and_captcha_bypass():
             "message": "Excelente",
             "is_anonymous": True,
         }
-        r = client.post(url, payload, format="json", HTTP_X_CAPTCHA_TOKEN="TEST")
+        r = client.post(url, payload, format="json", HTTP_X_CAPTCHA_VALUE="TEST")
         assert r.status_code == status.HTTP_201_CREATED
 
     client.force_authenticate(manager)

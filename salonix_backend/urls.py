@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/ops/", include("ops.urls")),
     path("api/reports/", include("reports.urls")),
     path("api/notifications/", include("notifications.urls")),
+    path("api/captcha/", include("captcha.urls")),  # django-simple-captcha
     path(
         "api/public/unsubscribe",
         PublicUnsubscribeView.as_view(),
