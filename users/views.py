@@ -11,6 +11,7 @@ from rest_framework.exceptions import (
     ValidationError,
     AuthenticationFailed,
     PermissionDenied,
+    Throttled,
 )
 
 from drf_spectacular.utils import (
@@ -18,6 +19,7 @@ from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiResponse,
     OpenApiParameter,
+    inline_serializer,
 )
 from drf_spectacular.types import OpenApiTypes
 
@@ -100,6 +102,34 @@ class UserRegistrationView(generics.CreateAPIView):
     throttle_classes = [UsersAuthRegisterThrottle]
     throttle_scope = "auth_register"
 
+    @extend_schema(
+        summary="Registro de usuário",
+        description="Cria novo usuário/tenant. Requer captcha se CAPTCHA_ENABLED=True.",
+        parameters=[
+            OpenApiParameter(
+                name="X-Captcha-Key",
+                location=OpenApiParameter.HEADER,
+                description="Chave do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="X-Captcha-Value",
+                location=OpenApiParameter.HEADER,
+                description="Valor do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+        ],
+        request=UserRegistrationSerializer,
+        responses={
+            201: UserRegistrationSerializer,
+            400: OpenApiResponse(description="Erro de validação ou Captcha inválido"),
+            429: OpenApiResponse(
+                description="Rate Limit Excedido (verificar header Retry-After)"
+            ),
+        },
+    )
     def post(self, request, *args, **kwargs):
         try:
             enforce_captcha_or_raise(request)
@@ -140,6 +170,36 @@ class EmailTokenObtainPairView(TokenObtainPairView):
     throttle_classes = [UsersAuthLoginThrottle]
     throttle_scope = "auth_login"
 
+    @extend_schema(
+        summary="Login (JWT)",
+        description="Obtém par de tokens (access/refresh) + contexto do tenant. Requer captcha se CAPTCHA_ENABLED=True.",
+        parameters=[
+            OpenApiParameter(
+                name="X-Captcha-Key",
+                location=OpenApiParameter.HEADER,
+                description="Chave do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="X-Captcha-Value",
+                location=OpenApiParameter.HEADER,
+                description="Valor do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+        ],
+        responses={
+            200: EmailTokenObtainPairSerializer,
+            400: OpenApiResponse(
+                description="Credenciais inválidas ou Captcha inválido"
+            ),
+            401: OpenApiResponse(description="Não autorizado"),
+            429: OpenApiResponse(
+                description="Rate Limit Excedido (verificar header Retry-After)"
+            ),
+        },
+    )
     def post(self, request, *args, **kwargs):
         try:
             enforce_captcha_or_raise(request)
@@ -1127,7 +1187,24 @@ class PasswordResetRequestView(APIView):
     serializer_class = PasswordResetRequestSerializer
 
     @extend_schema(
-        description="Solicita um reset de senha. Resposta é neutra para não vazar existência.",
+        summary="Solicitar Reset de Senha",
+        description="Envia email com link de redefinição. Requer captcha se CAPTCHA_ENABLED=True.",
+        parameters=[
+            OpenApiParameter(
+                name="X-Captcha-Key",
+                location=OpenApiParameter.HEADER,
+                description="Chave do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+            OpenApiParameter(
+                name="X-Captcha-Value",
+                location=OpenApiParameter.HEADER,
+                description="Valor do captcha (alternativa ao body)",
+                required=False,
+                type=OpenApiTypes.STR,
+            ),
+        ],
         examples=[
             OpenApiExample(
                 "Exemplo",
@@ -1135,7 +1212,13 @@ class PasswordResetRequestView(APIView):
                 request_only=True,
             )
         ],
-        responses={200: OpenApiResponse(description="Always ok", response=None)},
+        responses={
+            200: OpenApiResponse(
+                description="Solicitação processada (sempre OK para não vazar emails)"
+            ),
+            400: OpenApiResponse(description="Captcha inválido ou email ausente"),
+            429: OpenApiResponse(description="Rate Limit Excedido"),
+        },
     )
     def post(self, request):
         try:
