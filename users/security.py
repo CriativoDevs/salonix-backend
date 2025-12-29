@@ -3,73 +3,77 @@ from typing import Optional
 
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
+from captcha.models import CaptchaStore
 
 logger = logging.getLogger("users.security")
 
 
-def _get_captcha_token_from_request(request) -> Optional[str]:
-    token = request.data.get("captcha_token") if hasattr(request, "data") else None
-    if not token:
-        token = request.headers.get("X-Captcha-Token")
-    return token
+def _get_captcha_data_from_request(request) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extrai a chave e o valor do captcha da requisição.
+    """
+    key = request.data.get("captcha_key") if hasattr(request, "data") else None
+    value = request.data.get("captcha_value") if hasattr(request, "data") else None
+
+    if not key:
+        key = request.headers.get("X-Captcha-Key")
+    if not value:
+        value = request.headers.get("X-Captcha-Value")
+
+    return key, value
 
 
 def enforce_captcha_or_raise(request) -> None:
     """
-    Valida captcha conforme flags em settings. Em dev/smoke, permite bypass por token.
+    Valida captcha conforme flags em settings.
 
     Regras:
     - Se CAPTCHA_ENABLED = false -> no-op
-    - Se CAPTCHA_BYPASS_TOKEN definido e igual ao token recebido -> aceita
-    - Caso contrário, sem integração externa neste contexto offline, rejeita
+    - Se CAPTCHA_BYPASS_TOKEN definido e igual ao valor recebido -> aceita (bypass para testes)
+    - Caso contrário, valida junto ao CaptchaStore (django-simple-captcha)
     """
     if not getattr(settings, "CAPTCHA_ENABLED", False):
         return
 
-    token = _get_captcha_token_from_request(request)
-    if not token:
-        raise ValidationError({"captcha": ["Token de captcha ausente."]})
+    key, value = _get_captcha_data_from_request(request)
 
-    bypass = getattr(settings, "CAPTCHA_BYPASS_TOKEN", "")
-    if bypass and token == bypass:
+    # Lógica de Bypass (antes de validar key)
+    bypass_token = getattr(settings, "CAPTCHA_BYPASS_TOKEN", "")
+    if bypass_token and value == bypass_token:
         logger.info(
             "Captcha bypass aceito",
             extra={
-                "provider": getattr(settings, "CAPTCHA_PROVIDER", ""),
                 "bypass": True,
             },
         )
         return
 
-    # Em ambiente offline de testes/CLI, não chamamos provedores externos.
-    # Para produção, a integração será via requests.post para o provider.
-    logger.warning(
-        "Captcha inválido ou não verificado",
-        extra={"provider": getattr(settings, "CAPTCHA_PROVIDER", ""), "bypass": False},
-    )
-    raise ValidationError({"captcha": ["Captcha inválido."]})
+    # Se não tem key/value, erro imediato
+    if not key or not value:
+        raise ValidationError({"captcha": ["Token de captcha ausente."]})
 
+    # Validação Real (Local)
+    try:
+        # Tenta recuperar o registro do CaptchaStore
+        # A validação de case-insensitive já é feita pelo método response.lower() == challenge.lower()
+        # Mas aqui usaremos o manager para verificar e deletar após uso
+        captcha = CaptchaStore.objects.get(hashkey=key)
 
-def verify_captcha_with_provider(token: str, remote_ip: Optional[str] = None) -> bool:
-    """
-    STUB: Valida o token do captcha junto ao provider configurado.
+        # Verifica expiração
+        # O CaptchaStore já tem um método de cleanup, mas precisamos garantir validade
 
-    Providers:
-    - Turnstile: https://challenges.cloudflare.com/turnstile/v0/siteverify
-    - hCaptcha:  https://hcaptcha.com/siteverify
+        if captcha.response.lower() == value.lower():
+            # Sucesso! Marca como usado (remove do banco para não reutilizar)
+            captcha.delete()
+            return
+        else:
+            raise ValidationError({"captcha": ["Captcha incorreto."]})
 
-    Implementação real será feita na issue BE-212A, com chamadas HTTP, timeouts,
-    tratamento de erros e métricas. Aqui mantemos apenas a assinatura e logging.
-    """
-    provider = getattr(settings, "CAPTCHA_PROVIDER", "")
-    secret = getattr(settings, "CAPTCHA_SECRET", "")
-    logger.info(
-        "verify_captcha_with_provider (stub)",
-        extra={
-            "provider": provider,
-            "has_secret": bool(secret),
-            "remote_ip": remote_ip is not None,
-        },
-    )
-    # Placeholder até BE-212A: retornar False para explicitar que não há verificação real
-    return False
+    except CaptchaStore.DoesNotExist:
+        raise ValidationError({"captcha": ["Captcha inválido ou expirado."]})
+    except ValidationError:
+        # Se for um ValidationError lançado acima, relança
+        raise
+    except Exception as e:
+        logger.error("Erro na validação do captcha", extra={"error": str(e)})
+        raise ValidationError({"captcha": ["Erro ao validar captcha."]})

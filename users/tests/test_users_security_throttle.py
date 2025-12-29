@@ -104,8 +104,8 @@ def test_login_with_captcha_bypass_succeeds():
         username="u1", email="u1@example.com", password="p@ss12345"
     )
     payload = {"email": "u1@example.com", "password": "p@ss12345"}
-    # enviar header de bypass
-    r = client.post(token_url, data=payload, HTTP_X_CAPTCHA_TOKEN="dev-bypass")
+    # enviar header de bypass (agora usa X-Captcha-Value)
+    r = client.post(token_url, data=payload, HTTP_X_CAPTCHA_VALUE="dev-bypass")
     assert r.status_code == status.HTTP_200_OK
 
 
@@ -120,7 +120,8 @@ def test_login_with_invalid_captcha_fails():
     payload = {
         "email": "u2@example.com",
         "password": "p@ss12345",
-        "captcha_token": "invalid",
+        "captcha_value": "invalid",
+        "captcha_key": "some-key",
     }
     r = client.post(token_url, data=payload)
     assert r.status_code == status.HTTP_400_BAD_REQUEST

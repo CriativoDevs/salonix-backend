@@ -3,15 +3,18 @@
 ## 🇬🇧 English
 
 ### Overview
+
 This document tracks implemented backend features with references to code, endpoints and tests. Major areas include multi‑tenancy, auth, plans/billing, Ops console, reports/cache, staff management, validation, notifications, payments and realtime credits (SSE).
 
 ### Quick Pointers
+
 - Multi‑tenancy & auth: `users/*`, endpoints under `/api/users/**`.
 - Plans & Stripe: `payments/*`, endpoints under `/api/payments/**`, see `docs/PAGAMENTOS_STRIPE.md`.
 - Ops console: `ops/*` (`/api/ops/**`), runbook in `docs/OPS_RUNBOOK.md`.
 - Reports & cache: `reports/*` with Redis caching and throttling.
 - Staff by tenant: `users/TenantStaffMember` with invite/accept endpoints and permissions enforced in `core/*`.
 - Validation system: `salonix_backend/validators.py` and `docs/VALIDATION_SYSTEM.md`.
+- Captcha system: `docs/CAPTCHA_SYSTEM.md`.
 - Realtime credits (SSE): `GET /api/users/realtime/credits/` — see section below.
 
 ---
@@ -25,26 +28,32 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **🏗️ 1. Infraestrutura Base**
 
 #### **Multi-tenancy Obrigatório (BE-104)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/models.py` - Modelo Tenant com planos e features
 - `users/middleware.py` - TenantMiddleware para isolamento
 - `core/models.py` - Todos os modelos com tenant_id
 
 **Características**:
+
 - ✅ Isolamento completo de dados por tenant
 - ✅ Planos: Basic, Standard, Pro, Enterprise
 - ✅ Feature flags granulares por tenant
 - ✅ Middleware automático de detecção de tenant
 
 #### **Autenticação JWT**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/views.py` - Login/logout com JWT
 - `users/serializers.py` - Serializers de autenticação
 - `settings.py` - Configuração JWT
 
 **Características**:
+
 - ✅ Login via `/api/users/token/`
 - ✅ Refresh tokens automáticos
 - ✅ Logout com invalidação de token
@@ -55,8 +64,10 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Seeds `seed_demo` aplicam senha padrão configurável (`SMOKE_USER_PASSWORD`, default `Smoke@123`) para os usuários `pro_smoke` e `client_smoke`, alinhando com os scripts de smoke
 
 #### **Plano, Billing e Trials Self-Service (BE-210)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `payments/views.py` – `CreateCheckoutSession`, webhook Stripe e atualização das feature flags
 - `payments/stripe_utils.py` – mapeamento `plan_code → price_id` (Basic/Standard/Pro/Enterprise) e helpers de detecção
 - `payments/serializers.py` – validação dos planos suportados
@@ -65,6 +76,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `payments/tests/test_payments_stripe.py` – cobertura do fluxo end-to-end com mocks Stripe
 
 **Características**:
+
 - ✅ Checkout gera sessão Stripe com metadata (`plan_code`, `user_id`, `client_reference_id`) e trial configurável (`STRIPE_TRIAL_DAYS`, default 14)
 - ✅ Webhook processa `checkout.session.completed`/`customer.subscription.*`, sincronizando `Subscription`, `UserFeatureFlags` e `Tenant.plan_tier`
 - ✅ Mapeamento bidirecional dos preços via env (`STRIPE_PRICE_BASIC/STANDARD/PRO/ENTERPRISE_MONTHLY_ID`) com fallback legado (`monthly`/`yearly`)
@@ -73,22 +85,27 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Testes garantem que o plano selecionado ativa corretamente flags/tenant
 
 #### **E-mail único no self-service (BE-236)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/models.py` – constraint `users_customuser_email_ci_unique` (case-insensitive)
 - `users/serializers.py` – validação no `UserRegistrationSerializer`
 - `users/migrations/0011_*` – checagem prévia de duplicados antes de aplicar a constraint
 - `users/tests/test_auth.py` / `test_user_models.py` – cobertura dos cenários de duplicidade
 
 **Características**:
+
 - ✅ Registro self-service retorna 400 + detalhe de validação quando o e-mail já existe
 - ✅ Constraint no banco garante unicidade mesmo com variações de maiúsculas/minúsculas
 - ✅ Seeds e scripts continuam a usar o padrão `pro_smoke@demo.local`
 - ✅ Migração aborta com mensagem clara se houver duplicados remanescentes, evitando inconsistências
 
 #### **Autenticação Console Ops (OPS-BE-01)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/models.py` - campo `ops_role` e helpers de staff
 - `ops/serializers.py` - serializers dedicados de login/refresh
 - `ops/views.py` - endpoints `/api/ops/auth/login|refresh/`
@@ -97,7 +114,24 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `ops/observability.py` - métrica `ops_auth_events_total`
 
 **Características**:
+
 - ✅ Tokens JWT com claims de escopo (`scope=tenant|ops_admin|ops_support`)
+
+#### **Captcha Self-Hosted (BE-212B)**
+
+**Status**: ✅ Implementado
+**Arquivos**:
+
+- `users/views_captcha.py` - endpoint de geração
+- `users/security.py` - validação local
+- `docs/CAPTCHA_SYSTEM.md` - documentação completa
+
+**Características**:
+
+- ✅ Solução 100% on-premise (django-simple-captcha)
+- ✅ API JSON para clientes SPA (`/api/captcha/new/`)
+- ✅ Bypass seguro para testes automatizados
+- ✅ Zero dependências externas (Cloudflare removido)
 - ✅ Bloqueio cruzado via middleware: staff não acessa painel tenant e vice-versa
 - ✅ Métrica Prometheus `ops_auth_events_total{event,result,role}`
 - ✅ Logging estruturado de sucesso/falha nos endpoints Ops
@@ -105,8 +139,10 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Comando `python manage.py bootstrap_ops_staff --email ... --role ...`
 
 #### **Gestão de Tenants (OPS-BE-02)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `ops/views.py` - `OpsTenantViewSet` com listagem, detalhe e ações administrativas
 - `ops/serializers.py` - serializers para resumo de tenant e payloads de ações
 - `ops/permissions.py` - permissions `IsOpsSupportOrAdmin` / `IsOpsAdmin`
@@ -114,6 +150,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `ops/urls.py` - registro das rotas `/api/ops/tenants/`
 
 **Características**:
+
 - ✅ Listagem paginada com filtros (`plan_tier`, `is_active`, datas, módulos) e ordenação customizada
 - ✅ Detalhe com `feature_flags`, contagem de usuários, consumo de SMS/WhatsApp e histórico (último login, trial)
 - ✅ Export CSV com cabeçalho `Content-Disposition`
@@ -122,8 +159,10 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Resposta padronizada de erros (middleware + `BusinessError`)
 
 #### **Métricas & Suporte Ops (OPS-BE-03)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `ops/models.py` - modelos `OpsAlert`, `AccountLockout`, `OpsSupportAuditLog`
 - `ops/views.py` - endpoints `metrics/overview`, `alerts`, `support/*`
 - `ops/serializers.py` - serializers de alertas e ações de suporte
@@ -132,6 +171,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `ops/urls.py` - rotas `/api/ops/metrics/overview/`, `/api/ops/alerts/`, `/api/ops/support/**`
 
 **Características**:
+
 - ✅ Dashboard Ops com MRR estimado, tenants ativos, trials próximos e consumo diário de notificações (7 dias)
 - ✅ Gestão de alertas críticos (falhas de notificação, incidentes), com resolução auditada
 - ✅ Serviços de suporte: reenvio de notificações falhadas e limpeza de lockouts com tracking Prometheus
@@ -139,27 +179,33 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Respostas de suporte com metadata (`request_id`) e integração com middleware de erros customizado
 
 #### **Cache Redis (BE-92)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `settings.py` - Configuração django-redis
 - `requirements.txt` - Dependência django-redis==5.4.0
 - `reports/views.py` - Cache em relatórios
 
 **Características**:
+
 - ✅ Cache principal: Redis com fallback LocMem
 - ✅ Invalidação automática via signals
 - ✅ Chaves de cache incluem tenant_id
 - ✅ Configuração robusta com pooling
 
 #### **Gestão de Staff por Tenant (BE-282)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/models.py` – Modelo `TenantStaffMember` com papeis (owner/manager/collaborator), status e helpers `mark_activated/mark_disabled/ensure_professional`.
 - `users/views.py` / `users/serializers.py` – Endpoints de convite, aceite, atualização e remoção de staff.
 - `core/views.py` – Guards de permissões para services, professionals, slots, appointments e bulk/series respeitando o papel do staff.
 - `users/tests/test_staff_professional_integration.py`, `tests/test_staff_permissions.py` – Cobertura de convites, criação automática de profissionais, bloqueios 403 e fluxos happy path.
 
 **Características**:
+
 - ✅ Owner/manager convidam colaboradores via `/api/users/staff/` (token + expiração + métricas).
 - ✅ Aceite do convite ativa usuário, define senha e gera (ou reassocia) `Professional` automaticamente ao staff.
 - ✅ Colaboradores só veem/alteram seus próprios profissionais, slots e agendamentos; owner/manager mantêm visão global.
@@ -169,14 +215,17 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Fluxo legado removido: `ProfessionalSerializer` exige `staff_member`, `ProfessionalViewSet` garante vínculo obrigatório e o Django Admin agora cria profissionais a partir de um staff ativo. Migração `core/0019_attach_professionals_to_staff` reconcilia registros antigos.
 
 #### **Tenant Staff Management (BE-282) – English Summary**
+
 **Status**: ✅ Shipped  
 **Key files**:
+
 - `users/models.py` – `TenantStaffMember` model with roles, invitation metadata and `ensure_professional` helper.
 - `users/views.py` / `users/serializers.py` – Staff invite/accept/update/delete endpoints.
 - `core/views.py` – Permission guards for services, professionals, slots, appointments (single and bulk/series) based on staff role.
 - Automated tests in `users/tests/test_staff_professional_integration.py` and `tests/test_staff_permissions.py`.
 
 **Highlights**:
+
 - ✅ Owners/managers send invitations with expiring tokens; acceptance activates the user and auto-creates or reattaches a `Professional`.
 - ✅ Collaborators are restricted to their own professionals, slots and appointments; owners/managers keep full access.
 - ✅ Disabling staff deactivates linked professionals; re-enabling restores them.
@@ -185,13 +234,16 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **🎨 2. White-label e Branding**
 
 #### **Endpoint Tenant Meta (BE-105)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/views.py` - TenantMetaView
 - `users/serializers.py` - TenantMetaSerializer, TenantBrandingUpdateSerializer
 - `users/models.py` - Campos de branding no Tenant
 
 **Características**:
+
 - ✅ GET `/api/users/tenant/meta/` - Dados do tenant
 - ✅ PATCH `/api/users/tenant/meta/` - Atualizar branding
 - ✅ Upload de logo com validação
@@ -199,12 +251,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Feature flags por tenant
 
 #### **Sistema de Validação de Assets**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/validators.py` - HexColorValidator, ImageFileValidator
 - `users/models.py` - Validação de logo e cores
 
 **Características**:
+
 - ✅ Validação de imagens (formato, tamanho, dimensões)
 - ✅ Limite de 2MB para logos
 - ✅ Formatos suportados: PNG, JPG, JPEG
@@ -218,23 +273,29 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 **Status**: ✅ Implementado
 
 **Endpoint**:
+
 - `PATCH /api/payments/stripe/settings/`
 
 **Contrato**:
+
 - Request: `{ "auto_renewal": boolean }`
 - Response: `{ "auto_renewal": boolean }`
 
 **Permissão**:
+
 - Apenas OWNER autenticado com `user.tenant` válido.
 
 **Efeitos**:
+
 - Persiste `tenant.comm_auto_renew` e reflete em `billing/overview` via `has_auto_renewal`.
 
 **Auditoria**:
+
 - Log info `payments.settings.update` com `actor_id`, `tenant_id`, `field`, `old_value`, `new_value`.
 - Log error `payments.settings.update_error` com `actor_id`, `tenant_id`, `error` em falhas.
 
 **Métricas (Prometheus)**:
+
 - `payments_settings_updated_total{result}` com labels: `success`, `invalid`, `forbidden`, `error`.
   - `forbidden`: sem tenant ou não-OWNER
   - `invalid`: payload inválido
@@ -242,50 +303,61 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
   - `error`: exceção ao salvar
 
 **Referências**:
+
 - Código: `payments/views.py::StripeSettingsView`
 - Observabilidade: `payments/observability.py`
 - Serializers: `StripeSettingsUpdateRequestSerializer`, `StripeSettingsResponseSerializer`
 
-
 #### **Modelos Core**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/models.py` - Service, Professional, ScheduleSlot, Appointment
 - `core/serializers.py` - Serializers para CRUD
 - `core/views.py` - ViewSets para API
 
 **Características**:
+
 - ✅ Serviços com preço e duração
 - ✅ Profissionais com especialidades
 - ✅ Slots de horário configuráveis
 - ✅ Agendamentos com status avançados
 
 #### **Status Avançados (BE-91)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/models.py` - Campo status no Appointment
 
 **Características**:
+
 - ✅ Status: scheduled, confirmed, completed, paid, cancelled
 - ✅ Transições de status controladas
 - ✅ Histórico de mudanças
 - ✅ Validações de negócio
 
 #### **Validações de Negócio**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/serializers.py` - Validações customizadas
 - `core/models.py` - Constraints de banco
 
 **Características**:
+
 - ✅ Verificação de slots disponíveis
 - ✅ Prevenção de conflitos de horário
 - ✅ Validação de datas futuras
 - ✅ Limites de agendamento por usuário
 
 #### **Clientes do Salão e Vínculo de Agendamentos (BE-280)**
+
 **Status**: 🚧 Em andamento  
 **Arquivos**:
+
 - `core/models.py` – Modelo `SalonCustomer` e FK em `Appointment`
 - `core/serializers.py` / `core/views.py` – CRUD `salon/customers/` e associação automática em criações/cancelamentos
 - `core/management/commands/seed_demo.py` – Seeds criam cliente demo e vinculam agendamentos default
@@ -293,49 +365,59 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - `core/email_utils.py` – E-mails incluem o nome do salão
 
 **Características**:
+
 - ✅ API isolada por tenant (`GET/POST/PATCH/DELETE /api/salon/customers/`)
 - ✅ Agendamentos públicos criam/reutilizam cliente automaticamente com base no usuário
 - ✅ Envio de e-mails usa o contato/nome do cliente e do salão
 - ✅ Seeds e smoke tests compatíveis com o novo fluxo
 
 #### **Convite automático do PWA (BE-281)**
+
 **Status**: 🚧 Em andamento  
 **Arquivos**:
+
 - `users/models.py` / `users/serializers.py` / `users/views.py` – Flag `auto_invite_enabled` no tenant e PATCH em `/api/users/tenant/meta/`.
 - `core/views.py` – Endpoint `POST /api/salon/customers/{id}/invite/` e disparo automático ao criar clientes.
 - `notifications/services.py` – Stub `send_customer_pwa_invite` com logs e ponto de integração futuro.
 - `core/tests/test_salon_customer_invite.py` / `users/tests/test_feature_flags.py` – Cobertura de reenvio, auto invite e validações de plano.
 
 **Características**:
+
 - ✅ Reenvio manual de convite do PWA com validações de plano/e-mail.
 - ✅ Auto invite dispara na criação de clientes quando flag + PWA Cliente estão habilitados.
 - ✅ Logs incluem tenant, cliente e usuário para observabilidade.
 - ⏳ Integração real de envio (e-mail/SMS) será definida após escolha do canal.
 
 #### **Agendamentos Múltiplos (BE-153)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/views.py` - `BulkAppointmentCreateView` (`POST /api/appointments/bulk/`)
 - `core/serializers.py` - `BulkAppointmentSerializer`
 
 **Características**:
- - ✅ Criação de múltiplos agendamentos em uma só operação
- - ✅ Transação atômica (todos ou nenhum)
- - ✅ Validações em lote: disponibilidade, sem duplicidade, datas futuras, compatibilidade do slot com o profissional informado por item
- - ✅ Suporte a `service_id` e `professional_id` por item (fallback opcional do payload nível raiz)
- - ✅ Limite de 20 agendamentos por lote
- - ✅ E-mail obrigatório para criação de novos clientes; no bulk, obrigatório para usuários não autenticados
- - ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`, `service_names[]`, `professional_names[]`
- - ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
+
+- ✅ Criação de múltiplos agendamentos em uma só operação
+- ✅ Transação atômica (todos ou nenhum)
+- ✅ Validações em lote: disponibilidade, sem duplicidade, datas futuras, compatibilidade do slot com o profissional informado por item
+- ✅ Suporte a `service_id` e `professional_id` por item (fallback opcional do payload nível raiz)
+- ✅ Limite de 20 agendamentos por lote
+- ✅ E-mail obrigatório para criação de novos clientes; no bulk, obrigatório para usuários não autenticados
+- ✅ Resposta com `success`, `appointments_created`, `appointment_ids`, `total_value`, `message`, `service_names[]`, `professional_names[]`
+- ✅ Métricas Prometheus: `bulk_appointments_created_total{status}`, `bulk_appointments_average_size`, `bulk_appointments_errors_total{status}`
 
 #### **Atualização de Séries (BE-191)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/views.py` - `AppointmentSeriesDetailView.patch`
 - `core/serializers.py` - `AppointmentSeriesUpdateSerializer`
 - `core/tests/test_appointment_series_patch.py` - Testes end-to-end
 
 **Características**:
+
 - ✅ PATCH `/api/appointments/series/{id}/` com `action=cancel_all | edit_upcoming`
 - ✅ Cancelamento em massa de ocorrências futuras com liberação de slots
 - ✅ Edição de próximas ocorrências (notas + remarcação) com validações de disponibilidade
@@ -344,12 +426,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Métricas Prometheus: `appointment_series_updated_total{tenant_id,action,status}` e `appointment_series_errors_total{tenant_id,action,error_type}`
 
 #### **Cancelamento Pontual de Série (BE-192)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/views.py` - `AppointmentSeriesOccurrenceCancelView`
 - `core/tests/test_appointment_series_patch.py` - Testes de cancelamento pontual
 
 **Características**:
+
 - ✅ POST `/api/appointments/series/{series_id}/occurrence/{occurrence_id}/cancel/`
 - ✅ Permissões: cliente da série, dono do serviço ou profissional (multi-tenant)
 - ✅ Bloqueio para ocorrências passadas ou já canceladas
@@ -358,24 +443,30 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Resposta `{ success, series_id, appointment_id, message }`
 
 #### **Métricas Avançadas de Séries (BE-193)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/views.py` - Instrumentação em criação, patch e cancelamento de ocorrências
 - `core/tests/test_appointment_series_metrics.py` - Testes unitários de métricas
 
 **Características**:
+
 - ✅ Contador `appointment_series_created_total{tenant_id,status}` (sucesso/erro)
 - ✅ Contador `appointment_series_size_total{tenant_id}` com tamanho do lote criado
 - ✅ Testes isolando registry Prometheus para validar incrementos
 - ✅ Documentação e status atualizados
 
 #### **Admin de Séries (BE-194)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/admin.py` - `AppointmentSeriesAdmin`, `AppointmentInline`, ajustes em `AppointmentAdmin`
 - `tests/test_admin.py` - Testes de listagem/detalhe e filtros por série
 
 **Características**:
+
 - ✅ Listagem com tenant, cliente, profissional e contadores de ocorrências
 - ✅ Inline somente leitura de agendamentos com ordenação cronológica
 - ✅ Filtros e busca por tenant, serviço, profissional e ID da série
@@ -384,36 +475,45 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **📊 4. Sistema de Relatórios**
 
 #### **Endpoints de Relatórios**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `reports/views.py` - ReportsOverview, TopServices, Revenue
 - `reports/serializers.py` - Serializers de relatórios
 - `reports/utils.py` - Funções de cálculo
 
 **Características**:
+
 - ✅ `/api/reports/overview/` - Visão geral
 - ✅ `/api/reports/top-services/` - Serviços mais populares
 - ✅ `/api/reports/revenue/` - Análise de receita
 - ✅ Filtros por período (today, week, month, year)
 
 #### **Exportação CSV**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `reports/views.py` - Parâmetro ?format=csv
 
 **Características**:
+
 - ✅ Todos os relatórios exportáveis
 - ✅ Headers CSV apropriados
 - ✅ Encoding UTF-8
 - ✅ Nome de arquivo com timestamp
 
 #### **Cache Inteligente**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `reports/views.py` - Decoradores de cache
 - `core/signals.py` - Invalidação automática
 
 **Características**:
+
 - ✅ Cache por tenant + parâmetros
 - ✅ TTL configurável por endpoint
 - ✅ Invalidação em mudanças de Appointment
@@ -422,24 +522,30 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **🔔 5. Sistema de Notificações**
 
 #### **Sistema Básico (BE-106)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `notifications/models.py` - NotificationDevice, NotificationLog
 - `notifications/services.py` - Drivers de notificação
 - `notifications/views.py` - Endpoints de registro
 
 **Características**:
+
 - ✅ 5 canais: in_app, push_web, push_mobile, sms, whatsapp
 - ✅ Registro de devices via `/api/notifications/register_device/`
 - ✅ Teste de canais via `/api/notifications/test/`
 - ✅ Logs estruturados de entrega
 
 #### **Drivers de Notificação**
+
 **Status**: ✅ Implementado (Simulados)  
 **Arquivos**:
+
 - `notifications/services.py` - InAppDriver, PushWebDriver, etc.
 
 **Características**:
+
 - ✅ InAppDriver - Notificações internas
 - ✅ PushWebDriver - Web push notifications
 - ✅ PushMobileDriver - Push para apps
@@ -449,13 +555,16 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **📅 6. Integração de Calendário**
 
 #### **Download .ics (BE-107)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `core/views.py` - AppointmentICSView
 - `core/utils.py` - Geração de arquivo .ics
 
 **Características**:
-- ✅ GET `/api/appointments/{id}/ics/` 
+
+- ✅ GET `/api/appointments/{id}/ics/`
 - ✅ Formato iCalendar padrão
 - ✅ UID único por tenant+appointment
 - ✅ Compatível com Google Calendar, Apple, Outlook
@@ -464,12 +573,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **🛡️ 7. Qualidade e Robustez**
 
 #### **Tratamento de Erros (BE-94)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `salonix_backend/error_handling.py` - Sistema completo
 - `settings.py` - Exception handler customizado
 
 **Características**:
+
 - ✅ ErrorCodes enum padronizado
 - ✅ Exceções customizadas: SalonixError, BusinessError, TenantError
 - ✅ Handler customizado para DRF
@@ -477,12 +589,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Sanitização de dados sensíveis
 
 #### **Validação de Dados (BE-95)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `salonix_backend/validators.py` - Validadores customizados
 - `core/serializers.py` - Integração com serializers
 
 **Características**:
+
 - ✅ PhoneNumberValidator - Números portugueses
 - ✅ NIFValidator - Validação de NIF
 - ✅ PriceValidator - Preços em euros
@@ -490,13 +605,16 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ BusinessHoursValidator - Horários comerciais
 
 #### **Logging Estruturado (BE-97)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `salonix_backend/logging_utils.py` - Formatters customizados
 - `salonix_backend/middleware.py` - RequestLoggingMiddleware
 - `settings.py` - Configuração de logging
 
 **Características**:
+
 - ✅ JSONFormatter para produção
 - ✅ DevelopmentFormatter para dev (colorido)
 - ✅ RequestContextFilter - Injeta request_id, user_id, tenant_id
@@ -505,13 +623,16 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **🏛️ 8. Django Admin Customizado**
 
 #### **Admin Site Customizado (BE-14)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `salonix_backend/admin.py` - SalonixAdminSite
 - `users/admin.py` - Admin customizado para User/Tenant
 - `core/admin.py` - Admin para modelos core
 
 **Características**:
+
 - ✅ Dashboard customizado com estatísticas
 - ✅ Filtros e busca avançada
 - ✅ Ações em massa para tenants
@@ -519,12 +640,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Gestão de branding por tenant
 
 #### **Sistema de Permissões**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `salonix_backend/admin_permissions.py` - Permissões customizadas
 - `salonix_backend/management/commands/setup_admin.py` - Setup inicial
 
 **Características**:
+
 - ✅ Grupos: Salonix Admins, Tenant Managers, Support
 - ✅ Permissões granulares por modelo
 - ✅ Isolamento de dados por tenant no admin
@@ -533,52 +657,65 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ### **⚙️ 9. Configurações e Deploy**
 
 #### **Arquivo .env.example (BE-93)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `.env.example` - Template de configuração
 
 **Características**:
+
 - ✅ Todas as variáveis documentadas
 - ✅ Valores para Portugal (Twilio, Stripe)
 - ✅ Configurações de desenvolvimento e produção
 - ✅ Comentários explicativos
 
 #### **Hardening Self-service (BE-212)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/throttling.py`, `users/security.py`, `users/observability.py`
 - `users/views.py` (throttle_scope + captcha)
 - `salonix_backend/settings.py` (novas ENV e rates por ambiente)
 
 **Variáveis de ambiente**:
+
 - `USERS_AUTH_THROTTLE_LOGIN`, `USERS_AUTH_THROTTLE_REGISTER`, `USERS_TENANT_META_PUBLIC`
 - `CAPTCHA_ENABLED`, `CAPTCHA_PROVIDER=turnstile|hcaptcha`, `CAPTCHA_SECRET`, `CAPTCHA_BYPASS_TOKEN`
 
 **Notas**:
+
 - Em dev/test, rates padrão são altos; para testar 429 use `override_settings`.
 - Envie `X-Captcha-Token` igual ao `CAPTCHA_BYPASS_TOKEN` para bypass em dev/smoke.
 
 #### **Recuperação de Senha (BE-240)**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `users/views.py` (PasswordResetRequestView/ConfirmView)
 - `users/urls.py` (rotas)
 - `users/tests/test_password_reset.py` (testes)
 - `users/observability.py` (métrica `users_password_reset_events_total`)
 
 **Detalhes**:
+
 - Endpoints: `POST /api/users/password/reset/` e `POST /api/users/password/reset/confirm/`.
 - Segurança: throttle `users_password_reset`; captcha no request.
 - E-mail: link `{reset_url}?uid={uid}&token={token}`.
 - Métricas: `users_password_reset_events_total{event,result}`.
 
 #### **Observabilidade**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `reports/views.py` - Métricas Prometheus
 - `salonix_backend/middleware.py` - Métricas de request
 
 **Características**:
+
 - ✅ Métricas RED (Rate, Errors, Duration)
 - ✅ Contadores por endpoint
 - ✅ Métricas de cache hit/miss
@@ -587,12 +724,15 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ## 🧪 **Sistema de Testes**
 
 ### **Cobertura Atual: 270 Testes**
+
 **Status**: ✅ Implementado  
 **Arquivos**:
+
 - `tests/` - Diretório principal de testes
 - 17 arquivos de teste cobrindo todas as funcionalidades
 
 **Características**:
+
 - ✅ Testes unitários para todos os modelos
 - ✅ Testes de integração para APIs
 - ✅ Testes de validação e serializers
@@ -602,6 +742,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ✅ Mocks para integrações externas
 
 ### **Principais Arquivos de Teste**:
+
 - `test_admin.py` - Django Admin customizado
 - `test_cache_configuration.py` - Sistema de cache
 - `test_error_handling.py` - Tratamento de erros
@@ -614,6 +755,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ## 📊 **Métricas de Implementação**
 
 ### **Estatísticas do Código**
+
 - 📁 **Arquivos Python**: ~50 arquivos
 - 📝 **Linhas de código**: ~8.000 linhas
 - 🧪 **Testes**: 270 testes passando
@@ -623,9 +765,10 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 - ⚙️ **Middlewares**: 3 middlewares customizados
 
 ### **Funcionalidades por Status**
+
 ```
 ✅ Implementado (90%):   19 funcionalidades
-🔄 Em desenvolvimento:    0 funcionalidades  
+🔄 Em desenvolvimento:    0 funcionalidades
 ⏳ Planejado (10%):       2 funcionalidades
 ```
 
@@ -662,44 +805,50 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ## 🚀 **Próximas Implementações**
 
 ### **📡 Realtime Créditos (BE-CRED-03)**
+
 **Status**: ✅ Implementado
 
 **Endpoint (SSE)**
+
 - `GET /api/users/realtime/credits/` — `Content-Type: text/event-stream`
 - Autorização: `Authorization: Bearer <JWT>` (IsAuthenticated)
 - Isolamento: por `tenant` (dados não vazam entre tenants)
 
 **Eventos**
+
 - `event: heartbeat` — `data: "ping"` (periódico)
 - `event: credit_update` — `id: <ledger_id>`
   - `data: { balance: number, ledger: { id, type, amount, description, created_at } }`
 
 **Reconexão**
+
 - Clientes devem usar `EventSource` (reconexão automática). Exemplo:
   ```js
-  const es = new EventSource('/api/users/realtime/credits/');
-  es.addEventListener('credit_update', (e) => {
+  const es = new EventSource("/api/users/realtime/credits/");
+  es.addEventListener("credit_update", (e) => {
     const payload = JSON.parse(e.data);
     // atualizar badge de saldo
   });
-  es.addEventListener('heartbeat', () => {
+  es.addEventListener("heartbeat", () => {
     // manter UI viva
   });
   ```
 
 **Observabilidade**
+
 - Métrica Prometheus: `USERS_SSE_EVENTS_TOTAL{event, result}` com rótulos `heartbeat|credit_update|error` e `success|failure`.
 - Logs estruturados com `X-Request-ID`, `user_id` e `tenant_id` via `RequestLoggingMiddleware`.
 - Headers de SSE sem cache: `Cache-Control: no-cache`, `X-Accel-Buffering: no`.
 
 **Arquivos**
+
 - `users/views.py` — `RealtimeCreditsSSEView`
 - `users/urls.py` — rota `realtime/credits/`
+
 ### **📊 Métricas de Clientes (BE-154)**
+
 **Status**: ⏳ Planejado  
 **Descrição**: Analytics de clientes ativos/inativos, LTV, churn
-
- 
 
 ## 📚 **Documentos Relacionados**
 
@@ -712,6 +861,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 ## 🎯 **Conclusão**
 
 O backend do Salonix está **90% completo** com:
+
 - ✅ **Infraestrutura robusta** multi-tenant
 - ✅ **Funcionalidades core** implementadas
 - ✅ **Qualidade enterprise** (270 testes)
@@ -724,6 +874,6 @@ O backend do Salonix está **90% completo** com:
 
 ---
 
-*Documento criado: 4 Setembro 2025*  
-*Última atualização: 18 Setembro 2025*  
-*Status: ✅ Atualizado*
+_Documento criado: 4 Setembro 2025_  
+_Última atualização: 18 Setembro 2025_  
+_Status: ✅ Atualizado_

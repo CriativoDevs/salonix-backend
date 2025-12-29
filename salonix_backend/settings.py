@@ -84,6 +84,14 @@ ALLOWED_HOSTS = [
 if "test" in sys.argv or "pytest" in sys.modules:
     ALLOWED_HOSTS.append("testserver")
 
+# Captcha (Turnstile/hCaptcha)
+CAPTCHA_ENABLED = str(env_get("CAPTCHA_ENABLED", "false")).lower() == "true"
+CAPTCHA_SECRET_KEY = env_str("CAPTCHA_SECRET_KEY", "")
+CAPTCHA_VERIFY_URL = env_str(
+    "CAPTCHA_VERIFY_URL", "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+)
+CAPTCHA_BYPASS_TOKEN = env_str("CAPTCHA_BYPASS_TOKEN", "")  # Para testes automatizados
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -107,6 +115,7 @@ INSTALLED_APPS = [
     "notifications.apps.NotificationsConfig",
     "payments",
     "reports",
+    "captcha",
 ]
 
 # Silenciar warnings de URLField default em Django 6
@@ -335,6 +344,7 @@ REST_FRAMEWORK = {
         # taxa geral por usuário (ajuste se quiser)
         "user": "10000/day",  # CHange back to 5000/day when go to prod
         # escopo específico para exportação CSV
+        "anon": "1000/day",  # Padrão para anônimos (captcha)
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
         # escopo específico para reports
         "reports": REPORTS_THROTTLE_REPORTS,
@@ -718,7 +728,18 @@ CAPTCHA_ENABLED = str(env_get("CAPTCHA_ENABLED", "false")).lower() in {
     "yes",
     "on",
 }
-CAPTCHA_PROVIDER = env_get("CAPTCHA_PROVIDER", "turnstile")  # turnstile | hcaptcha
-CAPTCHA_SECRET = env_get("CAPTCHA_SECRET", "")
+# Configurações do django-simple-captcha
+CAPTCHA_FONT_SIZE = 30
+CAPTCHA_LETTER_ROTATION = (-35, 35)
+CAPTCHA_BACKGROUND_COLOR = "#ffffff"
+CAPTCHA_FOREGROUND_COLOR = "#001100"
+CAPTCHA_CHALLENGE_FUNCT = "captcha.helpers.random_char_challenge"
+CAPTCHA_NOISE_FUNCTIONS = (
+    "captcha.helpers.noise_arcs",
+    "captcha.helpers.noise_dots",
+)
+CAPTCHA_LENGTH = 5
+CAPTCHA_TIMEOUT = 5  # Minutos
+
 # Bypass para dev/smoke: se definido e token igual, considera válido
 CAPTCHA_BYPASS_TOKEN = env_get("CAPTCHA_BYPASS_TOKEN", "")

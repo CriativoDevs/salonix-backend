@@ -9,6 +9,7 @@ This directory centralizes backend documentation for both technical and non‑te
 - API & Schema: `API_OPENAPI.md`.
 - Tenancy: `TENANT_LIFECYCLE.md`, `TENANT_REGISTRATION_FLOW.md`.
 - Validation & Errors: `VALIDATION_SYSTEM.md`, `../ERROR_HANDLING.md`.
+- Security: `CAPTCHA_SYSTEM.md`.
 - Observability & Notifications: `OBSERVABILITY.md`, `NOTIFICATIONS_OVERVIEW.md`.
 - Reports: `REPORTS_OVERVIEW.md`.
 - Tutorials & Operations: `TUTORIAL_DJANGO_ADMIN.md`, `OPS_RUNBOOK.md`.
