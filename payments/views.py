@@ -60,8 +60,6 @@ class CreateCheckoutSession(APIView):
             "standard",
             "pro",
             "enterprise",
-            "monthly",
-            "yearly",
         }
 
         if requested_plan not in allowed_plans:
@@ -75,8 +73,6 @@ class CreateCheckoutSession(APIView):
             )
 
         canonical_plan = requested_plan
-        if requested_plan in {"monthly", "yearly"}:
-            canonical_plan = "pro"
 
         # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
         staff = getattr(request.user, "staff_member", None)
@@ -275,11 +271,16 @@ class StripeWebhookView(APIView):
             if not detected_plan:
                 detected_plan = stripe_utils.get_plan_code_from_price(price_id)
 
-            if detected_plan in {"monthly", "yearly"}:
-                detected_plan = "pro"
+            logger.info(
+                f"update_feature_flags: user={user.id}, status={status}, "
+                f"detected_plan={detected_plan}, price_id={price_id}"
+            )
 
             if detected_plan not in {"basic", "standard", "pro", "enterprise"}:
-                detected_plan = "basic"
+                # Se não for um plano conhecido, assumimos basic apenas se não conseguirmos identificar
+                # Mas se o detected_plan veio como None, mantemos None para logica abaixo
+                if not detected_plan:
+                    detected_plan = "basic"
 
             # trial_end
             trial_end_ts = stripe_sub.get("trial_end")
@@ -299,7 +300,8 @@ class StripeWebhookView(APIView):
 
             ff, _ = UserFeatureFlags.objects.get_or_create(user=user)
 
-            ff.is_pro = status in ("active", "trialing")
+            is_pro = status in ("active", "trialing")
+            ff.is_pro = is_pro
             ff.pro_status = status
             ff.pro_plan = detected_plan
             # mantém o valor existente se já houver; senão usa start_dt; fallback agora
@@ -321,23 +323,58 @@ class StripeWebhookView(APIView):
 
             tenant = getattr(user, "tenant", None)
             if tenant:
-                desired_plan = detected_plan if ff.is_pro else tenant.PLAN_BASIC
+                # Se estiver incomplete, permitimos que o tenant reflita o plano escolhido (UX),
+                # embora as feature flags (is_pro) permaneçam restritas até 'active'.
+                use_detected = is_pro or (status == "incomplete" and detected_plan)
+                # Fallback seguro para basic se não houver detected_plan ou se não for 'pro' elegível
+                desired_plan = (
+                    detected_plan
+                    if use_detected
+                    else getattr(tenant, "PLAN_BASIC", "basic")
+                )
+
                 if desired_plan and tenant.plan_tier != desired_plan:
+                    old_plan = tenant.plan_tier
                     tenant.plan_tier = desired_plan
                     tenant.save(update_fields=["plan_tier", "updated_at"])
+                    logger.info(
+                        f"Updated tenant {tenant.slug} plan_tier: {old_plan} -> {desired_plan} (status: {status})"
+                    )
+                else:
+                    logger.info(
+                        f"Tenant {tenant.slug} plan_tier remains {tenant.plan_tier} (status: {status}, desired: {desired_plan})"
+                    )
+            else:
+                logger.warning(
+                    f"No tenant found for user {user.id} to update plan_tier"
+                )
 
         # Roteamento de eventos
         try:
             if etype == "checkout.session.completed":
                 customer_id = data.get("customer")
                 subscription_id = data.get("subscription")
+
+                # Problema 1: Recuperar subscription_id de metadata se estiver faltando no root (comum em alguns fluxos)
+                if not subscription_id:
+                    subscription_id = data.get("metadata", {}).get("subscription_id")
+
+                logger.info(
+                    f"Processing checkout.session.completed: customer={customer_id}, subscription={subscription_id}"
+                )
+
                 if customer_id and subscription_id:
                     pc = (
                         PaymentCustomer.objects.filter(stripe_customer_id=customer_id)
-                        .select_related("user")
+                        .select_related("user", "user__tenant")
                         .first()
                     )
                     if pc:
+                        # Log de diagnóstico inicial
+                        logger.info(
+                            f"[WEBHOOK] Processing checkout for user {pc.user.email} (Tenant: {pc.user.tenant.slug})"
+                        )
+
                         # tenta obter detalhes da assinatura; se falhar, não prossegue
                         try:
                             sub = stripe.Subscription.retrieve(
@@ -346,12 +383,60 @@ class StripeWebhookView(APIView):
                             # garantir dict, não objeto custom
                             if hasattr(sub, "to_dict"):
                                 sub = sub.to_dict()
-                        except Exception:
+                        except Exception as e:
+                            logger.error(
+                                f"[WEBHOOK] Failed to retrieve subscription {subscription_id}: {str(e)}"
+                            )
                             return HttpResponse(status=200)
+
                         saved_sub, cpe_dt, _prev_price_id = upsert_subscription(
                             pc.user, sub
                         )
                         update_feature_flags(pc.user, sub, cpe_dt)
+
+                        # FORÇAR SINCRONIZAÇÃO DO TENANT PLAN
+                        try:
+                            # Tenta extrair o plano dos metadados ou do preço
+                            meta_plan = sub.get("metadata", {}).get("plan_code")
+                            if not meta_plan:
+                                items = sub.get("items", {}).get("data", [])
+                                if items:
+                                    price = items[0].get("price")
+                                    p_id = (
+                                        price.get("id")
+                                        if isinstance(price, dict)
+                                        else price
+                                    )
+                                    meta_plan = stripe_utils.get_plan_code_from_price(
+                                        p_id
+                                    )
+
+                            if meta_plan and meta_plan in {
+                                "basic",
+                                "standard",
+                                "pro",
+                                "enterprise",
+                            }:
+                                tenant = pc.user.tenant
+                                if tenant.plan_tier != meta_plan:
+                                    logger.info(
+                                        f"[WEBHOOK] Forcing tenant plan update: {tenant.plan_tier} -> {meta_plan}"
+                                    )
+                                    tenant.plan_tier = meta_plan
+                                    tenant.save(
+                                        update_fields=["plan_tier", "updated_at"]
+                                    )
+                                else:
+                                    logger.info(
+                                        f"[WEBHOOK] Tenant plan already synced: {meta_plan}"
+                                    )
+                        except Exception as e:
+                            logger.error(f"[WEBHOOK] Failed to force tenant sync: {e}")
+
+                    else:
+                        logger.error(
+                            f"[WEBHOOK] PaymentCustomer not found for stripe_customer_id={customer_id}"
+                        )
 
                         try:
                             status = sub.get("status")
@@ -509,6 +594,10 @@ class StripeWebhookView(APIView):
                                             "customer_id": customer_id,
                                         },
                                     )
+                    else:
+                        logger.warning(
+                            f"checkout.session.completed received without subscription_id or credit_purchase metadata. Session ID: {data.get('id')}"
+                        )
 
             elif etype in {
                 "customer.subscription.created",
@@ -654,6 +743,10 @@ class StripeWebhookView(APIView):
                         logger.exception(
                             "trial bonus/cleanup handling failed on subscription event"
                         )
+                else:
+                    logger.error(
+                        f"PaymentCustomer not found for stripe_customer_id={customer_id} in {etype}"
+                    )
 
             elif etype in {"invoice.payment_succeeded", "invoice.payment_failed"}:
                 if etype == "invoice.payment_succeeded":
