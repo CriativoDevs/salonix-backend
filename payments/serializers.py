@@ -68,6 +68,7 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
     plan_code = serializers.CharField(help_text="Código do plano atual")
     plan_name = serializers.CharField(help_text="Nome do plano atual")
     status = serializers.CharField(help_text="Status da assinatura")
+    status_label = serializers.CharField(help_text="Status da assinatura (Traduzido)")
     current_period_end = serializers.DateTimeField(help_text="Fim do período atual")
     cancel_at_period_end = serializers.BooleanField(
         help_text="Se será cancelada no fim do período"

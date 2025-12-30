@@ -166,31 +166,31 @@ class CreditPurchaseService:
                 "credits": Decimal("5.00"),
                 "price_eur": Decimal("5.00"),
                 "price_id": settings.STRIPE_PRICE_CREDITS_5_ID,
-                "description": "5 EUR Credits",
+                "description": "Créditos de 5 EUR",
             },
             {
                 "credits": Decimal("10.00"),
                 "price_eur": Decimal("10.00"),
                 "price_id": settings.STRIPE_PRICE_CREDITS_10_ID,
-                "description": "10 EUR Credits",
+                "description": "Créditos de 10 EUR",
             },
             {
                 "credits": Decimal("25.00"),
                 "price_eur": Decimal("25.00"),
                 "price_id": settings.STRIPE_PRICE_CREDITS_25_ID,
-                "description": "25 EUR Credits",
+                "description": "Créditos de 25 EUR",
             },
             {
                 "credits": Decimal("50.00"),
                 "price_eur": Decimal("50.00"),
                 "price_id": settings.STRIPE_PRICE_CREDITS_50_ID,
-                "description": "50 EUR Credits",
+                "description": "Créditos de 50 EUR",
             },
             {
                 "credits": Decimal("100.00"),
                 "price_eur": Decimal("100.00"),
                 "price_id": settings.STRIPE_PRICE_CREDITS_100_ID,
-                "description": "100 EUR Credits",
+                "description": "Créditos de 100 EUR",
             },
         ]
 
@@ -419,6 +419,8 @@ class SubscriptionService:
             try:
                 md = getattr(stripe_sub, "metadata", {})
                 plan_code = md.get("plan_code") or md.get("plan")
+                if plan_code:
+                    plan_code = plan_code.lower()
             except Exception:
                 plan_code = None
             if not plan_code:
@@ -439,6 +441,23 @@ class SubscriptionService:
             except Exception:
                 cpe_dt = None
 
+            # Atualizar cache local para garantir sincronia com Admin
+            try:
+                if status:
+                    subscription.status = status
+                subscription.cancel_at_period_end = cancel_at_period_end
+                if cpe_dt:
+                    subscription.current_period_end = cpe_dt
+                subscription.save(
+                    update_fields=[
+                        "status",
+                        "cancel_at_period_end",
+                        "current_period_end",
+                    ]
+                )
+            except Exception as e:
+                logger.error(f"Error updating local subscription cache: {e}")
+
             next_billing = None
             try:
                 if cpe_ts and not cancel_at_period_end:
@@ -446,10 +465,23 @@ class SubscriptionService:
             except Exception:
                 next_billing = None
 
+            # Tradução de status
+            STATUS_TRANSLATIONS = {
+                "active": "Ativo",
+                "trialing": "Em teste",
+                "past_due": "Pagamento Pendente",
+                "canceled": "Cancelado",
+                "unpaid": "Não pago",
+                "incomplete": "Incompleto",
+                "incomplete_expired": "Expirado",
+            }
+            status_label = STATUS_TRANSLATIONS.get(status, status)
+
             return {
                 "plan_code": plan_code,
                 "plan_name": plan_info.get("name", (plan_code or "").title()),
                 "status": status,
+                "status_label": status_label,
                 "current_period_end": cpe_dt,
                 "cancel_at_period_end": cancel_at_period_end,
                 "next_billing_date": next_billing,
@@ -474,10 +506,23 @@ class SubscriptionService:
                     return None
                 plan_code = get_plan_code_from_price(sub.price_id)
                 plan_info = cls.AVAILABLE_PLANS.get(plan_code or "", {})
+
+                STATUS_TRANSLATIONS = {
+                    "active": "Ativo",
+                    "trialing": "Em teste",
+                    "past_due": "Pagamento Pendente",
+                    "canceled": "Cancelado",
+                    "unpaid": "Não pago",
+                    "incomplete": "Incompleto",
+                    "incomplete_expired": "Expirado",
+                }
+                status_label = STATUS_TRANSLATIONS.get(sub.status, sub.status)
+
                 return {
                     "plan_code": plan_code,
                     "plan_name": plan_info.get("name", (plan_code or "").title()),
                     "status": sub.status,
+                    "status_label": status_label,
                     "current_period_end": sub.current_period_end,
                     "cancel_at_period_end": sub.cancel_at_period_end,
                     "next_billing_date": sub.current_period_end,
@@ -499,8 +544,14 @@ class SubscriptionService:
                 stripe.Subscription.modify(
                     subscription.stripe_subscription_id, cancel_at_period_end=True
                 )
+                # Atualizar estado local imediatamente para refletir na UI
+                subscription.cancel_at_period_end = True
+                subscription.save(update_fields=["cancel_at_period_end"])
             else:
                 stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                # Atualizar estado local
+                subscription.status = "canceled"
+                subscription.save(update_fields=["status"])
 
             logger.info(
                 f"Cancelled subscription {subscription.stripe_subscription_id} for user {user.id}"
@@ -526,6 +577,9 @@ class SubscriptionService:
             stripe.Subscription.modify(
                 subscription.stripe_subscription_id, cancel_at_period_end=False
             )
+            # Atualizar estado local imediatamente para refletir na UI
+            subscription.cancel_at_period_end = False
+            subscription.save(update_fields=["cancel_at_period_end"])
 
             logger.info(
                 f"Reactivated subscription {subscription.stripe_subscription_id} for user {user.id}"
@@ -560,9 +614,17 @@ class BillingService:
         )
 
         # Verificar renovação automática de créditos (usar regra correta do Tenant)
-        has_auto_renewal = (
-            user.tenant.has_auto_credit_renewal() if user.tenant else False
-        )
+        # NOTA: O frontend espera 'has_auto_renewal' como status da assinatura, mas aqui
+        # estamos retornando a renovação automática de créditos.
+        # Vamos ajustar para retornar também o status da assinatura se existir.
+        has_auto_renewal = False
+        if current_subscription:
+            has_auto_renewal = not current_subscription.get(
+                "cancel_at_period_end", False
+            )
+        elif user.tenant:
+            # Fallback para créditos se não houver assinatura ativa
+            has_auto_renewal = user.tenant.has_auto_credit_renewal()
 
         # Próximo valor de cobrança
         next_billing_amount = None

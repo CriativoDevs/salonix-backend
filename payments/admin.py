@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from .models import PaymentCustomer, Subscription, CreditPayment, StripeWebhookEvent
+from .services import SubscriptionService, get_plan_code_from_price
 
 
 @admin.register(PaymentCustomer)
@@ -156,6 +157,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "price_id",
         "current_period_end",
         "cancel_at_period_end",
+        "is_auto_renewing",
     )
     list_filter = ("status", "cancel_at_period_end", "user__tenant")
     search_fields = (
@@ -197,4 +199,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
         return "-"
 
     tenant_name.short_description = "Tenant"
+
+    def is_auto_renewing(self, obj):
+        """Indica se a renovação automática está ativa."""
+        return not obj.cancel_at_period_end
+
+    is_auto_renewing.boolean = True
+    is_auto_renewing.short_description = "Auto Renovação"
     tenant_name.admin_order_field = "user__tenant__name"

@@ -242,6 +242,12 @@ class StripeWebhookView(APIView):
             prev = Subscription.objects.filter(stripe_subscription_id=sub_id).first()
             prev_price_id = prev.price_id if prev else None
 
+            logger.info(
+                f"Webhook upsert_subscription: id={sub_id} status={status} "
+                f"cancel_at_period_end_payload={cancel_at_period_end} "
+                f"prev_cancel_at={prev.cancel_at_period_end if prev else 'None'}"
+            )
+
             sub, _ = Subscription.objects.update_or_create(
                 stripe_subscription_id=sub_id,
                 defaults={
@@ -270,6 +276,9 @@ class StripeWebhookView(APIView):
 
             if not detected_plan:
                 detected_plan = stripe_utils.get_plan_code_from_price(price_id)
+
+            if detected_plan:
+                detected_plan = detected_plan.lower()
 
             logger.info(
                 f"update_feature_flags: user={user.id}, status={status}, "
