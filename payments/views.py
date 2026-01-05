@@ -1058,7 +1058,8 @@ class CreateCreditCheckoutSessionView(APIView):
         base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
             "/"
         )
-        success_url = getattr(settings, "STRIPE_SUCCESS_URL", f"{base}/billing/success")
+        # success_url = getattr(settings, "STRIPE_SUCCESS_URL", f"{base}/billing/success")
+        success_url = f"{base}/billing/success?type=credits"
         cancel_url = getattr(settings, "STRIPE_CANCEL_URL", f"{base}/billing/cancel")
 
         metadata = {
