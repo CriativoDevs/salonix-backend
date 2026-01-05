@@ -1,11 +1,21 @@
 import logging
 
 from django.core.cache import cache
-from rest_framework import generics, status
+from rest_framework import generics, status, filters
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+from django_filters.rest_framework import DjangoFilterBackend
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.exceptions import (
     ValidationError,
@@ -1458,6 +1468,10 @@ class CreditHistoryView(APIView):
     """Lista histórico de transações de créditos."""
 
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["transaction_type", "status"]
+    ordering_fields = ["created_at", "amount_eur"]
 
     @extend_schema(
         description="Lista histórico de transações de créditos de comunicação",
@@ -1467,8 +1481,32 @@ class CreditHistoryView(APIView):
         tenant = request.user.tenant
         credit_service = CreditService(tenant)
 
-        history = credit_service.get_credit_history()
-        serializer = CommLedgerSerializer(history, many=True)
+        queryset = credit_service.get_credit_history()
+
+        # Date filtering
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+
+        # Filter
+        filter_backend = DjangoFilterBackend()
+        queryset = filter_backend.filter_queryset(request, queryset, self)
+
+        # Order
+        ordering_filter = filters.OrderingFilter()
+        queryset = ordering_filter.filter_queryset(request, queryset, self)
+
+        # Paginate
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        if page is not None:
+            serializer = CommLedgerSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = CommLedgerSerializer(queryset, many=True)
         return Response(serializer.data)
 
 

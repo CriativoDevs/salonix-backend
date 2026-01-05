@@ -180,10 +180,11 @@ class CreditEndpointsTestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
+        results = data["results"]
 
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["transaction_type"], "consumption")
-        self.assertEqual(data[0]["amount_eur"], "2.00")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["transaction_type"], "consumption")
+        self.assertEqual(results[0]["amount_eur"], "2.00")
 
     def test_consume_credits_view_success(self):
         """Testa endpoint de consumo de créditos com sucesso."""
