@@ -38,3 +38,4 @@ pyright
 django-stubs
 djangorestframework-stubs
 django-simple-captcha==0.6.3
+django-filter==25.2

@@ -22,13 +22,9 @@ class CreditService:
         """Retorna o saldo atual de créditos do tenant."""
         return self.tenant.comm_credit_eur or Decimal("0.00")
 
-    def get_credit_history(self, limit: int = 50) -> list[CommLedger]:
-        """Retorna o histórico de transações de créditos do tenant."""
-        return list(
-            CommLedger.objects.filter(tenant=self.tenant).order_by("-created_at")[
-                :limit
-            ]
-        )
+    def get_credit_history(self) -> models.QuerySet[CommLedger]:
+        """Retorna o histórico de transações de créditos do tenant (QuerySet)."""
+        return CommLedger.objects.filter(tenant=self.tenant).order_by("-created_at")
 
     @transaction.atomic
     def consume_credits(
