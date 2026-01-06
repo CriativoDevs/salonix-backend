@@ -126,8 +126,9 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "token",
-                    models.TextField(
-                        help_text="Token do dispositivo para push notifications"
+                    models.CharField(
+                        help_text="Token do dispositivo para push notifications",
+                        max_length=512,
                     ),
                 ),
                 (

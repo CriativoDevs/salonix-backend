@@ -35,7 +35,9 @@ class NotificationDevice(models.Model):
         choices=DEVICE_TYPES,
         help_text="Tipo do dispositivo (web/mobile)",
     )
-    token = models.TextField(help_text="Token do dispositivo para push notifications")
+    token = models.CharField(
+        max_length=512, help_text="Token do dispositivo para push notifications"
+    )
     is_active = models.BooleanField(
         default=cast(Any, True),
         help_text="Se o device está ativo para receber notificações",
