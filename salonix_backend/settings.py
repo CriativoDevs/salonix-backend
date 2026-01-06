@@ -252,7 +252,7 @@ DATABASE_URL = env_get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
 try:
     import dj_database_url  # type: ignore
 
-    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=60)}
 except Exception:
     if str(DATABASE_URL).startswith("sqlite:///"):
         DATABASES = {
