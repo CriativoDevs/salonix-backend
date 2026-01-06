@@ -39,3 +39,7 @@ django-stubs
 djangorestframework-stubs
 django-simple-captcha==0.6.3
 django-filter==25.2
+# Dependências de Staging/Prod
+python-dotenv==1.0.1
+dj-database-url==2.1.0
+mysqlclient==2.2.4
