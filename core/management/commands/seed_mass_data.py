@@ -400,24 +400,22 @@ class Command(BaseCommand):
             batch.append(appointment)
 
             if len(batch) >= batch_size:
-                # Salvar objetos relacionados primeiro
-                for appointment in batch:
-                    appointment.save()
+                # Salvar objetos em bulk
+                Appointment.objects.bulk_create(batch)
                 appointments.extend(batch)
                 batch = []
 
                 # Marcar slots como ocupados
                 slot_ids = [
                     app.slot_id
-                    for app in batch
+                    for app in appointments[-batch_size:]
                     if app.status in ["scheduled", "confirmed", "completed"]
                 ]
                 ScheduleSlot.objects.filter(id__in=slot_ids).update(is_available=False)
 
         # Criar último batch
         if batch:
-            for appointment in batch:
-                appointment.save()
+            Appointment.objects.bulk_create(batch)
             appointments.extend(batch)
 
             # Marcar slots como ocupados

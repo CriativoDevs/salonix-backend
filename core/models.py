@@ -408,13 +408,22 @@ class Feedback(models.Model):
         blank=True,
         related_name="feedbacks",
     )
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="feedbacks",
+    )
     CATEGORY_CHOICES = [
-        ("bug", "Bug"),
-        ("suggestion", "Suggestion"),
+        ("app", "App"),
+        ("support", "Support"),
+        ("pwa", "PWA"),
         ("praise", "Praise"),
         ("other", "Other"),
     ]
     category = models.CharField(max_length=24, choices=CATEGORY_CHOICES)
+    custom_category = models.CharField(max_length=100, blank=True, null=True)
     rating = models.PositiveSmallIntegerField()
     message = models.TextField()
     is_anonymous = models.BooleanField(default=False)

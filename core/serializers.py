@@ -916,13 +916,29 @@ class FeedbackSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Categoria inválida.")
         return value
 
+    def validate_custom_category(self, value):
+        if value:
+            return sanitize_text_input(value, max_length=100)
+        return value
+
     def validate(self, data):
         anon = data.get("is_anonymous")
         customer = data.get("customer")
-        if not anon and customer is None:
+        request = self.context.get("request")
+        user = request.user if request and request.user.is_authenticated else None
+
+        if not anon and customer is None and not user:
             raise serializers.ValidationError(
                 {"customer": "Informe o cliente ou defina como anónimo."}
             )
+
+        category = data.get("category")
+        custom_category = data.get("custom_category")
+        if category == "other" and not custom_category:
+            raise serializers.ValidationError(
+                {"custom_category": "Especifique a categoria."}
+            )
+
         return data
 
     def create(self, validated_data):
@@ -937,4 +953,8 @@ class FeedbackSerializer(serializers.ModelSerializer):
         if tenant is None:
             raise serializers.ValidationError({"tenant": "Tenant é obrigatório."})
         validated_data["tenant"] = tenant
+
+        if request and request.user and request.user.is_authenticated:
+            validated_data["user"] = request.user
+
         return Feedback.objects.create(**validated_data)
