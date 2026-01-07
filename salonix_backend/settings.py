@@ -188,6 +188,10 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
         CORS_ALLOWED_ORIGINS = [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            "https://salonix-frontend-web.vercel.app",
+        ]
+        CORS_ALLOWED_ORIGIN_REGEXES = [
+            r"^https://salonix-frontend-web-.*\.vercel\.app$",
         ]
 
 # CSRF
@@ -199,6 +203,7 @@ if not CSRF_TRUSTED_ORIGINS and DEBUG:
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "https://*.ngrok-free.app",
+        "https://salonix-frontend-web.vercel.app",
     ]
 
 # Cookies & Security (Staging/Prod)
