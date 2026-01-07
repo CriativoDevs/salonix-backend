@@ -476,6 +476,9 @@ DEFAULT_FROM_EMAIL = env_get("DEFAULT_FROM_EMAIL", "no-reply@localhost")
 # Ex.: http://api.timelyone.com
 ICS_BASE_URL = env_get("ICS_BASE_URL", "")
 
+# Frontend URL (para redirects Stripe e links em e-mails)
+FRONTEND_BASE_URL = env_get("FRONTEND_BASE_URL", "http://localhost:5173")
+
 # Stripe
 STRIPE_API_KEY = env_get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = env_get("STRIPE_WEBHOOK_SECRET", "")

@@ -49,6 +49,7 @@ O Salonix integra com Stripe para assinaturas (planos) e compra avulsa de crédi
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
+- `FRONTEND_BASE_URL` (obrigatório em staging/produção, ex: `https://app.exemplo.com`)
 - `STRIPE_PRICE_BASIC_MONTHLY_ID`
 - `STRIPE_PRICE_STANDARD_MONTHLY_ID`
 - `STRIPE_PRICE_PRO_MONTHLY_ID`

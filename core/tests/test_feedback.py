@@ -78,7 +78,7 @@ def test_create_feedback_throttled_user_scope():
     url = reverse("feedback-list-create")
     payload = {
         "tenant": tenant.id,
-        "category": "other",
+        "category": "app",
         "rating": 3,
         "message": "ok",
         "is_anonymous": True,
@@ -131,7 +131,7 @@ def test_create_feedback_duplicate_recent_rejected():
     url = reverse("feedback-list-create")
     payload = {
         "tenant": tenant.id,
-        "category": "bug",
+        "category": "app",
         "rating": 1,
         "message": "erro",
         "is_anonymous": True,
@@ -165,7 +165,7 @@ def test_list_feedback_filters_and_permissions():
         tenant=tenant, name="Cliente X", email=customer.email
     )
     Feedback.objects.create(
-        tenant=tenant, customer=sc, category="bug", rating=1, message="a"
+        tenant=tenant, customer=sc, category="app", rating=1, message="a"
     )
     Feedback.objects.create(
         tenant=tenant, customer=sc, category="praise", rating=5, message="b"
