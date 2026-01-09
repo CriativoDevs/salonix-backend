@@ -468,13 +468,22 @@ class TestBusinessLogging:
         assert getattr(record, "tenant_id", None) == tenant.slug
         assert "bio" in getattr(record, "updated_fields", [])
 
+    @patch("stripe.Customer.create")
     @patch("stripe.checkout.Session.create")
     @override_settings(STRIPE_PRICE_PRO_MONTHLY_ID="price_test_pro_123")
     def test_checkout_session_logs(
-        self, mock_stripe, user_fixture, tenant_fixture, caplog
+        self,
+        mock_stripe_session,
+        mock_stripe_customer,
+        user_fixture,
+        tenant_fixture,
+        caplog,
     ):
         """Verifica logs de criação de sessão de checkout"""
         self.client.force_authenticate(user=user_fixture)
+
+        # Mock customer creation
+        mock_stripe_customer.return_value = {"id": "cus_test_123"}
 
         # Use existing tenant and staff from fixtures
         tenant = tenant_fixture
@@ -485,7 +494,7 @@ class TestBusinessLogging:
         staff.status = TenantStaffMember.Status.ACTIVE
         staff.save()
 
-        mock_stripe.return_value = type(
+        mock_stripe_session.return_value = type(
             "obj",
             (object,),
             {"url": "http://checkout.stripe.com", "id": "sess_123"},
