@@ -42,6 +42,8 @@ from .serializers import (
 from .observability import PAYMENTS_SETTINGS_UPDATED_TOTAL
 from users.models import Tenant, TenantStaffMember
 
+logger = logging.getLogger(__name__)
+
 
 class CreateCheckoutSession(APIView):
     permission_classes = [IsAuthenticated]
@@ -138,8 +140,40 @@ class CreateCheckoutSession(APIView):
         params["client_reference_id"] = str(request.user.tenant_id or request.user.id)
 
         stripe_client = stripe_utils.get_stripe()
-        session = stripe_client.checkout.Session.create(**params)
-        return Response({"checkout_url": session.url}, status=200)
+        try:
+            session = stripe_client.checkout.Session.create(**params)
+
+            # Log checkout creation success
+            logger.info(
+                "Stripe checkout session created",
+                extra={
+                    "user_id": request.user.id,
+                    "tenant_id": getattr(tenant, "id", None),
+                    "plan_code": canonical_plan,
+                    "checkout_url": session.url,
+                },
+            )
+
+            return Response({"checkout_url": session.url}, status=200)
+        except stripe.error.StripeError as e:
+            logger.error(
+                f"Stripe error creating subscription session: {e}",
+                extra={
+                    "user_id": request.user.id,
+                    "plan": canonical_plan,
+                    "success_url": success_url,
+                    "cancel_url": cancel_url,
+                },
+            )
+            return Response(
+                {
+                    "detail": "Erro ao comunicar com provedor de pagamento. Verifique a configuração ou tente novamente."
+                },
+                status=503,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error creating subscription session")
+            return Response({"detail": "Erro interno ao processar pedido."}, status=500)
 
 
 class CreatePortalSession(APIView):
@@ -1080,10 +1114,39 @@ class CreateCreditCheckoutSessionView(APIView):
             "metadata": metadata,
         }
 
-        session = stripe_client.checkout.Session.create(**params)
-        return Response(
-            {"checkout_url": session.url, "session_id": session.id}, status=200
-        )
+        try:
+            session = stripe_client.checkout.Session.create(**params)
+            logger.info(
+                "Stripe credit checkout session created",
+                extra={
+                    "user_id": user.id,
+                    "tenant_id": getattr(tenant, "id", None),
+                    "amount_eur": str(amount_eur),
+                    "checkout_url": session.url,
+                },
+            )
+            return Response(
+                {"checkout_url": session.url, "session_id": session.id}, status=200
+            )
+        except stripe.error.StripeError as e:
+            logger.error(
+                f"Stripe error creating credit checkout session: {e}",
+                extra={
+                    "user_id": user.id,
+                    "amount": str(amount_eur),
+                    "success_url": success_url,
+                    "cancel_url": cancel_url,
+                },
+            )
+            return Response(
+                {
+                    "detail": "Erro ao comunicar com provedor de pagamento. Verifique a configuração ou tente novamente."
+                },
+                status=503,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error creating credit checkout session")
+            return Response({"detail": "Erro interno ao processar pedido."}, status=500)
 
 
 class CurrentSubscriptionView(APIView):
@@ -1263,6 +1326,7 @@ class ImprovedCheckoutSessionView(APIView):
             return Response(result, status=200)
 
         except Exception as e:
+            logger.exception("ImprovedCheckoutSessionView failed")
             return Response(
                 {"detail": f"Erro ao criar checkout session: {str(e)}"}, status=500
             )
@@ -1289,12 +1353,10 @@ class ImprovedPortalSessionView(APIView):
             return Response(result, status=200)
 
         except Exception as e:
+            logger.exception("ImprovedPortalSessionView failed")
             return Response(
                 {"detail": f"Erro ao criar portal session: {str(e)}"}, status=500
             )
-
-
-logger = logging.getLogger(__name__)
 
 
 class StripeSettingsView(APIView):

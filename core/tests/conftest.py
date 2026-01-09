@@ -33,9 +33,10 @@ def setup_default_tenant(db):
         current_tenant = self.tenant or tenant
 
         if self.staff_member_id is None and self.user_id:
-            staff = TenantStaffMember.objects.filter(
-                tenant=current_tenant, user_id=self.user_id
-            ).first()
+            staff = TenantStaffMember.objects.filter(user_id=self.user_id).first()
+            if staff and staff.tenant_id != current_tenant.id:
+                staff.tenant = current_tenant
+                staff.save(update_fields=["tenant", "updated_at"])
             if not staff:
                 staff = TenantStaffMember.objects.create(
                     tenant=current_tenant,
@@ -67,7 +68,14 @@ def setup_default_tenant(db):
     Appointment.save = appointment_save_with_tenant
     CustomUser.save = user_save_with_tenant
 
-    return tenant
+    try:
+        yield tenant
+    finally:
+        Service.save = original_service_save
+        Professional.save = original_professional_save
+        ScheduleSlot.save = original_slot_save
+        Appointment.save = original_appointment_save
+        CustomUser.save = original_user_save
 
 
 @pytest.fixture
