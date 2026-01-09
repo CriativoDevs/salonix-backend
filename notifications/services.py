@@ -98,25 +98,14 @@ def send_customer_pwa_invite(
         )
         email.attach_alternative(html_body, "text/html")
         email.send(fail_silently=False)
-
-        logger.info(
-            "PWA invite email sent",
-            extra={
-                "tenant_id": getattr(tenant, "id", None),
-                "tenant_slug": getattr(tenant, "slug", None),
-                "customer_id": getattr(customer, "id", None),
-                "customer_email": to_email,
-                "invited_by": getattr(invited_by, "id", None),
-            },
-        )
         return True
-    except Exception:
-        logger.exception(
-            "PWA invite email failed",
+    except Exception as e:
+        logger.error(
+            f"Error sending PWA invite to {to_email}: {e}",
+            exc_info=True,
             extra={
                 "tenant_id": getattr(tenant, "id", None),
                 "customer_id": getattr(customer, "id", None),
-                "customer_email": to_email,
             },
         )
         return False
