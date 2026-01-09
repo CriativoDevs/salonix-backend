@@ -1,35 +1,14 @@
 import pytest
-from unittest.mock import patch
 from django.core import signing
+from django.core import mail
+from django.test.utils import override_settings
 
 from core.email_utils import send_marketing_email
 from notifications.views import UNSUBSCRIBE_TOKEN_SALT
 
 
-class _FakeSMTP:
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.sent_messages = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def starttls(self):
-        pass
-
-    def login(self, user, password):
-        pass
-
-    def send_message(self, message):
-        self.sent_messages.append(message)
-
-
 @pytest.mark.django_db
-@patch("smtplib.SMTP", new=_FakeSMTP)
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 def test_marketing_email_contains_unsubscribe_link(settings):
     settings.ICS_BASE_URL = "http://testserver"
     settings.EMAIL_HOST = "localhost"
@@ -37,23 +16,26 @@ def test_marketing_email_contains_unsubscribe_link(settings):
     settings.EMAIL_HOST_USER = "noreply@salonix.app"
     settings.EMAIL_HOST_PASSWORD = "x"
 
-    collector = _FakeSMTP("localhost", 1025)
-    with patch("smtplib.SMTP", new=lambda *args, **kwargs: collector):
-        send_marketing_email(
-            to_email="cliente@example.com",
-            client_name="Cliente",
-            subject="Promoção",
-            body_text="Descontos especiais para si.",
-            tenant_id=1,
-            customer_id=123,
-        )
+    send_marketing_email(
+        to_email="cliente@example.com",
+        client_name="Cliente",
+        subject="Promoção",
+        body_text="Descontos especiais para si.",
+        tenant_id=1,
+        customer_id=123,
+    )
 
-    assert len(collector.sent_messages) == 1
-    msg = collector.sent_messages[0]
-    assert msg.is_multipart()
-    payloads = msg.get_payload()
-    plain = payloads[0].get_payload(decode=True).decode()
-    html = payloads[1].get_payload(decode=True).decode()
+    assert len(mail.outbox) == 1
+    msg = mail.outbox[0]
+    
+    # Verifica multipart
+    assert isinstance(msg, mail.EmailMultiAlternatives)
+    
+    # Verifica conteúdo
+    plain = msg.body
+    # HTML está nas alternatives
+    assert len(msg.alternatives) == 1
+    html = msg.alternatives[0][0]
 
     # Deve conter rota pública e token
     assert "/api/public/unsubscribe" in plain

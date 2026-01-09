@@ -90,17 +90,15 @@ def send_customer_pwa_invite(
         return False
 
     try:
-        if getattr(settings, "EMAIL_HOST", "").strip():
-            with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as server:
-                if getattr(settings, "EMAIL_USE_TLS", False):
-                    server.starttls()
-                if settings.EMAIL_HOST_USER and settings.EMAIL_HOST_PASSWORD:
-                    server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
-                server.send_message(message)
-        else:
-            email = EmailMultiAlternatives(subject, text_body, sender_email, [to_email])
-            email.attach_alternative(html_body, "text/html")
-            email.send()
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_body,
+            from_email=sender_email,
+            to=[to_email],
+        )
+        email.attach_alternative(html_body, "text/html")
+        email.send(fail_silently=False)
+
         logger.info(
             "PWA invite email sent",
             extra={
