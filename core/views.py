@@ -3,6 +3,7 @@ import logging
 from rest_framework import status as drf_status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.filters import OrderingFilter
 from rest_framework.generics import ListAPIView, CreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated, SAFE_METHODS, AllowAny
 from rest_framework.response import Response
@@ -4190,6 +4191,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [OrderingFilter]
+    ordering_fields = ["start_time", "end_time", "created_at", "id"]
+    ordering = ["-start_time"]
 
     def get_queryset(self):
         # Garantir que request.tenant esteja definido para o mixin, usando o tenant do usuário autenticado
@@ -4214,11 +4218,7 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         if is_available is not None:
             val = str(is_available).lower() in {"1", "true", "t", "yes", "y"}
             qs = qs.filter(is_available=val)
-        ordering = params.get("ordering") or "-start_time"
-        if ordering in {"start_time", "-start_time"}:
-            qs = qs.order_by(ordering)
-        else:
-            qs = qs.order_by("-start_time")
+
         return qs
 
     def perform_create(self, serializer):
@@ -5445,7 +5445,7 @@ class FeedbackListCreateView(APIView):
                 extra={"errors": e.detail, "data": request.data},
             )
             raise e
-        
+
         try:
             user = request.user
             if not getattr(user, "is_authenticated", False):
@@ -5455,6 +5455,17 @@ class FeedbackListCreateView(APIView):
             tenant = getattr(request, "tenant", None)
             if not tenant and getattr(user, "tenant", None):
                 tenant = user.tenant
+
+            if not tenant:
+                # Se mesmo sendo Owner não tiver tenant (ex: erro de integridade),
+                # retornamos erro amigável em vez de 500
+                logger.error("feedback_create_no_tenant", extra={"user_id": user.id})
+                raise ValidationError(
+                    {
+                        "detail": "Não foi possível identificar o salão (tenant) para registrar o feedback."
+                    }
+                )
+
             data = serializer.validated_data
             cutoff = timezone.now() - timezone.timedelta(minutes=10)
             dup_qs = Feedback.objects.filter(
