@@ -11,6 +11,7 @@ from users.models import Tenant, TenantStaffMember
 from django.utils import timezone
 from datetime import timedelta
 from unittest.mock import patch
+from django.test import override_settings
 import logging
 
 
@@ -468,6 +469,7 @@ class TestBusinessLogging:
         assert "bio" in getattr(record, "updated_fields", [])
 
     @patch("stripe.checkout.Session.create")
+    @override_settings(STRIPE_PRICE_PRO_MONTHLY_ID="price_test_pro_123")
     def test_checkout_session_logs(
         self, mock_stripe, user_fixture, tenant_fixture, caplog
     ):
