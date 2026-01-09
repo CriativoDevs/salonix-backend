@@ -95,6 +95,7 @@ from datetime import timedelta
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
 security_logger = logging.getLogger("users.security")
+logger = logging.getLogger(__name__)
 
 
 def _me_tenant_cache_key(user_id: int, tenant_id: int, tenant_updated_at):
@@ -150,8 +151,23 @@ class UserRegistrationView(generics.CreateAPIView):
         resp = super().post(request, *args, **kwargs)
         if resp.status_code in (status.HTTP_201_CREATED, status.HTTP_200_OK):
             USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="success").inc()
+            logger.info(
+                "User registered successfully",
+                extra={
+                    "email": request.data.get("email"),
+                    "status_code": resp.status_code,
+                },
+            )
         else:
             USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="failure").inc()
+            logger.warning(
+                "User registration failed",
+                extra={
+                    "email": request.data.get("email"),
+                    "status_code": resp.status_code,
+                    "errors": resp.data,
+                },
+            )
         return resp
 
     def throttled(self, request, wait):  # pragma: no cover - DRF handles 429 response
@@ -220,8 +236,23 @@ class EmailTokenObtainPairView(TokenObtainPairView):
         resp = super().post(request, *args, **kwargs)
         if resp.status_code in (status.HTTP_201_CREATED, status.HTTP_200_OK):
             USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="success").inc()
+            logger.info(
+                "User logged in successfully",
+                extra={
+                    "email": request.data.get("email"),
+                    "status_code": resp.status_code,
+                },
+            )
         else:
             USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="failure").inc()
+            logger.warning(
+                "User login failed",
+                extra={
+                    "email": request.data.get("email"),
+                    "status_code": resp.status_code,
+                    "errors": resp.data,
+                },
+            )
         return resp
 
     def throttled(self, request, wait):  # pragma: no cover
@@ -383,6 +414,10 @@ class TenantMetaView(APIView):
             tenant, data=request.data, partial=True
         )
         if not serializer.is_valid():
+            logger.warning(
+                "Tenant branding update failed validation",
+                extra={"errors": serializer.errors, "tenant_id": tenant.id},
+            )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         from typing import Any, Dict, cast
@@ -410,6 +445,11 @@ class TenantMetaView(APIView):
             vdata["logo_url"] = None
 
         serializer.save()
+
+        logger.info(
+            "Tenant branding updated successfully",
+            extra={"tenant_id": tenant.id, "updated_fields": list(vdata.keys())},
+        )
 
         response_serializer = TenantMetaSerializer(tenant)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
@@ -1336,22 +1376,18 @@ class PasswordResetRequestView(APIView):
             msg.send(fail_silently=fail_silently)
         except Exception as exc:
             # Mesmo com falha no envio, mantemos resposta neutra
-            # Em dev, logar exceção para facilitar depuração SMTP
-            if (
-                getattr(settings, "DEBUG", False)
-                or getattr(settings, "ENV", "dev") == "dev"
-            ):
-                security_logger.exception(
-                    "Falha ao enviar email de reset (dev)",
-                    extra={
-                        "event": "password_reset_email_error",
-                        "email": email,
-                        "error": str(exc),
-                        "request_id": getattr(request, "request_id", None),
-                    },
-                )
+            # Logar exceção para monitoramento em qualquer ambiente
+            security_logger.error(
+                "Falha ao enviar email de reset",
+                extra={
+                    "event": "password_reset_email_error",
+                    "email": email,
+                    "error": str(exc),
+                    "request_id": getattr(request, "request_id", None),
+                },
+            )
             USERS_PASSWORD_RESET_EVENTS_TOTAL.labels(
-                event="request", result="success"
+                event="request", result="failure_send_email"
             ).inc()
             return Response({"status": "ok"}, status=status.HTTP_200_OK)
 

@@ -475,6 +475,17 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
             appointment.customer = customer
             appointment.save(update_fields=["customer"])
 
+        logger.info(
+            "Appointment created successfully",
+            extra={
+                "appointment_id": appointment.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "customer_id": getattr(customer, "id", None),
+                "professional_id": appointment.professional_id,
+                "service_id": appointment.service_id,
+            },
+        )
+
         # Envia e-mail de confirmação
         try:
             customer = appointment.customer
@@ -503,8 +514,8 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
                     date_time=appointment.slot.start_time,
                     salon_name=salon_name,
                 )
-        except Exception as e:  # pragma: no cover - apenas logging
-            print("Falha ao enviar e-mail:", e)
+        except Exception:  # pragma: no cover - apenas logging
+            logger.error("Falha ao enviar e-mail de confirmação", exc_info=True)
 
 
 class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
@@ -2087,8 +2098,17 @@ class AppointmentCancelView(APIView):
                     date_time=appointment.slot.start_time,
                     salon_name=salon_name,
                 )
-        except Exception as e:
-            print("Erro ao enviar e-mail de cancelamento:", str(e))
+        except Exception:
+            logger.error("Erro ao enviar e-mail de cancelamento", exc_info=True)
+
+        logger.info(
+            "Appointment cancelled successfully via View",
+            extra={
+                "appointment_id": appointment.id,
+                "tenant_id": getattr(appointment.tenant, "id", None),
+                "cancelled_by_id": request.user.id,
+            },
+        )
 
         serializer = AppointmentSerializer(appointment)
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
@@ -2141,6 +2161,32 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
             raise PermissionDenied("Apenas owner ou manager podem criar serviços.")
 
         serializer.save(user=self.request.user, tenant=tenant)
+
+        logger.info(
+            "Service created successfully",
+            extra={
+                "service_id": serializer.instance.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": self.request.user.id,
+                "service_name": serializer.instance.name,
+            },
+        )
+
+    def perform_update(self, serializer):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        serializer.save()
+
+        logger.info(
+            "Service updated successfully",
+            extra={
+                "service_id": serializer.instance.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": self.request.user.id,
+                "updated_fields": list(self.request.data.keys()),
+            },
+        )
 
     def get_object(self):
         obj = get_object_or_404(
@@ -2977,6 +3023,15 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
             tenant=tenant,
             staff_member=staff_member,
         )
+        logger.info(
+            "Professional created successfully",
+            extra={
+                "professional_id": serializer.instance.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": self.request.user.id,
+                "professional_name": serializer.instance.name,
+            },
+        )
 
     def get_object(self):
         obj = get_object_or_404(
@@ -3027,6 +3082,15 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
             staff_member=staff_member,
             user=staff_member.user,
             tenant=staff_member.tenant,
+        )
+        logger.info(
+            "Professional updated successfully",
+            extra={
+                "professional_id": serializer.instance.id,
+                "tenant_id": getattr(serializer.instance.tenant, "id", None),
+                "user_id": self.request.user.id,
+                "updated_fields": list(self.request.data.keys()),
+            },
         )
 
     def perform_destroy(self, instance):
@@ -4533,6 +4597,16 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 instance.slot = block[0]
                 instance.save(update_fields=["slot", "notes"])  # status inalterado aqui
 
+                logger.info(
+                    "Appointment rescheduled successfully",
+                    extra={
+                        "appointment_id": instance.id,
+                        "tenant_id": getattr(instance.tenant, "id", None),
+                        "new_slot_id": instance.slot.id,
+                        "rescheduled_by_id": request.user.id,
+                    },
+                )
+
         # Alteração de status
         if new_status is not None:
             if new_status not in ("scheduled", "cancelled", "completed", "paid"):
@@ -4551,6 +4625,15 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                     # Libera slots extras vinculados a este agendamento
                     _release_reserved_slots(instance)
                     instance.save(update_fields=["status", "cancelled_by", "notes"])
+
+                    logger.info(
+                        "Appointment cancelled successfully via partial_update",
+                        extra={
+                            "appointment_id": instance.id,
+                            "tenant_id": getattr(instance.tenant, "id", None),
+                            "cancelled_by_id": request.user.id,
+                        },
+                    )
 
                 # e-mail (não bloqueia a resposta)
                 try:
@@ -4582,8 +4665,8 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                             date_time=instance.slot.start_time,
                             salon_name=salon_name,
                         )
-                except Exception as e:
-                    print("Erro ao enviar e-mail de cancelamento:", str(e))
+                except Exception:
+                    logger.error("Erro ao enviar e-mail de cancelamento", exc_info=True)
 
             elif new_status in ("completed", "paid"):
                 # Transição para completed ou paid - slot continua ocupado
@@ -5354,79 +5437,93 @@ class FeedbackListCreateView(APIView):
             )
 
         serializer = FeedbackSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        user = request.user
-        if not getattr(user, "is_authenticated", False):
-            raise PermissionDenied("Autenticação necessária")
-        if not user.has_staff_role(TenantStaffMember.Role.OWNER):
-            raise PermissionDenied("Apenas owner pode criar feedback")
-        tenant = getattr(request, "tenant", None)
-        if not tenant and getattr(user, "tenant", None):
-            tenant = user.tenant
-        data = serializer.validated_data
-        cutoff = timezone.now() - timezone.timedelta(minutes=10)
-        dup_qs = Feedback.objects.filter(
-            tenant=tenant,
-            created_at__gte=cutoff,
-            message=data.get("message"),
-            rating=data.get("rating"),
-            category=data.get("category"),
-        )
-        customer = data.get("customer")
-        if customer is None:
-            dup_qs = dup_qs.filter(customer__isnull=True)
-        else:
-            dup_qs = dup_qs.filter(customer_id=getattr(customer, "id", customer))
-        if dup_qs.exists():
-            FEEDBACK_EVENTS_TOTAL.labels(
-                tenant_id=str(getattr(tenant, "id", "")),
-                action="create",
-                result="duplicate",
-                category=str(data.get("category") or "-"),
-            ).inc()
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as e:
             logger.warning(
-                "feedback_create_duplicate",
+                "feedback_create_validation_error",
+                extra={"errors": e.detail, "data": request.data},
+            )
+            raise e
+        
+        try:
+            user = request.user
+            if not getattr(user, "is_authenticated", False):
+                raise PermissionDenied("Autenticação necessária")
+            if not user.has_staff_role(TenantStaffMember.Role.OWNER):
+                raise PermissionDenied("Apenas owner pode criar feedback")
+            tenant = getattr(request, "tenant", None)
+            if not tenant and getattr(user, "tenant", None):
+                tenant = user.tenant
+            data = serializer.validated_data
+            cutoff = timezone.now() - timezone.timedelta(minutes=10)
+            dup_qs = Feedback.objects.filter(
+                tenant=tenant,
+                created_at__gte=cutoff,
+                message=data.get("message"),
+                rating=data.get("rating"),
+                category=data.get("category"),
+            )
+            customer = data.get("customer")
+            if customer is None:
+                dup_qs = dup_qs.filter(customer__isnull=True)
+            else:
+                dup_qs = dup_qs.filter(customer_id=getattr(customer, "id", customer))
+            if dup_qs.exists():
+                FEEDBACK_EVENTS_TOTAL.labels(
+                    tenant_id=str(getattr(tenant, "id", "")),
+                    action="create",
+                    result="duplicate",
+                    category=str(data.get("category") or "-"),
+                ).inc()
+                logger.warning(
+                    "feedback_create_duplicate",
+                    extra={
+                        "tenant_id": getattr(tenant, "id", None),
+                        "category": data.get("category"),
+                        "rating": data.get("rating"),
+                    },
+                )
+                return Response(
+                    {"detail": "Feedback duplicado recente."},
+                    status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            obj = serializer.save(tenant=tenant)
+            FEEDBACK_EVENTS_TOTAL.labels(
+                tenant_id=str(tenant.id),
+                action="create",
+                result="success",
+                category=obj.category,
+            ).inc()
+            FEEDBACK_RATINGS_SUM.labels(tenant_id=str(tenant.id)).inc(obj.rating)
+            FEEDBACK_RATINGS_COUNT.labels(tenant_id=str(tenant.id)).inc()
+            FEEDBACK_CATEGORY_TOTAL.labels(
+                tenant_id=str(tenant.id), category=obj.category
+            ).inc()
+            try:
+                trigger_feedback_notifications(tenant, obj)
+            except Exception:
+                logger.exception(
+                    "feedback_notifications_failed",
+                    extra={"tenant_id": tenant.id, "feedback_id": obj.id},
+                )
+            logger.info(
+                "feedback_create_ok",
                 extra={
-                    "tenant_id": getattr(tenant, "id", None),
-                    "category": data.get("category"),
-                    "rating": data.get("rating"),
+                    "tenant_id": tenant.id,
+                    "feedback_id": obj.id,
+                    "category": obj.category,
+                    "rating": obj.rating,
                 },
             )
             return Response(
-                {"detail": "Feedback duplicado recente."},
-                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+                FeedbackSerializer(obj).data, status=drf_status.HTTP_201_CREATED
             )
-        obj = serializer.save(tenant=tenant)
-        FEEDBACK_EVENTS_TOTAL.labels(
-            tenant_id=str(tenant.id),
-            action="create",
-            result="success",
-            category=obj.category,
-        ).inc()
-        FEEDBACK_RATINGS_SUM.labels(tenant_id=str(tenant.id)).inc(obj.rating)
-        FEEDBACK_RATINGS_COUNT.labels(tenant_id=str(tenant.id)).inc()
-        FEEDBACK_CATEGORY_TOTAL.labels(
-            tenant_id=str(tenant.id), category=obj.category
-        ).inc()
-        try:
-            trigger_feedback_notifications(tenant, obj)
-        except Exception:
-            logger.exception(
-                "feedback_notifications_failed",
-                extra={"tenant_id": tenant.id, "feedback_id": obj.id},
-            )
-        logger.info(
-            "feedback_create_ok",
-            extra={
-                "tenant_id": tenant.id,
-                "feedback_id": obj.id,
-                "category": obj.category,
-                "rating": obj.rating,
-            },
-        )
-        return Response(
-            FeedbackSerializer(obj).data, status=drf_status.HTTP_201_CREATED
-        )
+        except Exception as e:
+            if isinstance(e, PermissionDenied):
+                raise e
+            logger.exception("feedback_create_failed_unexpected")
+            raise e
 
 
 class FeedbackDetailView(APIView):
