@@ -316,9 +316,21 @@ class TenantMetaView(APIView):
                 .lower()
             )
             normalized = str(tenant_slug).strip().lower()
-            if normalized == default_slug:
+
+            # Permite fallback para aliases comuns de staging
+            # Isso resolve o problema de URLs como 'timelyone-staging.pythonanywhere.com'
+            is_staging_alias = normalized in [
+                "timelyone-staging",
+                "staging",
+                "staging-app",
+            ]
+
+            if normalized == default_slug or is_staging_alias:
+                # Se for um alias conhecido ou o próprio default, usamos o default_slug
+                target_slug = default_slug
+
                 tenant, _created = Tenant.objects.get_or_create(
-                    slug=default_slug,
+                    slug=target_slug,
                     defaults={
                         "name": "TimelyOne",
                         "is_active": True,
@@ -328,6 +340,7 @@ class TenantMetaView(APIView):
                     tenant.is_active = True
                     tenant.save(update_fields=["is_active", "updated_at"])
                 return tenant
+
             raise TenantError(
                 f"Tenant '{tenant_slug}' não encontrado ou inativo",
                 code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,

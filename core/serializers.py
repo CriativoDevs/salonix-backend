@@ -889,6 +889,7 @@ class FeedbackSerializer(serializers.ModelSerializer):
             "tenant",
             "customer",
             "category",
+            "custom_category",
             "rating",
             "message",
             "is_anonymous",
