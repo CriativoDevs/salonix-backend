@@ -13,6 +13,7 @@ from core.models import (
     Service,
     ProfessionalService,
     CustomerCommunicationConsent,
+    Feedback,
 )
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -575,6 +576,56 @@ class CustomerCommunicationConsentAdmin(admin.ModelAdmin):
 
     def get_inline_instances(self, request, obj=None):
         return []
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "tenant_name",
+        "category_display",
+        "rating",
+        "sender_info",
+        "created_at",
+    )
+    list_filter = ("tenant", "category", "rating", "created_at", "is_anonymous")
+    search_fields = (
+        "message",
+        "tenant__name",
+        "custom_category",
+        "user__email",
+        "customer__name",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    date_hierarchy = "created_at"
+
+    def tenant_name(self, obj):
+        if obj.tenant:
+            url = reverse("admin:users_tenant_change", args=[obj.tenant.pk])
+            return format_html('<a href="{}">{}</a>', url, obj.tenant.name)
+        return "-"
+
+    tenant_name.short_description = "Tenant"
+    tenant_name.admin_order_field = "tenant__name"
+
+    def category_display(self, obj):
+        if obj.category == "other" and obj.custom_category:
+            return f"Outro: {obj.custom_category}"
+        return obj.get_category_display()
+
+    category_display.short_description = "Categoria"
+    category_display.admin_order_field = "category"
+
+    def sender_info(self, obj):
+        if obj.is_anonymous:
+            return "Anônimo"
+        if obj.user:
+            return f"User: {obj.user.email}"
+        if obj.customer:
+            return f"Customer: {obj.customer.name}"
+        return "-"
+
+    sender_info.short_description = "Remetente"
 
 
 SalonCustomerAdmin.inlines = (CommunicationConsentInline,)

@@ -24,6 +24,7 @@ from core.models import (
     ScheduleSlot,
     AppointmentSeries,
     SalonCustomer,
+    Feedback,
 )
 from core.admin import (
     ServiceAdmin,
@@ -32,6 +33,7 @@ from core.admin import (
     AppointmentAdmin,
     AppointmentSeriesAdmin,
     SalonCustomerAdmin,
+    FeedbackAdmin,
 )
 from notifications.models import Notification, NotificationLog, NotificationDevice
 from notifications.admin import (
@@ -277,6 +279,7 @@ admin_site.register(ScheduleSlot, ScheduleSlotAdmin)
 admin_site.register(Appointment, AppointmentAdmin)
 admin_site.register(AppointmentSeries, AppointmentSeriesAdmin)
 admin_site.register(SalonCustomer, SalonCustomerAdmin)
+admin_site.register(Feedback, FeedbackAdmin)
 
 
 admin_site.register(PaymentCustomer, PaymentCustomerAdmin)
