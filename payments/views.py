@@ -437,6 +437,86 @@ class StripeWebhookView(APIView):
                         )
                         update_feature_flags(pc.user, sub, cpe_dt)
 
+                        # =========================================================================
+                        # CORREÇÃO BE-STAGING-FIX-02: Atribuição de Créditos Iniciais do Plano
+                        # =========================================================================
+                        try:
+                            status = sub.get("status")
+                            items = sub.get("items", {}).get("data", [])
+                            price_id = None
+                            if items:
+                                price = items[0].get("price")
+                                price_id = (
+                                    price.get("id")
+                                    if isinstance(price, dict)
+                                    else price
+                                )
+                            md = sub.get("metadata") or {}
+                            plan_code = md.get("plan_code") or md.get("plan")
+                            if not plan_code:
+                                plan_code = stripe_utils.get_plan_code_from_price(
+                                    price_id
+                                )
+                            plan_info = SubscriptionService.AVAILABLE_PLANS.get(
+                                plan_code or ""
+                            )
+                            credits_included = (
+                                Decimal(str(plan_info.get("credits_included")))
+                                if plan_info
+                                else Decimal("0.00")
+                            )
+                            trial_end_ts = sub.get("trial_end")
+
+                            # DIAGNOSTICO STAGING: Logar detalhes do trial/créditos
+                            logger.info(
+                                f"[WEBHOOK] Checkout Session Completed: status={status}, "
+                                f"plan={plan_code}, credits={credits_included}, "
+                                f"trial_end={trial_end_ts}, sub_id={subscription_id}"
+                            )
+
+                            # Aceita 'trialing' ou 'active' para conceder os créditos iniciais
+                            if (
+                                status in ("trialing", "active")
+                                and credits_included > 0
+                            ):
+                                from users.models import CommLedger
+
+                                # Referência única para evitar duplicação (id da assinatura + timestamp do trial ou start)
+                                ref_suffix = (
+                                    trial_end_ts
+                                    if trial_end_ts
+                                    else sub.get("start_date")
+                                )
+                                ref = f"plan_bonus:{subscription_id}:{ref_suffix}"
+
+                                exists = CommLedger.objects.filter(
+                                    tenant=pc.user.tenant,
+                                    transaction_type=CommLedger.TransactionType.BONUS,
+                                    reference_id=ref,
+                                ).exists()
+
+                                if not exists:
+                                    cs = CreditService(pc.user.tenant)
+                                    cs.add_credits(
+                                        amount=credits_included,
+                                        transaction_type="bonus",
+                                        description=f"Créditos incluídos do plano {plan_code} ({status})",
+                                        reference_id=ref,
+                                        created_by=pc.user,
+                                    )
+                                    logger.info(
+                                        f"[WEBHOOK] Credits granted: {credits_included} EUR for tenant {pc.user.tenant.slug}"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"[WEBHOOK] Credits already granted for ref {ref}"
+                                    )
+                        except Exception as e:
+                            logger.exception(
+                                f"Plan bonus grant failed on checkout.session.completed: {e}"
+                            )
+                        # =========================================================================
+
                         # FORÇAR SINCRONIZAÇÃO DO TENANT PLAN
                         try:
                             # Tenta extrair o plano dos metadados ou do preço
@@ -475,72 +555,6 @@ class StripeWebhookView(APIView):
                                     )
                         except Exception as e:
                             logger.error(f"[WEBHOOK] Failed to force tenant sync: {e}")
-
-                    else:
-                        logger.error(
-                            f"[WEBHOOK] PaymentCustomer not found for stripe_customer_id={customer_id}"
-                        )
-
-                        try:
-                            status = sub.get("status")
-                            items = sub.get("items", {}).get("data", [])
-                            price_id = None
-                            if items:
-                                price = items[0].get("price")
-                                price_id = (
-                                    price.get("id")
-                                    if isinstance(price, dict)
-                                    else price
-                                )
-                            md = sub.get("metadata") or {}
-                            plan_code = md.get("plan_code") or md.get("plan")
-                            if not plan_code:
-                                plan_code = stripe_utils.get_plan_code_from_price(
-                                    price_id
-                                )
-                            plan_info = SubscriptionService.AVAILABLE_PLANS.get(
-                                plan_code or ""
-                            )
-                            credits_included = (
-                                Decimal(str(plan_info.get("credits_included")))
-                                if plan_info
-                                else Decimal("0.00")
-                            )
-                            trial_end_ts = sub.get("trial_end")
-                            
-                            # DIAGNOSTICO STAGING: Logar detalhes do trial/créditos
-                            logger.info(
-                                f"[WEBHOOK] Checkout Session Completed: status={status}, "
-                                f"plan={plan_code}, credits={credits_included}, "
-                                f"trial_end={trial_end_ts}, sub_id={subscription_id}"
-                            )
-
-                            if (
-                                status == "trialing"
-                                and credits_included > 0
-                                and trial_end_ts
-                            ):
-                                from users.models import CommLedger
-
-                                ref = f"trial_bonus:{subscription_id}:{trial_end_ts}"
-                                exists = CommLedger.objects.filter(
-                                    tenant=pc.user.tenant,
-                                    transaction_type=CommLedger.TransactionType.BONUS,
-                                    reference_id=ref,
-                                ).exists()
-                                if not exists:
-                                    cs = CreditService(pc.user.tenant)
-                                    cs.add_credits(
-                                        amount=credits_included,
-                                        transaction_type="bonus",
-                                        description=f"Créditos incluídos do plano {plan_code} (trial)",
-                                        reference_id=ref,
-                                        created_by=pc.user,
-                                    )
-                        except Exception:
-                            logger.exception(
-                                "trial bonus grant failed on checkout.session.completed"
-                            )
 
                         # Cancelar assinaturas anteriores ativas do mesmo tenant (apenas se nova estiver ativa/trial)
                         try:
@@ -591,6 +605,11 @@ class StripeWebhookView(APIView):
                                 "previous subscription cancellation failed",
                                 exc_info=exc,
                             )
+
+                    else:
+                        logger.error(
+                            f"[WEBHOOK] PaymentCustomer not found for stripe_customer_id={customer_id}"
+                        )
                 else:
                     # Fluxo de compra de créditos via Checkout (mode=payment)
                     meta = data.get("metadata") or {}
