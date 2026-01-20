@@ -1,5 +1,5 @@
 """
-Sistema de tratamento de erros padronizado para Salonix Backend.
+Sistema de tratamento de erros padronizado para TimelyOne Backend.
 
 Este módulo fornece:
 - Códigos de erro padronizados
@@ -79,7 +79,7 @@ class ErrorCodes:
 
 
 class SalonixError(APIException):
-    """Exceção base para erros específicos do Salonix."""
+    """Exceção base para erros específicos do TimelyOne."""
 
     def __init__(
         self,

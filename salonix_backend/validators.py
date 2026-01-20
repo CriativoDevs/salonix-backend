@@ -1,5 +1,5 @@
 """
-Sistema de validações centralizado para Salonix Backend.
+Sistema de validações centralizado para TimelyOne Backend.
 
 Este módulo fornece:
 - Validadores customizados reutilizáveis

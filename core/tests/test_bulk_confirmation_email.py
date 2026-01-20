@@ -48,7 +48,7 @@ def test_send_bulk_email_multipart_and_links(settings, with_professional):
         to_email="alana@example.com",
         client_name="Alana Nogueira",
         items=items,
-        salon_name="Salonix",
+        salon_name="TimelyOne",
     )
 
     # Verificações usando django.core.mail.outbox

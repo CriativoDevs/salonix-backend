@@ -27,8 +27,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--superuser-email",
             type=str,
-            default="admin@salonix.pt",
-            help="Email do superusuário (default: admin@salonix.pt)",
+            default="admin@timelyone.com",
+            help="Email do superusuário (default: admin@timelyone.com)",
         )
 
     def handle(self, *args, **options):
@@ -70,11 +70,11 @@ class Command(BaseCommand):
             username="admin",
             email=email,
             password="admin123",  # Senha temporária
-            salon_name="Salonix Admin",
+            salon_name="TimelyOne Admin",
         )
 
-        # Adicionar ao grupo Salonix Admins
-        admin_group = Group.objects.get(name="Salonix Admins")
+        # Adicionar ao grupo TimelyOne Admins
+        admin_group = Group.objects.get(name="TimelyOne Admins")
         superuser.groups.add(admin_group)
 
         self.stdout.write(self.style.SUCCESS(f"✅ Superusuário criado: {email}"))

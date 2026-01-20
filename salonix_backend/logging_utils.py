@@ -1,5 +1,5 @@
 """
-Utilitários para logging estruturado do Salonix Backend.
+Utilitários para logging estruturado do TimelyOne Backend.
 """
 
 import json

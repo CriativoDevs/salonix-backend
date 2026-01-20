@@ -21,7 +21,9 @@ def _send_email_safe(
     Captura exceções e loga erros em vez de quebrar o fluxo.
     """
     if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
-        logger.info(f"[email] outbound disabled — would send '{subject}' to {to_emails}")
+        logger.info(
+            f"[email] outbound disabled — would send '{subject}' to {to_emails}"
+        )
         return True
 
     if isinstance(to_emails, str):
@@ -37,7 +39,7 @@ def _send_email_safe(
         )
         if body_html:
             email.attach_alternative(body_html, "text/html")
-        
+
         email.send(fail_silently=False)
         logger.info(f"E-mail '{subject}' enviado com sucesso para {to_emails}")
         return True
@@ -52,13 +54,13 @@ def _send_email_safe(
                     "backend": settings.EMAIL_BACKEND,
                     "user": settings.EMAIL_HOST_USER,  # Cuidado com PII/Secrets, mas user ok
                 }
-            }
+            },
         )
         return False
 
 
 def send_appointment_confirmation_email(
-    to_email, client_name, service_name, date_time, salon_name="Salonix"
+    to_email, client_name, service_name, date_time, salon_name="TimelyOne"
 ):
     """
     Envia e-mail de confirmação de agendamento.
@@ -86,7 +88,7 @@ def send_appointment_confirmation_email(
     # Opcional: Adicionar versão HTML simples se desejado, mas mantendo compatibilidade com texto plano
     # Por enquanto mantemos texto plano como principal, mas podemos enriquecer depois.
     # O código original tinha MIMEText(body, "plain"), então vamos manter assim.
-    
+
     _send_email_safe(subject, body, None, to_email)
 
 
@@ -96,7 +98,7 @@ def send_appointment_cancellation_email(
     client_name,
     service_name,
     date_time,
-    salon_name="Salonix",
+    salon_name="TimelyOne",
 ):
     """
     Envia e-mail de cancelamento de agendamento para o cliente e o salão.
@@ -130,11 +132,12 @@ def send_staff_access_link_email(to_email, access_url, salon_name):
     Envia e-mail com link de acesso rápido para staff.
     """
     subject = _("Seu link de acesso ao %(salon_name)s") % {"salon_name": salon_name}
-    
+
     body = (
         _("Olá,")
         + "\n\n"
-        + _("Você solicitou um link de acesso para o salão %(salon_name)s.") % {"salon_name": salon_name}
+        + _("Você solicitou um link de acesso para o salão %(salon_name)s.")
+        % {"salon_name": salon_name}
         + "\n\n"
         + _("Clique no link abaixo para acessar:")
         + "\n"
@@ -152,7 +155,7 @@ def send_bulk_appointment_confirmation_email(
     to_email: str,
     client_name: str,
     items: list[dict],
-    salon_name: str = "Salonix",
+    salon_name: str = "TimelyOne",
 ):
     """
     Envia um único e-mail consolidado com múltiplos agendamentos.
@@ -270,7 +273,7 @@ def send_marketing_email(
     *,
     tenant_id: int,
     customer_id: int,
-    salon_name: str = "Salonix",
+    salon_name: str = "TimelyOne",
 ):
     """
     Envia e-mail de marketing com link de descadastro (unsubscribe).
@@ -310,11 +313,11 @@ def send_marketing_email(
 def send_staff_invite_email(
     to_email: str,
     accept_url: str,
-    salon_name: str = "Salonix",
+    salon_name: str = "TimelyOne",
     inviter_name: str | None = None,
 ):
     subject = "Convite para acessar o painel do salão"
-    
+
     inviter_line = (
         f"{inviter_name} convidou você para acessar o painel do {salon_name}."
         if inviter_name

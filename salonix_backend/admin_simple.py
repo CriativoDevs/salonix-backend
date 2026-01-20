@@ -25,8 +25,8 @@ class SimpleAdminSite(AdminSite):
     Site Admin simples mas com ModelAdmin personalizados.
     """
 
-    site_title = "Salonix Admin"
-    site_header = "🏢 Salonix - Gestão de Salões"
+    site_title = "TimelyOne Admin"
+    site_header = "🏢 TimelyOne - Gestão de Salões"
     index_title = "Dashboard de Administração"
 
 

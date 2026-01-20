@@ -120,8 +120,8 @@ def create_admin_groups():
     """
     from django.contrib.auth.models import Group, Permission
 
-    # Grupo: Administradores Salonix
-    admin_group, created = Group.objects.get_or_create(name="Salonix Admins")
+    # Grupo: Administradores TimelyOne
+    admin_group, created = Group.objects.get_or_create(name="TimelyOne Admins")
     if created:
         # Adicionar todas as permissões customizadas
         custom_perms = Permission.objects.filter(

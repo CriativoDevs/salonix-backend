@@ -306,7 +306,7 @@ class AppointmentAdmin(admin.ModelAdmin):
 
         try:
             if not change:
-                salon_name = obj.tenant.name if obj.tenant else "Salonix"
+                salon_name = obj.tenant.name if obj.tenant else "TimelyOne"
                 send_appointment_confirmation_email(
                     to_email=recipient_email,
                     client_name=client_display_name,
@@ -317,7 +317,7 @@ class AppointmentAdmin(admin.ModelAdmin):
             elif previous_status != "cancelled" and obj.status == "cancelled":
                 salon_email = obj.professional.user.email if obj.professional else ""
                 if salon_email:
-                    salon_name = obj.tenant.name if obj.tenant else "Salonix"
+                    salon_name = obj.tenant.name if obj.tenant else "TimelyOne"
                     send_appointment_cancellation_email(
                         client_email=recipient_email,
                         salon_email=salon_email,

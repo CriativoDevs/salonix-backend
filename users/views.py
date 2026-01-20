@@ -894,7 +894,7 @@ class TenantStaffView(APIView):
                 ok = send_staff_invite_email(
                     to_email=to_email,
                     accept_url=accept_url,
-                    salon_name=tenant.name or "Salonix",
+                    salon_name=tenant.name or "TimelyOne",
                     inviter_name=inviter_name,
                 )
                 USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
@@ -1044,7 +1044,7 @@ class TenantStaffResendInviteView(APIView):
             ok = send_staff_invite_email(
                 to_email=to_email,
                 accept_url=accept_url,
-                salon_name=tenant.name or "Salonix",
+                salon_name=tenant.name or "TimelyOne",
                 inviter_name=inviter_name,
             )
             USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
@@ -1157,7 +1157,7 @@ class TenantStaffAccessLinkView(APIView):
                 send_staff_access_link_email(
                     to_email=to_email,
                     access_url=link,
-                    salon_name=tenant.name or "Salonix",
+                    salon_name=tenant.name or "TimelyOne",
                 )
             except Exception:
                 pass
