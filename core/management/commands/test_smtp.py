@@ -34,7 +34,7 @@ class Command(BaseCommand):
                     self.stdout.write("Logging in...")
                     server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
                     
-                    msg = f"Subject: Test Email (Native)\n\nThis is a test email from Salonix using native smtplib."
+                    msg = f"Subject: Test Email (Native)\n\nThis is a test email from TimelyOne using native smtplib."
                     self.stdout.write(f"Sending to {to_email}...")
                     server.sendmail(settings.EMAIL_HOST_USER, [to_email], msg)
                     self.stdout.write(self.style.SUCCESS('Successfully sent email via native smtplib'))
@@ -45,7 +45,7 @@ class Command(BaseCommand):
             try:
                 send_mail(
                     'Test Email (Django)',
-                    'This is a test email from Salonix using Django send_mail.',
+                    'This is a test email from TimelyOne using Django send_mail.',
                     settings.EMAIL_HOST_USER,
                     [to_email],
                     fail_silently=False,

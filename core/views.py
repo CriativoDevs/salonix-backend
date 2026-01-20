@@ -506,7 +506,7 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
                     )
                 )
                 salon_name = (
-                    appointment.tenant.name if appointment.tenant else "Salonix"
+                    appointment.tenant.name if appointment.tenant else "TimelyOne"
                 )
                 send_appointment_confirmation_email(
                     to_email=recipient_email,
@@ -891,7 +891,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             to_email=recipient_email,
                             client_name=str(client_display_name or "Cliente"),
                             items=consolidated_items,
-                            salon_name=(tenant.name if tenant else "Salonix"),
+                            salon_name=(tenant.name if tenant else "TimelyOne"),
                         )
                 except Exception as e:  # pragma: no cover
                     logger.warning(
@@ -1372,7 +1372,7 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     to_email=recipient_email,
                     client_name=str(client_display_name or "Cliente"),
                     items=consolidated_items,
-                    salon_name=(tenant.name if tenant else "Salonix"),
+                    salon_name=(tenant.name if tenant else "TimelyOne"),
                 )
         except Exception as e:  # pragma: no cover
             logger.warning(
@@ -2089,7 +2089,7 @@ class AppointmentCancelView(APIView):
             salon_email = appointment.professional.user.email
             if client_email:
                 salon_name = (
-                    appointment.tenant.name if appointment.tenant else "Salonix"
+                    appointment.tenant.name if appointment.tenant else "TimelyOne"
                 )
                 send_appointment_cancellation_email(
                     client_email=client_email,
@@ -2843,7 +2843,7 @@ class ClientsMeAppointmentCreateView(APIView):
             to_email = (customer.email or "").strip()
             if to_email:
                 client_name = customer.name or "Cliente"
-                salon_name = tenant.name or "Salonix"
+                salon_name = tenant.name or "TimelyOne"
                 send_appointment_confirmation_email(
                     to_email=to_email,
                     client_name=client_name,

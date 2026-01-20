@@ -50,14 +50,14 @@ def send_customer_pwa_invite(
     sep = "&" if tenant_qs else ""
     link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
 
-    subject = "Seu acesso ao Salonix"
+    subject = f"Seu acesso ao {getattr(tenant, 'name', 'TimelyOne')}"
     sender_email = settings.EMAIL_HOST_USER or getattr(
         settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
     )
 
     text_body = (
         f"Olá,\n\n"
-        f"Para acessar sua área de cliente, utilize o link abaixo:\n\n"
+        f"Para acessar sua área de cliente no {getattr(tenant, 'name', 'TimelyOne')}, utilize o link abaixo:\n\n"
         f"{link}\n\n"
         f"Se você não solicitou este acesso, ignore esta mensagem.\n"
     )
@@ -65,9 +65,14 @@ def send_customer_pwa_invite(
     html_body = f"""
     <div style="font-family: Arial, sans-serif;">
       <p>Olá,</p>
-      <p>Para acessar sua área de cliente, utilize o link abaixo:</p>
+      <p>Para acessar sua área de cliente no <strong>{getattr(tenant, 'name', 'TimelyOne')}</strong>, utilize o link abaixo:</p>
       <p><a href="{link}" style="background:#2563eb;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Acessar</a></p>
       <p>Se você não solicitou este acesso, ignore esta mensagem.</p>
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+      <p style="font-size: 12px; color: #777;">
+        {getattr(tenant, 'name', 'TimelyOne')}<br>
+        Esta é uma mensagem automática.
+      </p>
     </div>
     """
 

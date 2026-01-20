@@ -2,9 +2,10 @@
 
 from django.db import migrations
 
+
 def seed_notification_templates(apps, schema_editor):
     OpsNotificationTemplate = apps.get_model("ops", "OpsNotificationTemplate")
-    
+
     # 1. PWA_INVITE
     pwa_invite_text = (
         "Olá,\n\n"
@@ -14,29 +15,29 @@ def seed_notification_templates(apps, schema_editor):
     )
     pwa_invite_html = (
         '<div style="font-family: Arial, sans-serif;">\n'
-        '  <p>Olá,</p>\n'
-        '  <p>Para acessar sua área de cliente, utilize o link abaixo:</p>\n'
+        "  <p>Olá,</p>\n"
+        "  <p>Para acessar sua área de cliente, utilize o link abaixo:</p>\n"
         '  <p><a href="{{ link }}" style="background:#2563eb;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Acessar</a></p>\n'
-        '  <p>Se você não solicitou este acesso, ignore esta mensagem.</p>\n'
-        '</div>'
+        "  <p>Se você não solicitou este acesso, ignore esta mensagem.</p>\n"
+        "</div>"
     )
-    
+
     OpsNotificationTemplate.objects.get_or_create(
         code="PWA_INVITE",
         channel="email",
         defaults={
-            "subject": "Seu acesso ao Salonix",
+            "subject": "Seu acesso ao TimelyOne",
             "body_text": pwa_invite_text,
             "body_html": pwa_invite_html,
             "is_active": True,
-        }
+        },
     )
 
     # 2. APPOINTMENT_CONFIRMATION
     # Original used %(client_name)s style formatting, converting to {{ client_name }} for Jinja2/Liquid style which is more standard for templates
     # or keep as python format if we plan to use python format.
     # Given the frontend showed {{ variable }}, I will convert to {{ variable }}.
-    
+
     appt_conf_text = (
         "Olá {{ client_name }},\n\n"
         'Seu agendamento para o serviço "{{ service_name }}" foi confirmado com sucesso!\n\n'
@@ -44,16 +45,16 @@ def seed_notification_templates(apps, schema_editor):
         "Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.\n\n"
         "Obrigado por escolher {{ salon_name }}! 💈"
     )
-    
+
     OpsNotificationTemplate.objects.get_or_create(
         code="APPOINTMENT_CONFIRMATION",
         channel="email",
         defaults={
             "subject": "Confirmação do seu agendamento",
             "body_text": appt_conf_text,
-            "body_html": "", # No HTML version found in code, defaulting to empty or same as text wrapped in <p>
+            "body_html": "",  # No HTML version found in code, defaulting to empty or same as text wrapped in <p>
             "is_active": True,
-        }
+        },
     )
 
     # 3. APPOINTMENT_CANCELLATION
@@ -61,7 +62,7 @@ def seed_notification_templates(apps, schema_editor):
         "Olá {{ client_name }},\n\n"
         'O seu agendamento para o serviço "{{ service_name }}", marcado para {{ formatted_date }}, foi cancelado com sucesso.'
     )
-    
+
     OpsNotificationTemplate.objects.get_or_create(
         code="APPOINTMENT_CANCELLATION",
         channel="email",
@@ -70,8 +71,9 @@ def seed_notification_templates(apps, schema_editor):
             "body_text": appt_cancel_text,
             "body_html": "",
             "is_active": True,
-        }
+        },
     )
+
 
 class Migration(migrations.Migration):
 
@@ -80,5 +82,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(seed_notification_templates, reverse_code=migrations.RunPython.noop),
+        migrations.RunPython(
+            seed_notification_templates, reverse_code=migrations.RunPython.noop
+        ),
     ]

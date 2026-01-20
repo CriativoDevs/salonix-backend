@@ -507,6 +507,14 @@ class StripeWebhookView(APIView):
                                 else Decimal("0.00")
                             )
                             trial_end_ts = sub.get("trial_end")
+                            
+                            # DIAGNOSTICO STAGING: Logar detalhes do trial/créditos
+                            logger.info(
+                                f"[WEBHOOK] Checkout Session Completed: status={status}, "
+                                f"plan={plan_code}, credits={credits_included}, "
+                                f"trial_end={trial_end_ts}, sub_id={subscription_id}"
+                            )
+
                             if (
                                 status == "trialing"
                                 and credits_included > 0

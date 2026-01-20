@@ -90,7 +90,7 @@ class ICSGenerator:
         ics_content = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            "PRODID:-//Salonix//Appointment//EN",
+            "PRODID:-//TimelyOne//Appointment//EN",
             "CALSCALE:GREGORIAN",
             "METHOD:PUBLISH",
             "BEGIN:VEVENT",

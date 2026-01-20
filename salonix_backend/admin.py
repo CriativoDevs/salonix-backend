@@ -46,13 +46,13 @@ from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
 from datetime import datetime, timedelta
 
 
-class SalonixAdminSite(AdminSite):
+class TimelyOneAdminSite(AdminSite):
     """
-    Site Admin personalizado do Salonix com dashboard estatístico.
+    Site Admin personalizado do TimelyOne com dashboard estatístico.
     """
 
-    site_title = "Salonix Admin"
-    site_header = "🏢 Salonix - Gestão de Salões"
+    site_title = "TimelyOne Admin"
+    site_header = "🏢 TimelyOne - Gestão de Salões"
     index_title = "Dashboard de Administração"
 
     def get_urls(self):
@@ -264,7 +264,7 @@ class SalonixAdminSite(AdminSite):
 
 
 # Instância personalizada do admin
-admin_site = SalonixAdminSite(name="salonix_admin")
+admin_site = TimelyOneAdminSite(name="timelyone_admin")
 
 admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)

@@ -61,7 +61,7 @@ class TestDjangoAdmin:
         # Acessar admin
         response = self.client.get("/admin/")
         assert response.status_code == 200
-        assert "Salonix - Gestão de Salões" in response.content.decode()
+        assert "TimelyOne - Gestão de Salões" in response.content.decode()
 
     def test_admin_login_staff(self):
         """Testa login de usuário staff no admin."""
@@ -227,13 +227,13 @@ class TestDjangoAdmin:
             series=series,
         )
 
-        list_url = reverse("salonix_admin:core_appointmentseries_changelist")
+        list_url = reverse("timelyone_admin:core_appointmentseries_changelist")
         list_response = self.client.get(list_url)
         assert list_response.status_code == 200
         assert f">{series.id}<" in list_response.content.decode()
 
         detail_url = reverse(
-            "salonix_admin:core_appointmentseries_change", args=[series.pk]
+            "timelyone_admin:core_appointmentseries_change", args=[series.pk]
         )
         detail = self.client.get(detail_url)
         assert detail.status_code == 200
@@ -278,11 +278,11 @@ class TestDjangoAdmin:
             series=series,
         )
 
-        appointments_url = reverse("salonix_admin:core_appointment_changelist")
+        appointments_url = reverse("timelyone_admin:core_appointment_changelist")
         response = self.client.get(f"{appointments_url}?series__id__exact={series.pk}")
         assert response.status_code == 200
         expected_link = reverse(
-            "salonix_admin:core_appointmentseries_change", args=[series.pk]
+            "timelyone_admin:core_appointmentseries_change", args=[series.pk]
         )
         assert expected_link in response.content.decode()
 
@@ -311,14 +311,14 @@ class TestAdminPermissions(TestCase):
 
     def test_admin_groups_created(self):
         """Testa se grupos administrativos foram criados."""
-        expected_groups = ["Salonix Admins", "Tenant Managers", "Support"]
+        expected_groups = ["TimelyOne Admins", "Tenant Managers", "Support"]
 
         for group_name in expected_groups:
             assert Group.objects.filter(name=group_name).exists()
 
     def test_admin_group_permissions(self):
         """Testa se grupos têm as permissões corretas."""
-        admin_group = Group.objects.get(name="Salonix Admins")
+        admin_group = Group.objects.get(name="TimelyOne Admins")
 
         # Verificar se grupo admin tem permissões customizadas
         custom_perms = admin_group.permissions.filter(
@@ -342,10 +342,10 @@ class TestAdminPermissions(TestCase):
         )
 
         # Adicionar ao grupo admin
-        admin_group = Group.objects.get(name="Salonix Admins")
+        admin_group = Group.objects.get(name="TimelyOne Admins")
         user.groups.add(admin_group)
 
-        assert user.groups.filter(name="Salonix Admins").exists()
+        assert user.groups.filter(name="TimelyOne Admins").exists()
         assert user.has_perm("users.view_all_tenants") or user.is_superuser
 
 

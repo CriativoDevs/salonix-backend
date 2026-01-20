@@ -470,7 +470,7 @@ EMAIL_USE_SSL = str(env_get("EMAIL_USE_SSL", "false")).lower() in {
 }
 EMAIL_HOST_USER = env_get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env_get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = env_get("DEFAULT_FROM_EMAIL", "no-reply@localhost")
+DEFAULT_FROM_EMAIL = env_get("DEFAULT_FROM_EMAIL", "TimelyOne <no-reply@timelyone.com>")
 
 # Base para geração de links públicos de download de ICS
 # Ex.: http://api.timelyone.com
@@ -524,7 +524,7 @@ REPORTS_PAGINATION = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Salonix API",
+    "TITLE": "TimelyOne API",
     "DESCRIPTION": "Documentação dos relatórios e demais endpoints.",
     "VERSION": "1.0.0",
     # opcional:

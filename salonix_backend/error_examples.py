@@ -110,7 +110,7 @@ def example_external_service(request):
         return Response({"data": response.json()})
 
     except requests.Timeout:
-        raise SalonixError(
+        raise TimelyOneError(
             "Timeout ao conectar com serviço externo",
             code=ErrorCodes.SYSTEM_EXTERNAL_SERVICE_ERROR,
             details={"service": "example_api", "timeout": 5, "retry_after": 60},
@@ -118,7 +118,7 @@ def example_external_service(request):
         )
 
     except requests.RequestException as e:
-        raise SalonixError(
+        raise TimelyOneError(
             "Erro na comunicação com serviço externo",
             code=ErrorCodes.SYSTEM_EXTERNAL_SERVICE_ERROR,
             details={"service": "example_api", "error": str(e)},
