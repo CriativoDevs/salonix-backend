@@ -13,6 +13,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from users.models import Tenant
 from core.models import CustomerCommunicationConsent, Feedback
+from core.utils.client_access import create_client_access_data
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def send_customer_pwa_invite(
-    tenant: Tenant, customer, invited_by: Optional[Any] = None
+    tenant: Tenant, customer, invited_by: Optional[Any] = None, link: Optional[str] = None
 ) -> bool:
     """Envia convite do PWA Cliente por e-mail com link de acesso.
 
@@ -34,21 +35,8 @@ def send_customer_pwa_invite(
     if not to_email:
         return False
 
-    payload = {
-        "tenant_id": getattr(tenant, "id", None),
-        "customer_id": getattr(customer, "id", None),
-        "ts": int(timezone.now().timestamp()),
-        # uso único será validado no accept
-        "jti": signing.TimestampSigner().sign_object({"r": timezone.now().timestamp()})[
-            :16
-        ],
-    }
-    token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
-    base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip("/")
-    slug = getattr(tenant, "slug", "").strip().lower()
-    tenant_qs = f"tenant={slug}" if slug else ""
-    sep = "&" if tenant_qs else ""
-    link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+    if not link:
+        _, _, link = create_client_access_data(tenant, customer)
 
     subject = f"Seu acesso ao {getattr(tenant, 'name', 'TimelyOne')}"
     sender_email = settings.EMAIL_HOST_USER or getattr(
