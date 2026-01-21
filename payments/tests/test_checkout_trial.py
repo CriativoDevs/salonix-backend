@@ -1,11 +1,16 @@
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.urls import reverse
+from django.test import override_settings
 from rest_framework.test import APITestCase
 from users.models import CustomUser, Tenant, TenantStaffMember
 from payments.models import Subscription, PaymentCustomer
 
 
+@override_settings(
+    STRIPE_TRIAL_PERIOD_DAYS=14,
+    STRIPE_PRICE_STANDARD_MONTHLY_ID="price_standard_test",
+)
 class CheckoutTrialTestCase(APITestCase):
     def setUp(self):
         # Create user and tenant
@@ -45,15 +50,8 @@ class CheckoutTrialTestCase(APITestCase):
         # Mock customer create
         self.mock_stripe.Customer.create.return_value = {"id": "cus_test_123"}
 
-        # Mock settings
-        self.settings_patcher = patch(
-            "django.conf.settings.STRIPE_TRIAL_PERIOD_DAYS", 14
-        )
-        self.settings_patcher.start()
-
     def tearDown(self):
         self.patcher.stop()
-        self.settings_patcher.stop()
 
     def test_new_customer_gets_trial(self):
         """User with no subscription history should get trial days."""
