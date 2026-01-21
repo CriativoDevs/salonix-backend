@@ -35,6 +35,7 @@ from core.models import (
     Feedback,
 )
 from users.models import Tenant, TenantStaffMember
+from core.utils.client_access import create_client_access_data
 from notifications.services import (
     send_customer_pwa_invite,
     trigger_feedback_notifications,
@@ -2259,23 +2260,13 @@ class ClientAccessLinkView(TenantIsolatedMixin, APIView):
                 status=drf_status.HTTP_400_BAD_REQUEST,
             )
 
-        payload = {
-            "tenant_id": tenant.id,
-            "customer_id": customer.id,
-            "ts": int(timezone.now().timestamp()),
-            "jti": uuid.uuid4().hex,
-        }
-        token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
-        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
-            "/"
-        )
-        slug = getattr(tenant, "slug", "").strip().lower()
-        tenant_qs = f"tenant={slug}" if slug else ""
-        sep = "&" if tenant_qs else ""
-        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+        # Gerar token/link (uso único por jti)
+        payload, token, link = create_client_access_data(tenant, customer)
 
         try:
-            send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=user)
+            send_customer_pwa_invite(
+                tenant=tenant, customer=customer, invited_by=user, link=link
+            )
         except Exception:
             CLIENT_ACCESS_EVENTS_TOTAL.labels(
                 event="emit_staff",
@@ -2401,20 +2392,7 @@ class PublicClientAccessLinkView(APIView):
             return resp
 
         # Gerar token/link (uso único por jti) e logar em dev
-        payload = {
-            "tenant_id": tenant.id,
-            "customer_id": customer.id,
-            "ts": int(timezone.now().timestamp()),
-            "jti": uuid.uuid4().hex,
-        }
-        token = signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
-        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
-            "/"
-        )
-        slug = getattr(tenant, "slug", "").strip().lower()
-        tenant_qs = f"tenant={slug}" if slug else ""
-        sep = "&" if tenant_qs else ""
-        link = f"{base}/client/access?{tenant_qs}{sep}token={token}"
+        payload, token, link = create_client_access_data(tenant, customer)
 
         security_logger = logging.getLogger("users.security")
         env_name = getattr(settings, "ENV_NAME", "dev")
@@ -2430,7 +2408,9 @@ class PublicClientAccessLinkView(APIView):
             )
 
         try:
-            send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=None)
+            send_customer_pwa_invite(
+                tenant=tenant, customer=customer, invited_by=None, link=link
+            )
         except Exception:
             CLIENT_ACCESS_EVENTS_TOTAL.labels(
                 event="emit_public",
