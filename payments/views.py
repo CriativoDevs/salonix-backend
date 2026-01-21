@@ -124,9 +124,13 @@ class CreateCheckoutSession(APIView):
 
         subscription_data = {}
 
-        has_existing_subscription = Subscription.objects.filter(
-            user__tenant=request.user.tenant,
-        ).exists()
+        has_existing_subscription = (
+            Subscription.objects.filter(
+                user__tenant=request.user.tenant,
+            )
+            .exclude(status__in=["incomplete", "incomplete_expired"])
+            .exists()
+        )
 
         trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
         if trial_days and not has_existing_subscription:
