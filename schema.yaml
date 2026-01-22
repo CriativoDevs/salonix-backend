@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Salonix API
+  title: TimelyOne API
   version: 1.0.0
   description: Documentação dos relatórios e demais endpoints.
 paths:
@@ -326,6 +326,25 @@ paths:
     get:
       operationId: auth_credits_history_list
       description: Lista histórico de transações de créditos de comunicação
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
       tags:
       - auth
       security:
@@ -335,9 +354,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CommLedger'
+                $ref: '#/components/schemas/PaginatedCommLedgerList'
           description: ''
   /api/auth/credits/purchase/:
     post:
@@ -500,6 +517,22 @@ paths:
                 $ref: '#/components/schemas/TenantSelfService'
           description: 'Retorna metadados do tenant do usuário logado. Cabeçalho de
             resposta: Content-Language'
+    delete:
+      operationId: auth_me_tenant_destroy
+      description: Realiza o cancelamento (soft-delete) do tenant atual. Requer ser
+        proprietário (Owner).
+      summary: Cancelar conta
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Conta cancelada com sucesso
+        '403':
+          description: Apenas o proprietário pode cancelar a conta
+        '404':
+          description: Tenant não encontrado
   /api/auth/password/reset/:
     post:
       operationId: auth_password_reset_create
@@ -4998,6 +5031,13 @@ paths:
       operationId: slots_list
       description: Mixin que automaticamente filtra querysets por tenant do usuário
         logado.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
       tags:
       - slots
       security:
@@ -5210,6 +5250,25 @@ paths:
     get:
       operationId: users_credits_history_list
       description: Lista histórico de transações de créditos de comunicação
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
       tags:
       - users
       security:
@@ -5219,9 +5278,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CommLedger'
+                $ref: '#/components/schemas/PaginatedCommLedgerList'
           description: ''
   /api/users/credits/purchase/:
     post:
@@ -5384,6 +5441,22 @@ paths:
                 $ref: '#/components/schemas/TenantSelfService'
           description: 'Retorna metadados do tenant do usuário logado. Cabeçalho de
             resposta: Content-Language'
+    delete:
+      operationId: users_me_tenant_destroy
+      description: Realiza o cancelamento (soft-delete) do tenant atual. Requer ser
+        proprietário (Owner).
+      summary: Cancelar conta
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Conta cancelada com sucesso
+        '403':
+          description: Apenas o proprietário pode cancelar a conta
+        '404':
+          description: Tenant não encontrado
   /api/users/password/reset/:
     post:
       operationId: users_password_reset_create
@@ -6430,7 +6503,6 @@ components:
             * `basic` - basic
             * `standard` - standard
             * `pro` - pro
-            * `enterprise` - enterprise
     CheckoutSessionResponse:
       type: object
       properties:
@@ -6790,6 +6862,9 @@ components:
         status:
           type: string
           description: Status da assinatura
+        status_label:
+          type: string
+          description: Status da assinatura (Traduzido)
         current_period_end:
           type: string
           format: date-time
@@ -6815,6 +6890,7 @@ components:
       - plan_name
       - price_monthly
       - status
+      - status_label
     DeviceTypeEnum:
       enum:
       - web
@@ -6859,6 +6935,10 @@ components:
           nullable: true
         category:
           $ref: '#/components/schemas/FeedbackCategoryEnum'
+        custom_category:
+          type: string
+          nullable: true
+          maxLength: 100
         rating:
           type: integer
           maximum: 9223372036854775807
@@ -6886,14 +6966,16 @@ components:
       - updated_at
     FeedbackCategoryEnum:
       enum:
-      - bug
-      - suggestion
+      - app
+      - support
+      - pwa
       - praise
       - other
       type: string
       description: |-
-        * `bug` - Bug
-        * `suggestion` - Suggestion
+        * `app` - App
+        * `support` - Support
+        * `pwa` - PWA
         * `praise` - Praise
         * `other` - Other
     FeedbackRequest:
@@ -6904,6 +6986,10 @@ components:
           nullable: true
         category:
           $ref: '#/components/schemas/FeedbackCategoryEnum'
+        custom_category:
+          type: string
+          nullable: true
+          maxLength: 100
         rating:
           type: integer
           maximum: 9223372036854775807
@@ -7088,6 +7174,7 @@ components:
         token:
           type: string
           description: Token do dispositivo para push notifications
+          maxLength: 512
         is_active:
           type: boolean
           description: Se o device está ativo para receber notificações
@@ -7123,6 +7210,7 @@ components:
           type: string
           minLength: 1
           description: Token do dispositivo para push notifications
+          maxLength: 512
         is_active:
           type: boolean
           description: Se o device está ativo para receber notificações
@@ -7697,7 +7785,6 @@ components:
             * `basic` - Basic
             * `standard` - Standard
             * `pro` - Pro
-            * `enterprise` - Enterprise
         is_active:
           type: boolean
         created_at:
@@ -7972,6 +8059,29 @@ components:
           title: Active
           description: Designates whether this user should be treated as active. Unselect
             this instead of deleting accounts.
+    PaginatedCommLedgerList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommLedger'
     PasswordResetConfirmRequest:
       type: object
       properties:
@@ -8393,25 +8503,21 @@ components:
       - basic
       - standard
       - pro
-      - enterprise
       type: string
       description: |-
         * `basic` - basic
         * `standard` - standard
         * `pro` - pro
-        * `enterprise` - enterprise
     PlanTierEnum:
       enum:
       - basic
       - standard
       - pro
-      - enterprise
       type: string
       description: |-
         * `basic` - Basic
         * `standard` - Standard
         * `pro` - Pro
-        * `enterprise` - Enterprise
     PortalSessionResponse:
       type: object
       properties:
@@ -8953,7 +9059,6 @@ components:
             * `basic` - Basic
             * `standard` - Standard
             * `pro` - Pro
-            * `enterprise` - Enterprise
         feature_flags:
           type: object
           additionalProperties: {}
@@ -9017,6 +9122,9 @@ components:
           type: object
           additionalProperties: {}
           readOnly: true
+        billing_pending:
+          type: boolean
+          readOnly: true
         timezone:
           type: string
           readOnly: true
@@ -9038,6 +9146,7 @@ components:
           additionalProperties: {}
           readOnly: true
       required:
+      - billing_pending
       - branding
       - currency
       - feature_flags

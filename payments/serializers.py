@@ -4,7 +4,7 @@ from decimal import Decimal
 
 class CheckoutSessionRequestSerializer(serializers.Serializer):
     plan = serializers.ChoiceField(
-        choices=["basic", "standard", "pro", "enterprise"],
+        choices=["basic", "standard", "pro"],
         required=False,
         help_text="Plano desejado",
     )

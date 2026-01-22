@@ -61,7 +61,6 @@ class CreateCheckoutSession(APIView):
             "basic",
             "standard",
             "pro",
-            "enterprise",
         }
 
         if requested_plan not in allowed_plans:
@@ -323,7 +322,7 @@ class StripeWebhookView(APIView):
                 f"detected_plan={detected_plan}, price_id={price_id}"
             )
 
-            if detected_plan not in {"basic", "standard", "pro", "enterprise"}:
+            if detected_plan not in {"basic", "standard", "pro"}:
                 # Se não for um plano conhecido, assumimos basic apenas se não conseguirmos identificar
                 # Mas se o detected_plan veio como None, mantemos None para logica abaixo
                 if not detected_plan:
@@ -542,7 +541,6 @@ class StripeWebhookView(APIView):
                                 "basic",
                                 "standard",
                                 "pro",
-                                "enterprise",
                             }:
                                 tenant = pc.user.tenant
                                 if tenant.plan_tier != meta_plan:
@@ -1430,7 +1428,6 @@ class StripeSettingsView(APIView):
         if auto_renewal and tenant.plan_tier not in (
             Tenant.PLAN_STANDARD,
             Tenant.PLAN_PRO,
-            Tenant.PLAN_ENTERPRISE,
         ):
             PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
             return Response(

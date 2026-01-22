@@ -109,7 +109,6 @@ def requires_plan(min_plan, error_message=None):
                 "basic": 0,
                 "standard": 1,
                 "pro": 2,
-                "enterprise": 3,
             }
 
             current_plan_level = plan_hierarchy.get(tenant.plan_tier, 0)
@@ -154,7 +153,6 @@ class RequiresPlan(BasePermission):
             "basic": 0,
             "standard": 1,
             "pro": 2,
-            "enterprise": 3,
         }
 
         current_plan_level = plan_hierarchy.get(tenant.plan_tier, 0)

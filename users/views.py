@@ -813,7 +813,6 @@ class TenantModulesSettingsView(APIView):
             if desired and tenant.plan_tier not in (
                 Tenant.PLAN_STANDARD,
                 Tenant.PLAN_PRO,
-                Tenant.PLAN_ENTERPRISE,
             ):
                 return Response(
                     {
@@ -1822,11 +1821,11 @@ class TenantNotificationsSettingsView(APIView):
             updates.add("whatsapp_enabled")
         if "push_mobile_enabled" in v:
             desired = bool(v["push_mobile_enabled"])
-            if desired and tenant.plan_tier != Tenant.PLAN_ENTERPRISE:
+            if desired and tenant.plan_tier != Tenant.PLAN_PRO:
                 return Response(
                     {
                         "detail": (
-                            "Push Mobile só disponível para plano Enterprise. "
+                            "Push Mobile só disponível para plano Pro. "
                             "Atualize seu plano para ativar."
                         )
                     },
