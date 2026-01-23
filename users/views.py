@@ -41,7 +41,7 @@ import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
-from .services import CreditService, TenantService
+from .services import CreditService, TenantService, FounderService
 from .permissions import IsActiveTenant
 
 from .serializers import (
@@ -260,6 +260,35 @@ class EmailTokenObtainPairView(TokenObtainPairView):
             USERS_THROTTLED_TOTAL.labels(scope="auth_login").inc()
         finally:
             return super().throttled(request, wait)
+
+
+class FounderAvailabilityView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersTenantMetaPublicThrottle]
+    throttle_scope = "tenant_meta_public"
+
+    @extend_schema(
+        summary="Disponibilidade do Plano Founder",
+        description="Retorna a quantidade total, usada e restante de vagas para o plano Founder.",
+        responses={
+            200: OpenApiResponse(
+                description="Dados de disponibilidade",
+                examples=[
+                    OpenApiExample(
+                        "Exemplo",
+                        value={
+                            "total_limit": 500,
+                            "used_count": 123,
+                            "remaining_count": 377,
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    def get(self, request):
+        availability = FounderService.get_availability()
+        return Response(availability, status=status.HTTP_200_OK)
 
 
 class TenantMetaView(APIView):

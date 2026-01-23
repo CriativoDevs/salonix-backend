@@ -90,13 +90,20 @@ class TestClientAccessFlow:
         response1 = self.client.post(url, {"token": token}, format="json")
         assert response1.status_code == status.HTTP_200_OK
 
-        # Second use (replay attack)
+        # Second use (within grace period) - Should be allowed (Idempotent)
         response2 = self.client.post(url, {"token": token}, format="json")
-        assert response2.status_code == status.HTTP_400_BAD_REQUEST
-        assert (
-            "utilizado" in str(response2.data).lower()
-            or "inválido" in str(response2.data).lower()
-        )
+        assert response2.status_code == status.HTTP_200_OK
+
+        # Third use (after grace period) - Should be blocked
+        from datetime import timedelta
+        future = timezone.now() + timedelta(seconds=20)
+        with patch("django.utils.timezone.now", return_value=future):
+            response3 = self.client.post(url, {"token": token}, format="json")
+            assert response3.status_code == status.HTTP_400_BAD_REQUEST
+            assert (
+                "utilizado" in str(response3.data).lower()
+                or "inválido" in str(response3.data).lower()
+            )
 
     def test_request_access_link_integration(self):
         """

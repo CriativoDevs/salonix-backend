@@ -224,6 +224,12 @@ class Tenant(models.Model):
         help_text="Renovação automática de crédito mensal (Standard+)",
     )
 
+    # Plano Founder (Promoção Limitada)
+    is_founder = models.BooleanField(
+        default=cast(Any, False),
+        help_text="Indica se o tenant possui o plano Founder (limitado a 500)",
+    )
+
     # Feature Flags - White-label e Domínio
     custom_domain_enabled = models.BooleanField(
         default=cast(Any, False), help_text="Habilita domínio personalizado"

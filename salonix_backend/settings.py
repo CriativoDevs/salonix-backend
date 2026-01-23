@@ -198,13 +198,19 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
 csrf_origins_raw = str(env_get("CSRF_TRUSTED_ORIGINS", "")).strip()
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_origins_raw.split(",") if o.strip()]
 
-if not CSRF_TRUSTED_ORIGINS and DEBUG:
-    CSRF_TRUSTED_ORIGINS = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://*.ngrok-free.app",
-        "https://salonix-frontend-web.vercel.app",
-    ]
+if not CSRF_TRUSTED_ORIGINS:
+    if DEBUG:
+        CSRF_TRUSTED_ORIGINS = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://*.ngrok-free.app",
+            "https://salonix-frontend-web.vercel.app",
+        ]
+    elif ENV in ("staging", "uat"):
+        # Fallback for staging/uat to allow main vercel app
+        CSRF_TRUSTED_ORIGINS = [
+            "https://salonix-frontend-web.vercel.app",
+        ]
 
 # Cookies & Security (Staging/Prod)
 # Para comunicação cross-site (FE Vercel <-> BE PythonAnywhere), precisamos de SameSite=None e Secure=True
@@ -408,7 +414,11 @@ REST_FRAMEWORK = {
             "CLIENTS_ACCESS_LINK_RATE",
             (
                 "50/hour"
-                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                if (
+                    "test" in sys.argv
+                    or "pytest" in sys.modules
+                    or ENV in ("dev", "staging", "uat")
+                )
                 else "10/hour"
             ),
         ),

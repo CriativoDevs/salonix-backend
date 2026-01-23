@@ -2498,7 +2498,7 @@ class ClientAccessAcceptView(APIView):
             ).inc()
             raise ValidationError("Token expirado")
 
-        # Uso único do token por jti
+        # Uso único do token por jti com Grace Period (para evitar erros em redirects/previews)
         if not jti:
             CLIENT_ACCESS_EVENTS_TOTAL.labels(
                 event="accept",
@@ -2506,19 +2506,37 @@ class ClientAccessAcceptView(APIView):
                 tenant_id=str(tenant_id),
             ).inc()
             raise ValidationError("Token inválido")
+            
         remaining = ttl - (int(timezone.now().timestamp()) - ts)
         if remaining < 0:
             remaining = 0
+            
         cache_key = f"client_invite_jti:{tenant_id}:{customer_id}:{jti}"
-        # add é atômico: retorna False se já existir
-        added = cache.add(cache_key, True, timeout=remaining or ttl)
+        current_ts = int(timezone.now().timestamp())
+        
+        # add é atômico: retorna False se já existir. Armazenamos o timestamp do 1º uso.
+        added = cache.add(cache_key, current_ts, timeout=remaining or ttl)
+        
         if not added:
-            CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                event="accept",
-                result="reused",
-                tenant_id=str(tenant_id),
-            ).inc()
-            raise ValidationError("Token já utilizado")
+            # Se já existe, verifica se foi usado recentemente (grace period de 10s)
+            # Isso resolve problemas onde clientes de email (iOS) ou browsers fazem pre-fetch
+            # ou o redirecionamento do PWA causa duplo request.
+            first_used_ts = cache.get(cache_key)
+            
+            # Se o valor no cache for True (legado) ou timestamp antigo -> Bloqueia
+            # Se for timestamp recente (< 15s) -> Permite (Idempotência)
+            is_recent = False
+            if isinstance(first_used_ts, int):
+                if (current_ts - first_used_ts) < 15:
+                    is_recent = True
+            
+            if not is_recent:
+                CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                    event="accept",
+                    result="reused",
+                    tenant_id=str(tenant_id),
+                ).inc()
+                raise ValidationError("Token já utilizado")
 
         # Verificar existência
         try:
