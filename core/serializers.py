@@ -959,3 +959,13 @@ class FeedbackSerializer(serializers.ModelSerializer):
             validated_data["user"] = request.user
 
         return Feedback.objects.create(**validated_data)
+
+
+class ClientLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    tenant_slug = serializers.CharField()
+
+
+class ClientSetPasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=6)
