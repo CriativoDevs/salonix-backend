@@ -6,6 +6,7 @@ from reports.views import (
     OverviewReportView,
     TopServicesReportView,
     RevenueSeriesReportView,
+    RetentionReportView,
     ExportOverviewCSVView,
     BasicReportsView,
     AdvancedReportsView,
@@ -35,6 +36,7 @@ urlpatterns = [
     path("overview/", OverviewReportView.as_view(), name="overview"),
     path("top-services/", TopServicesReportView.as_view(), name="top_services"),
     path("revenue/", RevenueSeriesReportView.as_view(), name="revenue"),
+    path("retention/", RetentionReportView.as_view(), name="retention"),
     path(
         "overview/export/",
         ExportOverviewCSVView.as_view(),
