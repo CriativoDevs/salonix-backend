@@ -89,8 +89,10 @@ def test_smoke_isolamento_por_tenant_sse(monkeypatch):
             break
         text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
         if "event: credit_update" in text and '"ledger"' in text:
-            found_ledger_b = True
-            break
+            # Ignora o evento de crédito inicial, procuramos vazamento do Tenant A
+            if "Isolamento Tenant A" in text:
+                found_ledger_b = True
+                break
 
     assert (
         not found_ledger_b

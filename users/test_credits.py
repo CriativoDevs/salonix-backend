@@ -100,11 +100,12 @@ class CreditServiceTestCase(TestCase):
         )
 
         history = self.credit_service.get_credit_history()
-        self.assertEqual(len(history), 2)
+        self.assertEqual(len(history), 3)
 
         # Verifica ordenação (mais recente primeiro)
         self.assertEqual(history[0].description, "Test 2")
         self.assertEqual(history[1].description, "Test 1")
+        self.assertIn("Crédito inicial", history[2].description)
 
     def test_get_credit_stats(self):
         """Testa obtenção de estatísticas de créditos."""
@@ -129,7 +130,8 @@ class CreditServiceTestCase(TestCase):
 
         self.assertEqual(stats["total_purchased"], Decimal("10.00"))
         self.assertEqual(stats["total_consumed"], Decimal("3.00"))
-        self.assertEqual(stats["total_bonus"], Decimal("5.00"))
+        # 5.00 (bonus test) + 10.00 (initial credit standard plan) = 15.00
+        self.assertEqual(stats["total_bonus"], Decimal("15.00"))
 
 
 class CreditEndpointsTestCase(APITestCase):
@@ -182,9 +184,10 @@ class CreditEndpointsTestCase(APITestCase):
         data = response.json()
         results = data["results"]
 
-        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results), 2)
         self.assertEqual(results[0]["transaction_type"], "consumption")
         self.assertEqual(results[0]["amount_eur"], "2.00")
+
 
     def test_consume_credits_view_success(self):
         """Testa endpoint de consumo de créditos com sucesso."""
