@@ -177,7 +177,13 @@ def check_feature_flag(tenant, feature_flag):
 
     # Verificações baseadas em métodos do modelo
     if feature_flag == "reports":
-        return tenant.can_use_reports()
+        return tenant.can_use_basic_reports()  # Default to basic
+    elif feature_flag == "reports_basic":
+        return tenant.can_use_basic_reports()
+    elif feature_flag == "reports_standard":
+        return tenant.can_use_standard_reports()
+    elif feature_flag == "reports_advanced":
+        return tenant.can_use_advanced_reports()
     elif feature_flag == "pwa_client":
         return tenant.can_use_pwa_client()
     elif feature_flag == "white_label":
@@ -218,6 +224,9 @@ def get_tenant_feature_summary(tenant):
         "plan_tier": tenant.plan_tier,
         "available_features": {
             "reports": check_feature_flag(tenant, "reports"),
+            "reports_basic": check_feature_flag(tenant, "reports_basic"),
+            "reports_standard": check_feature_flag(tenant, "reports_standard"),
+            "reports_advanced": check_feature_flag(tenant, "reports_advanced"),
             "pwa_client": check_feature_flag(tenant, "pwa_client"),
             "white_label": check_feature_flag(tenant, "white_label"),
             "native_apps": check_feature_flag(tenant, "native_apps"),

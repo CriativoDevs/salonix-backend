@@ -122,12 +122,18 @@ def _get_or_create_client(user):
     fields = {f.name for f in ClientModel._meta.fields}
     if "user" in fields:
         payload["user"] = user
+    if "username" in fields:
+        import uuid
+
+        payload["username"] = f"client_user_{uuid.uuid4()}"
     if "name" in fields:
         payload["name"] = "Cliente Teste"
     if "full_name" in fields and "name" not in payload:
         payload["full_name"] = "Cliente Teste"
     if "email" in fields:
-        payload["email"] = "cliente@example.com"
+        import uuid
+
+        payload["email"] = f"cliente_{uuid.uuid4()}@example.com"
     if "phone" in fields:
         payload["phone"] = "999999999"
     client = (
@@ -148,6 +154,10 @@ def _get_or_create_professional(user):
     payload = {}
     if "user" in fields:
         payload["user"] = user
+    if "username" in fields:
+        import uuid
+
+        payload["username"] = f"prof_user_{uuid.uuid4()}"
     if "name" in fields:
         payload["name"] = "Profissional Teste"
     if "full_name" in fields and "name" not in payload:
@@ -316,35 +326,225 @@ def test_reports_revenue_series_day_ok():
 
 
 @pytest.mark.django_db
-def test_reports_guard_403_when_disabled():
-    # Criar tenant sem reports habilitados
+def test_reports_permissions_by_plan():
+    """
+    Testa se as permissões de relatórios são aplicadas corretamente por plano.
+    Basic: Acesso apenas ao Overview.
+    Standard/Pro: Acesso a relatórios de análise (Top Services, Revenue).
+    """
     from users.models import Tenant
+    import uuid
 
-    tenant = Tenant.objects.create(
-        slug="basic-tenant",
-        name="Basic Salon",
-        plan_tier=Tenant.PLAN_BASIC,  # Basic não tem reports
-        reports_enabled=False,  # Explicitamente desabilitado
-    )
+    suffix = str(uuid.uuid4())[:8]
 
-    user = User.objects.create_user(
-        username="free", password="x", email="f@e.com", tenant=tenant
+    # 1. Tenant Basic: Deve ter acesso ao Overview, mas NÃO aos outros
+    tenant_basic = Tenant.objects.create(
+        slug=f"basic-tenant-reports-{suffix}",
+        name="Basic Salon Reports",
+        plan_tier=Tenant.PLAN_BASIC,
+        reports_enabled=True,  # Habilitado, mas limitado pelo plano
     )
+    user_basic = User.objects.create_user(
+        username=f"basic_rep_{suffix}",
+        password="x",
+        email=f"basic_{suffix}@rep.com",
+        tenant=tenant_basic,
+    )
+    # UserFeatureFlags podem ser criadas automaticamente ou manualmente
     UserFeatureFlags.objects.update_or_create(
-        user=user, defaults={"is_pro": False, "reports_enabled": False}
+        user=user_basic, defaults={"is_pro": False, "reports_enabled": True}
     )
-    _seed_data(user)
+    _seed_data(user_basic)
 
     c = APIClient()
-    c.force_authenticate(user)
+    c.force_authenticate(user_basic)
 
-    for path in (
-        "/api/reports/overview/",
-        "/api/reports/top-services/",
-        "/api/reports/revenue/",
-    ):
-        r = c.get(path)
-        assert r.status_code == 403
-        # Com novo sistema de erros, a estrutura mudou
-        assert "error" in r.data
-        assert "permission" in r.data["error"]["message"].lower()
+    # Overview -> OK (Basic tem acesso)
+    r = c.get("/api/reports/overview/")
+    assert r.status_code == 200
+
+    # Top Services -> 403 (Requer Standard)
+    r = c.get("/api/reports/top-services/")
+    assert r.status_code == 403
+
+    # Revenue -> 403 (Requer Standard)
+    r = c.get("/api/reports/revenue/")
+    assert r.status_code == 403
+
+    # 2. Tenant Standard: Deve ter acesso a tudo (Overview + Analysis)
+    tenant_std = Tenant.objects.create(
+        slug=f"std-tenant-reports-{suffix}",
+        name="Std Salon Reports",
+        plan_tier=Tenant.PLAN_STANDARD,
+        reports_enabled=True,
+    )
+    user_std = User.objects.create_user(
+        username=f"std_rep_{suffix}",
+        password="x",
+        email=f"std_{suffix}@rep.com",
+        tenant=tenant_std,
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=user_std, defaults={"is_pro": False, "reports_enabled": True}
+    )
+    _seed_data(user_std)
+
+    c.force_authenticate(user_std)
+
+    # Overview -> OK
+    r = c.get("/api/reports/overview/")
+    assert r.status_code == 200
+
+    # Top Services -> OK
+    r = c.get("/api/reports/top-services/?limit=5")
+    assert r.status_code == 200
+
+    # Revenue -> OK
+    r = c.get("/api/reports/revenue/")
+    assert r.status_code == 200
+
+
+@pytest.mark.django_db
+def test_retention_report_permissions_and_data():
+    """
+    Testa se o relatório de retenção é exclusivo para Pro e se os cálculos
+    de novos vs recorrentes estão corretos.
+    """
+    from users.models import Tenant
+    from core.models import SalonCustomer
+    import uuid
+
+    suffix = str(uuid.uuid4())[:8]
+
+    # --- 1. Test Permissions ---
+
+    # Standard User -> Deve levar 403 no retention e advanced
+    tenant_std = Tenant.objects.create(
+        slug=f"std-tenant-retention-{suffix}",
+        name="Std Salon Retention",
+        plan_tier=Tenant.PLAN_STANDARD,
+    )
+    user_std = User.objects.create_user(
+        username=f"std_ret_{suffix}",
+        password="x",
+        email=f"std_ret_{suffix}@test.com",
+        tenant=tenant_std,
+    )
+    c = APIClient()
+    c.force_authenticate(user_std)
+
+    r = c.get("/api/reports/retention/")
+    assert r.status_code == 403
+
+    r = c.get("/api/reports/advanced/")
+    assert r.status_code == 403
+
+    # --- 2. Test Data Logic (Pro User) ---
+    tenant_pro = Tenant.objects.create(
+        slug=f"pro-tenant-retention-{suffix}",
+        name="Pro Salon Retention",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user_pro = User.objects.create_user(
+        username=f"pro_ret_{suffix}",
+        password="x",
+        email=f"pro_ret_{suffix}@test.com",
+        tenant=tenant_pro,
+    )
+    c.force_authenticate(user_pro)
+
+    # Configura datas
+    now = timezone.now()
+    this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_month = this_month_start - timedelta(days=10)
+
+    # Cria Professional e Service
+    prof_kwargs, professional = _get_or_create_professional(user_pro)
+    service = Service.objects.create(
+        user=user_pro,
+        name="Service A",
+        duration_minutes=30,
+        price_eur=100,
+        tenant=tenant_pro,
+    )
+    service_b = Service.objects.create(
+        user=user_pro,
+        name="Service B",
+        duration_minutes=30,
+        price_eur=50,
+        tenant=tenant_pro,
+    )
+
+    # --- Cliente Novo (criado "agora", dentro do range do relatório) ---
+    customer_new = SalonCustomer.objects.create(
+        tenant=tenant_pro,
+        name="New Customer",
+        email=f"new_{suffix}@c.com",
+    )
+    # created_at é auto_now_add, então é "agora". Está OK.
+
+    # --- Cliente Recorrente (criado no mês passado) ---
+    customer_returning = SalonCustomer.objects.create(
+        tenant=tenant_pro,
+        name="Returning Customer",
+        email=f"ret_{suffix}@c.com",
+    )
+    # Força created_at antigo
+    SalonCustomer.objects.filter(pk=customer_returning.pk).update(created_at=last_month)
+
+    # Helper para criar appointment
+    dt_field = _resolve_dt_field(Appointment)
+    price_field = _resolve_price_field(Appointment)
+
+    def create_appt(customer, when, price, service_obj=service):
+        slot_kwargs = _make_slot_for(when, service_obj, professional, user_pro)
+        base = {
+            "tenant": tenant_pro,
+            "client": user_pro,  # owner agendando
+            "customer": customer,
+            "service": service_obj,
+            "professional": professional,
+            dt_field: when,
+            "status": "completed",
+        }
+        if price_field:
+            base[price_field] = Decimal(str(price))
+
+        # Merge slot logic
+        # Slot creation handles FKs, but we need to pass the slot ID to appointment
+        # _make_slot_for returns {'slot': instance}
+        base.update(slot_kwargs)
+
+        return Appointment.objects.create(**base)
+
+    # Agendamento para Novo Cliente (Hoje) -> Receita 100
+    create_appt(customer_new, now, 100, service_obj=service)
+
+    # Agendamento para Cliente Recorrente (Hoje) -> Receita 50
+    create_appt(customer_returning, now, 50, service_obj=service_b)
+
+    # Agendamento fora do range (Ontem, mas vamos filtrar por Hoje-Hoje no request?)
+    # Vamos pedir o relatório do mês todo, então ambos devem aparecer.
+
+    # Request range: Inicio do mês até agora
+    start_str = this_month_start.strftime("%Y-%m-%d")
+    end_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    r = c.get(f"/api/reports/retention/?from={start_str}&to={end_str}")
+    assert r.status_code == 200
+    data = r.data
+
+    # Verifica New Clients
+    assert data["new_clients"]["qty"] == 1
+    assert Decimal(str(data["new_clients"]["revenue"])) == Decimal("100")
+
+    # Verifica Returning Clients
+    assert data["returning_clients"]["qty"] == 1
+    assert Decimal(str(data["returning_clients"]["revenue"])) == Decimal("50")
+
+    # Verifica Advanced View também
+    r_adv = c.get("/api/reports/advanced/")
+    assert r_adv.status_code == 200
+    assert "retention" in r_adv.data
+    assert "top_services" in r_adv.data
+    assert "revenue" in r_adv.data

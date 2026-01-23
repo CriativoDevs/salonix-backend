@@ -7,7 +7,7 @@ from users.feature_flags import RequiresFeatureFlag
 
 from django.conf import settings
 from django.db import models
-from django.db.models import Sum, Count, F
+from django.db.models import Sum, Count, F, Case, When, Value, BooleanField, Q
 from django.db.models.functions import TruncDay
 from django.http import HttpResponse
 from typing import Any, Optional
@@ -293,9 +293,7 @@ class _BaseReports(APIView):
         """Retorna permissions incluindo feature flag de reports"""
         return [
             IsAuthenticated(),
-            RequiresFeatureFlag(
-                "reports", "Módulo de relatórios não habilitado para este plano."
-            ),
+            RequiresBasicReports(),  # Mudança: Base agora exige apenas Basic
         ]
 
     # garanta que 403 prevaleça sobre throttle
@@ -334,6 +332,8 @@ class _BaseReports(APIView):
 class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+
+    # Overview é Basic, então herda _BaseReports (RequiresBasicReports)
 
     @cache_drf_response(
         prefix="reports:overview:json",
@@ -383,6 +383,13 @@ class OverviewReportView(_BaseReports):
 class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+
+    def get_permissions(self):
+        """Top Services exige plano Standard (Business Analysis)"""
+        return [
+            IsAuthenticated(),
+            RequiresStandardReports(),
+        ]
 
     @cache_drf_response(
         prefix="reports:top_services:json",
@@ -440,9 +447,16 @@ class TopServicesReportView(_BaseReports):
         )
 
 
-class RevenueReportView(_BaseReports):
+class RevenueSeriesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+
+    def get_permissions(self):
+        """Revenue Series exige plano Standard (Business Analysis)"""
+        return [
+            IsAuthenticated(),
+            RequiresStandardReports(),
+        ]
 
     @cache_drf_response(
         prefix="reports:revenue:json",
@@ -874,7 +888,7 @@ class ExportRevenueCSVView(_BaseReports):
 class RequiresBasicReports(BasePermission):
     """
     Permission que permite acesso a relatórios básicos.
-    Todos os planos (Basic, Standard, Pro, Enterprise) têm acesso.
+    Todos os planos (Basic, Standard, Pro) têm acesso.
     """
 
     def has_permission(self, request, view):
@@ -885,18 +899,41 @@ class RequiresBasicReports(BasePermission):
             return False
 
         tenant = request.user.tenant
-        return tenant.can_use_reports()
+        return tenant.can_use_basic_reports()
 
 
-class RequiresAdvancedReports(BasePermission):
+class RequiresStandardReports(BasePermission):
     """
-    Permission que permite acesso a relatórios avançados.
-    Apenas planos Pro e Enterprise têm acesso.
+    Permission que permite acesso a relatórios de análise (Business Analysis).
+    Standard e Pro têm acesso.
     """
 
     def has_permission(self, request, view):
         if not hasattr(request, "user") or not request.user.is_authenticated:
             return False
+
+        if not hasattr(request.user, "tenant") or request.user.tenant is None:
+            return False
+
+        tenant = request.user.tenant
+        return tenant.can_use_standard_reports()
+
+
+class RequiresAdvancedReports(BasePermission):
+    """
+    Permission que permite acesso a relatórios avançados (Insights).
+    Apenas plano Pro tem acesso.
+    """
+
+    def has_permission(self, request, view):
+        if not hasattr(request, "user") or not request.user.is_authenticated:
+            return False
+
+        if not hasattr(request.user, "tenant") or request.user.tenant is None:
+            return False
+
+        tenant = request.user.tenant
+        return tenant.can_use_advanced_reports()
 
         if not hasattr(request.user, "tenant") or request.user.tenant is None:
             return False
@@ -1113,6 +1150,106 @@ class ExportBasicReportsCSVView(_BaseReports):
         403: OpenApiTypes.OBJECT,
     },
 )
+class RetentionReportView(_BaseReports):
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "reports"
+
+    def get_permissions(self):
+        return [
+            IsAuthenticated(),
+            RequiresAdvancedReports(),
+        ]
+
+    @cache_drf_response(
+        prefix="reports:retention:json",
+        ttl=settings.REPORTS_CACHE_TTL.get("retention_json", 300),
+        vary_on_params=["from", "to"],
+        vary_on_user=True,
+        view_label="retention",
+        format_label="json",
+    )
+    @extend_schema(
+        tags=["Reports"],
+        summary="Retenção de Clientes (Novos vs Recorrentes)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "new_clients": {
+                        "type": "object",
+                        "properties": {
+                            "qty": {"type": "integer"},
+                            "revenue": {"type": "number"},
+                        },
+                    },
+                    "returning_clients": {
+                        "type": "object",
+                        "properties": {
+                            "qty": {"type": "integer"},
+                            "revenue": {"type": "number"},
+                        },
+                    },
+                    "period": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "string", "format": "date-time"},
+                            "end": {"type": "string", "format": "date-time"},
+                        },
+                    },
+                },
+            },
+            403: OpenApiTypes.OBJECT,
+        },
+    )
+    @observe_request(endpoint="/api/reports/retention/")
+    def get(self, request):
+        start, end = _date_range(request)
+        date_gte = {f"{DATE_FIELD}__gte": start}
+        date_lte = {f"{DATE_FIELD}__lte": end}
+
+        qs = Appointment.objects.filter(
+            **date_gte,
+            **date_lte,
+            status__in=COMPLETED_STATUSES,
+            tenant=getattr(request.user, "tenant", None),
+        )
+
+        # Anota se é novo cliente (criado dentro do range)
+        qs = qs.annotate(
+            is_new_client=Case(
+                When(customer__created_at__gte=start, then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            )
+        )
+
+        # Agrega
+        price_expr = Sum(APPT_PRICE_FIELD) if APPT_PRICE_FIELD else _price_sum()
+        metrics = qs.values("is_new_client").annotate(
+            count=Count("id"), revenue=price_expr
+        )
+
+        new_clients = {"qty": 0, "revenue": 0}
+        returning_clients = {"qty": 0, "revenue": 0}
+
+        for m in metrics:
+            if m["is_new_client"]:
+                new_clients["qty"] = m["count"]
+                new_clients["revenue"] = m["revenue"] or 0
+            else:
+                returning_clients["qty"] = m["count"]
+                returning_clients["revenue"] = m["revenue"] or 0
+
+        return Response(
+            {
+                "new_clients": new_clients,
+                "returning_clients": returning_clients,
+                "period": {"start": start, "end": end},
+            }
+        )
+
+
 class AdvancedReportsView(APIView):
     """
     Endpoint para relatórios avançados.
@@ -1125,16 +1262,20 @@ class AdvancedReportsView(APIView):
 
     @observe_request(endpoint="/api/reports/advanced/")
     def get(self, request):
-        """Retorna relatórios avançados: top services e revenue"""
+        """Retorna relatórios avançados: top services, revenue e retention"""
 
         # Reutiliza a lógica das views existentes
         top_services_view = TopServicesReportView()
         top_services_view.request = request
         top_services_response = top_services_view.get(request)
 
-        revenue_view = RevenueReportView()
+        revenue_view = RevenueSeriesReportView()
         revenue_view.request = request
         revenue_response = revenue_view.get(request)
+
+        retention_view = RetentionReportView()
+        retention_view.request = request
+        retention_response = retention_view.get(request)
 
         return Response(
             {
@@ -1147,6 +1288,11 @@ class AdvancedReportsView(APIView):
                     revenue_response.data
                     if hasattr(revenue_response, "data")
                     else revenue_response.content
+                ),
+                "retention": (
+                    retention_response.data
+                    if hasattr(retention_response, "data")
+                    else retention_response.content
                 ),
             }
         )

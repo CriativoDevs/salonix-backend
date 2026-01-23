@@ -261,11 +261,27 @@ class Tenant(models.Model):
 
     # Métodos para verificação de feature flags baseados no plano
     def can_use_reports(self):
-        """Verifica se pode usar relatórios (Standard+ com relatórios básicos, Pro+ com relatórios avançados)"""
+        """DEPRECATED: Use can_use_basic_reports. Mantido para compatibilidade."""
+        return self.can_use_basic_reports()
+
+    def can_use_basic_reports(self):
+        """Verifica se pode usar relatórios básicos/overview (Basic+)"""
         return self.reports_enabled or self.plan_tier in [
+            self.PLAN_BASIC,
             self.PLAN_STANDARD,
             self.PLAN_PRO,
         ]
+
+    def can_use_standard_reports(self):
+        """Verifica se pode usar relatórios de análise (Standard+)"""
+        return self.plan_tier in [
+            self.PLAN_STANDARD,
+            self.PLAN_PRO,
+        ]
+
+    def can_use_advanced_reports(self):
+        """Verifica se pode usar relatórios avançados/insights (Pro+)"""
+        return self.plan_tier == self.PLAN_PRO
 
     def can_use_pwa_client(self):
         """Verifica se pode usar PWA Cliente (Todos os planos)"""
@@ -337,7 +353,9 @@ class Tenant(models.Model):
             "plan_tier": self.plan_tier,
             "addons_enabled": self.addons_enabled,
             "modules": {
-                "reports_enabled": self.can_use_reports(),
+                "reports_enabled": self.can_use_basic_reports(),
+                "reports_standard_enabled": self.can_use_standard_reports(),
+                "reports_advanced_enabled": self.can_use_advanced_reports(),
                 "pwa_admin_enabled": self.pwa_admin_enabled,
                 "pwa_client_enabled": self.can_use_pwa_client(),
                 "rn_admin_enabled": self.can_use_native_admin(),
