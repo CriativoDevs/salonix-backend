@@ -29,7 +29,7 @@ class TestTenantFeatureFlags:
 
         # Basic: apenas PWA Admin habilitado por padrão
         assert not tenant.can_use_reports()
-        assert not tenant.can_use_pwa_client()
+        assert tenant.can_use_pwa_client()
         assert not tenant.can_use_white_label()
         assert not tenant.can_use_native_apps()
         assert not tenant.can_use_advanced_notifications()
@@ -45,11 +45,16 @@ class TestTenantFeatureFlags:
             plan_tier=Tenant.PLAN_STANDARD,
         )
 
-        # Standard: reports + PWA client
+        # Standard: reports + PWA client + Native Admin
         assert tenant.can_use_reports()
         assert tenant.can_use_pwa_client()
         assert not tenant.can_use_white_label()
-        assert not tenant.can_use_native_apps()
+
+        # Native Apps (Standard has Admin, not Client)
+        assert tenant.can_use_native_admin()
+        assert not tenant.can_use_native_client()
+        assert tenant.can_use_native_apps()  # Has at least one
+
         assert not tenant.can_use_advanced_notifications()
 
     def test_pro_plan_features(self):
@@ -58,7 +63,7 @@ class TestTenantFeatureFlags:
             name="Pro Salon",
             slug="pro-salon",
             plan_tier=Tenant.PLAN_PRO,
-            addons_enabled=["rn_admin"],
+            # addons_enabled not needed for native apps anymore
             sms_enabled=True,
         )
 
@@ -66,7 +71,12 @@ class TestTenantFeatureFlags:
         assert tenant.can_use_reports()
         assert tenant.can_use_pwa_client()
         assert tenant.can_use_white_label()
-        assert tenant.can_use_native_apps()  # tem addon rn_admin
+
+        # Native Apps (Pro has Admin AND Client)
+        assert tenant.can_use_native_admin()
+        assert tenant.can_use_native_client()
+        assert tenant.can_use_native_apps()
+
         assert tenant.can_use_advanced_notifications()  # tem SMS
 
     def test_basic_notifications_with_credits(self):
@@ -403,7 +413,7 @@ class TestPlanUpgradeScenarios:
 
         # Antes do upgrade
         assert not tenant.can_use_reports()
-        assert not tenant.can_use_pwa_client()
+        assert tenant.can_use_pwa_client()
 
         # Simular upgrade
         tenant.plan_tier = Tenant.PLAN_STANDARD
@@ -424,15 +434,17 @@ class TestPlanUpgradeScenarios:
 
         # Antes do upgrade
         assert not tenant.can_use_white_label()
-        assert not tenant.can_use_native_apps()
+        assert tenant.can_use_native_apps()  # Standard has Admin
+        assert not tenant.can_use_native_client()
 
         # Simular upgrade para Pro com addons
         tenant.plan_tier = Tenant.PLAN_PRO
-        tenant.addons_enabled = ["rn_admin"]
+        # addons_enabled not required for entitlement anymore
         tenant.sms_enabled = True
         tenant.save()
 
         # Depois do upgrade
         assert tenant.can_use_white_label()
         assert tenant.can_use_native_apps()
+        assert tenant.can_use_native_client()
         assert tenant.can_use_advanced_notifications()
