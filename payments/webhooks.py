@@ -244,9 +244,6 @@ class StripeWebhookView(View):
                 elif plan_code == "standard":
                     flags.is_standard = True
                     flags.standard_plan = "standard"
-                elif plan_code == "enterprise":
-                    flags.is_enterprise = True
-                    flags.enterprise_plan = "enterprise"
                 flags.save()
 
                 # Atualizar tenant plan_tier
@@ -303,11 +300,9 @@ class StripeWebhookView(View):
                 flags.is_basic = plan_code == "basic"
                 flags.is_standard = plan_code == "standard"
                 flags.is_pro = plan_code == "pro"
-                flags.is_enterprise = plan_code == "enterprise"
                 flags.basic_plan = "basic" if flags.is_basic else None
                 flags.standard_plan = "standard" if flags.is_standard else None
                 flags.pro_plan = "pro" if flags.is_pro else None
-                flags.enterprise_plan = "enterprise" if flags.is_enterprise else None
                 flags.save()
 
                 tenant = payment_customer.user.tenant

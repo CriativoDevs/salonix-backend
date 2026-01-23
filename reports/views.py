@@ -907,8 +907,8 @@ class RequiresAdvancedReports(BasePermission):
         if not tenant.can_use_reports():
             return False
 
-        # Pro e Enterprise têm acesso a relatórios avançados
-        return tenant.plan_tier in ["pro", "enterprise"]
+        # Pro tem acesso a relatórios avançados
+        return tenant.plan_tier == "pro"
 
 
 # === Views para relatórios básicos e avançados ===

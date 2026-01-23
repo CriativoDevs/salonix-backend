@@ -130,12 +130,10 @@ class Tenant(models.Model):
     PLAN_BASIC = "basic"
     PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
-    PLAN_ENTERPRISE = "enterprise"
     PLAN_CHOICES = [
         (PLAN_BASIC, "Basic"),
         (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
-        (PLAN_ENTERPRISE, "Enterprise"),
     ]
 
     plan_tier = models.CharField(
@@ -267,7 +265,6 @@ class Tenant(models.Model):
         return self.reports_enabled or self.plan_tier in [
             self.PLAN_STANDARD,
             self.PLAN_PRO,
-            self.PLAN_ENTERPRISE,
         ]
 
     def can_use_pwa_client(self):
@@ -275,18 +272,15 @@ class Tenant(models.Model):
         return self.pwa_client_enabled or self.plan_tier in [
             self.PLAN_STANDARD,
             self.PLAN_PRO,
-            self.PLAN_ENTERPRISE,
         ]
 
     def can_use_white_label(self):
         """Verifica se pode usar white-label (Pro apenas)"""
-        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
+        return self.plan_tier == self.PLAN_PRO
 
     def can_use_custom_domain(self):
         """Verifica se o tenant pode usar domínio personalizado (Pro+)."""
-        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE) and bool(
-            self.custom_domain_enabled
-        )
+        return self.plan_tier == self.PLAN_PRO and bool(self.custom_domain_enabled)
 
     def can_purchase_extra_credits(self):
         """Verifica se o tenant pode comprar créditos avulsos."""
@@ -301,12 +295,12 @@ class Tenant(models.Model):
         from typing import cast
 
         addons = cast(list[str], (self.addons_enabled or []))
-        return self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE) and (
+        return self.plan_tier == self.PLAN_PRO and (
             "rn_admin" in addons or "rn_client" in addons
         )
 
     def can_use_advanced_notifications(self):
-        allowed_by_plan = self.plan_tier in (self.PLAN_PRO, self.PLAN_ENTERPRISE)
+        allowed_by_plan = self.plan_tier == self.PLAN_PRO
         has_channel_flag = self.sms_enabled or self.whatsapp_enabled
         has_extra_credit = (
             bool(self.comm_extra_allowed) and (self.comm_credit_eur or 0) > 0
@@ -661,12 +655,10 @@ class UserFeatureFlags(models.Model):
     PLAN_BASIC = "basic"
     PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
-    PLAN_ENTERPRISE = "enterprise"
     PLAN_CHOICES = (
         (PLAN_BASIC, "Basic"),
         (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
-        (PLAN_ENTERPRISE, "Enterprise"),
     )
 
     STATUS_ACTIVE = "active"

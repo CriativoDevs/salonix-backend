@@ -259,17 +259,6 @@ class SubscriptionService:
             "comm_extra_allowed": True,
             "comm_auto_renew": True,
         },
-        "enterprise": {
-            "name": "Enterprise",
-            "price_monthly": Decimal("199.00"),
-            "features": [
-                "Apps nativas iOS/Android",
-                "Integrações sob demanda",
-            ],
-            "credits_included": Decimal("0.00"),
-            "comm_extra_allowed": True,
-            "comm_auto_renew": True,
-        },
     }
 
     @classmethod
@@ -278,7 +267,7 @@ class SubscriptionService:
     ) -> List[Dict[str, Any]]:
         """Retorna lista de planos disponíveis com informações de upgrade."""
         plans = []
-        plan_order = ["basic", "standard", "pro", "enterprise"]
+        plan_order = ["basic", "standard", "pro"]
         current_index = (
             plan_order.index(current_plan) if current_plan in plan_order else -1
         )

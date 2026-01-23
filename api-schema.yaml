@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Salonix API
+  title: TimelyOne API
   version: 1.0.0
   description: Documentação dos relatórios e demais endpoints.
 paths:
@@ -262,6 +262,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/AppointmentSeriesOccurrenceCancelResponse'
           description: ''
+  /api/auth/captcha/new/:
+    get:
+      operationId: auth_captcha_new_retrieve
+      description: Retorna uma chave e uma URL de imagem para desafio captcha simples.
+        A chave deve ser enviada junto com a resposta do usuário nos endpoints protegidos.
+      summary: Gera novo desafio Captcha
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaResponse'
+          description: Desafio gerado com sucesso
+        '429':
+          description: Muitas solicitações (Rate Limit)
   /api/auth/credits/balance/:
     get:
       operationId: auth_credits_balance_retrieve
@@ -306,6 +326,25 @@ paths:
     get:
       operationId: auth_credits_history_list
       description: Lista histórico de transações de créditos de comunicação
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
       tags:
       - auth
       security:
@@ -315,9 +354,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CommLedger'
+                $ref: '#/components/schemas/PaginatedCommLedgerList'
           description: ''
   /api/auth/credits/purchase/:
     post:
@@ -430,7 +467,7 @@ paths:
           description: 'Retorna perfil do usuário logado. Cabeçalho de resposta: Content-Language'
     patch:
       operationId: auth_me_profile_partial_update
-      description: Atualiza preferência de tema do usuário
+      description: Atualiza preferência de tema do usuário ou status de onboarding
       tags:
       - auth
       requestBody:
@@ -446,8 +483,10 @@ paths:
                   - dark
                   - system
                   description: Preferência de tema do usuário
-              required:
-              - theme_preference
+                onboarding_status:
+                  type: object
+                  description: Status do onboarding do usuário (JSON)
+              required: []
       security:
       - jwtAuth: []
       responses:
@@ -478,10 +517,38 @@ paths:
                 $ref: '#/components/schemas/TenantSelfService'
           description: 'Retorna metadados do tenant do usuário logado. Cabeçalho de
             resposta: Content-Language'
+    delete:
+      operationId: auth_me_tenant_destroy
+      description: Realiza o cancelamento (soft-delete) do tenant atual. Requer ser
+        proprietário (Owner).
+      summary: Cancelar conta
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Conta cancelada com sucesso
+        '403':
+          description: Apenas o proprietário pode cancelar a conta
+        '404':
+          description: Tenant não encontrado
   /api/auth/password/reset/:
     post:
       operationId: auth_password_reset_create
-      description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
+      description: Envia email com link de redefinição. Requer captcha se CAPTCHA_ENABLED=True.
+      summary: Solicitar Reset de Senha
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - auth
       requestBody:
@@ -506,7 +573,11 @@ paths:
       - {}
       responses:
         '200':
-          description: Always ok
+          description: Solicitação processada (sempre OK para não vazar emails)
+        '400':
+          description: Captcha inválido ou email ausente
+        '429':
+          description: Rate Limit Excedido
   /api/auth/password/reset/confirm/:
     post:
       operationId: auth_password_reset_confirm_create
@@ -552,6 +623,19 @@ paths:
   /api/auth/register/:
     post:
       operationId: auth_register_create
+      description: Cria novo usuário/tenant. Requer captcha se CAPTCHA_ENABLED=True.
+      summary: Registro de usuário
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - auth
       requestBody:
@@ -576,6 +660,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserRegistration'
           description: ''
+        '400':
+          description: Erro de validação ou Captcha inválido
+        '429':
+          description: Rate Limit Excedido (verificar header Retry-After)
   /api/auth/staff/:
     get:
       operationId: auth_staff_list
@@ -927,9 +1015,20 @@ paths:
   /api/auth/token/:
     post:
       operationId: auth_token_create
-      description: |-
-        Takes a set of user credentials and returns an access and refresh JSON web
-        token pair to prove the authentication of those credentials.
+      description: Obtém par de tokens (access/refresh) + contexto do tenant. Requer
+        captcha se CAPTCHA_ENABLED=True.
+      summary: Login (JWT)
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - auth
       requestBody:
@@ -953,6 +1052,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmailTokenObtainPair'
           description: ''
+        '400':
+          description: Credenciais inválidas ou Captcha inválido
+        '401':
+          description: Não autorizado
+        '429':
+          description: Rate Limit Excedido (verificar header Retry-After)
   /api/auth/token/refresh/:
     post:
       operationId: auth_token_refresh_create
@@ -2178,6 +2283,7 @@ paths:
   /api/ops/alerts/:
     get:
       operationId: ops_alerts_list
+      description: Lista alertas do sistema (paginado)
       tags:
       - ops
       security:
@@ -2191,9 +2297,9 @@ paths:
                 items:
                   $ref: '#/components/schemas/OpsAlert'
           description: ''
-  /api/ops/alerts/{id}/resolve/:
-    post:
-      operationId: ops_alerts_resolve_create
+  /api/ops/alerts/{id}/:
+    get:
+      operationId: ops_alerts_retrieve
       parameters:
       - in: path
         name: id
@@ -2211,6 +2317,83 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpsAlert'
+          description: ''
+  /api/ops/alerts/{id}/resolve/:
+    post:
+      operationId: ops_alerts_resolve_create
+      description: Marca alerta como resolvido
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops alert.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsAlertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsAlertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsAlertRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsAlert'
+          description: ''
+  /api/ops/audit-logs/:
+    get:
+      operationId: ops_audit_logs_list
+      description: |-
+        Visualização de logs de auditoria do Ops.
+        Apenas OpsAdmin pode visualizar.
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsSupportAuditLog'
+          description: ''
+  /api/ops/audit-logs/{id}/:
+    get:
+      operationId: ops_audit_logs_retrieve
+      description: |-
+        Visualização de logs de auditoria do Ops.
+        Apenas OpsAdmin pode visualizar.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops support audit log.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsSupportAuditLog'
           description: ''
   /api/ops/auth/login/:
     post:
@@ -2241,10 +2424,24 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/ops/auth/me/:
+    get:
+      operationId: ops_auth_me_retrieve
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsUser'
+          description: ''
   /api/ops/auth/refresh/:
     post:
       operationId: ops_auth_refresh_create
-      description: Gera novo access token para o console Ops
+      description: Atualiza tokens de acesso
       tags:
       - ops
       requestBody:
@@ -2270,10 +2467,151 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
-  /api/ops/metrics/overview/:
+  /api/ops/global-settings/:
     get:
-      operationId: ops_metrics_overview_retrieve
-      description: Resumo de métricas da plataforma
+      operationId: ops_global_settings_list
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsGlobalSetting'
+          description: ''
+    post:
+      operationId: ops_global_settings_create
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsGlobalSetting'
+          description: ''
+  /api/ops/global-settings/{key}/:
+    get:
+      operationId: ops_global_settings_retrieve
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+          description: Chave única da configuração
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsGlobalSetting'
+          description: ''
+    put:
+      operationId: ops_global_settings_update
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+          description: Chave única da configuração
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsGlobalSettingRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsGlobalSetting'
+          description: ''
+    patch:
+      operationId: ops_global_settings_partial_update
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+          description: Chave única da configuração
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsGlobalSettingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsGlobalSettingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsGlobalSettingRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsGlobalSetting'
+          description: ''
+    delete:
+      operationId: ops_global_settings_destroy
+      parameters:
+      - in: path
+        name: key
+        schema:
+          type: string
+          description: Chave única da configuração
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/ops/lockouts/:
+    get:
+      operationId: ops_lockouts_retrieve
+      description: Lista bloqueios de conta ativos
       tags:
       - ops
       security:
@@ -2286,10 +2624,10 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
-  /api/ops/support/clear-lockout/:
+  /api/ops/lockouts/clear/:
     post:
-      operationId: ops_support_clear_lockout_create
-      description: Limpa lockout de conta
+      operationId: ops_lockouts_clear_create
+      description: Remove bloqueio de conta
       tags:
       - ops
       requestBody:
@@ -2303,7 +2641,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/OpsClearLockoutRequest'
-        required: true
       security:
       - jwtAuth: []
       responses:
@@ -2314,10 +2651,167 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/ops/metrics/overview/:
+    get:
+      operationId: ops_metrics_overview_retrieve
+      description: Retorna métricas gerais do sistema (últimos 30 dias)
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/ops/notification-templates/:
+    get:
+      operationId: ops_notification_templates_list
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsNotificationTemplate'
+          description: ''
+    post:
+      operationId: ops_notification_templates_create
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsNotificationTemplate'
+          description: ''
+  /api/ops/notification-templates/{id}/:
+    get:
+      operationId: ops_notification_templates_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops notification template.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsNotificationTemplate'
+          description: ''
+    put:
+      operationId: ops_notification_templates_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops notification template.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsNotificationTemplateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsNotificationTemplate'
+          description: ''
+    patch:
+      operationId: ops_notification_templates_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops notification template.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsNotificationTemplateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsNotificationTemplateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsNotificationTemplateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsNotificationTemplate'
+          description: ''
+    delete:
+      operationId: ops_notification_templates_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this ops notification template.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/ops/support/resend-notification/:
     post:
       operationId: ops_support_resend_notification_create
-      description: Reenvia notificação falhada
+      description: Reenvia notificação por ID
       tags:
       - ops
       requestBody:
@@ -2345,20 +2839,14 @@ paths:
   /api/ops/tenants/:
     get:
       operationId: ops_tenants_list
-      description: Endpoints de gestão de tenants para o console Ops.
+      description: Visualização de Tenants (SaaS).
       parameters:
-      - name: page
+      - name: ordering
         required: false
         in: query
-        description: A page number within the paginated result set.
+        description: Which field to use when ordering the results.
         schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
+          type: string
       tags:
       - ops
       security:
@@ -2368,12 +2856,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedOpsTenantList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsTenantList'
           description: ''
   /api/ops/tenants/{id}/:
     get:
       operationId: ops_tenants_retrieve
-      description: Endpoints de gestão de tenants para o console Ops.
+      description: Visualização de Tenants (SaaS).
       parameters:
       - in: path
         name: id
@@ -2390,12 +2880,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpsTenant'
+                $ref: '#/components/schemas/OpsTenantList'
           description: ''
-  /api/ops/tenants/{id}/block/:
+  /api/ops/tenants/{id}/block-tenant/:
     post:
-      operationId: ops_tenants_block_create
-      description: Endpoints de gestão de tenants para o console Ops.
+      operationId: ops_tenants_block_tenant_create
+      description: Bloqueia tenant
       parameters:
       - in: path
         name: id
@@ -2412,34 +2902,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpsTenant'
-          description: ''
-  /api/ops/tenants/{id}/plan/:
-    patch:
-      operationId: ops_tenants_plan_partial_update
-      description: Endpoints de gestão de tenants para o console Ops.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this tenant.
-        required: true
-      tags:
-      - ops
-      security:
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpsTenant'
+                type: object
+                additionalProperties: {}
           description: ''
   /api/ops/tenants/{id}/reset-owner/:
     post:
       operationId: ops_tenants_reset_owner_create
-      description: Endpoints de gestão de tenants para o console Ops.
+      description: Reseta owner do tenant (apenas Admin)
       parameters:
       - in: path
         name: id
@@ -2449,6 +2918,18 @@ paths:
         required: true
       tags:
       - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTenantResetOwnerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsTenantResetOwnerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsTenantResetOwnerRequest'
+        required: true
       security:
       - jwtAuth: []
       responses:
@@ -2456,12 +2937,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpsTenant'
+                type: object
+                additionalProperties: {}
           description: ''
-  /api/ops/tenants/{id}/unblock/:
+  /api/ops/tenants/{id}/unblock-tenant/:
     post:
-      operationId: ops_tenants_unblock_create
-      description: Endpoints de gestão de tenants para o console Ops.
+      operationId: ops_tenants_unblock_tenant_create
+      description: Desbloqueia tenant
       parameters:
       - in: path
         name: id
@@ -2478,12 +2960,48 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpsTenant'
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/ops/tenants/{id}/update-plan/:
+    post:
+      operationId: ops_tenants_update_plan_create
+      description: Atualiza plano do tenant (apenas Admin)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this tenant.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTenantPlanUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsTenantPlanUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsTenantPlanUpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/ops/tenants/export/:
     get:
       operationId: ops_tenants_export_retrieve
-      description: Endpoints de gestão de tenants para o console Ops.
+      description: Exporta tenants para CSV
       tags:
       - ops
       security:
@@ -2493,8 +3011,149 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpsTenant'
+                type: string
+                format: binary
           description: ''
+  /api/ops/users/:
+    get:
+      operationId: ops_users_list
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpsUser'
+          description: ''
+    post:
+      operationId: ops_users_create
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsUserCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsUserCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsUserCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsUserCreate'
+          description: ''
+  /api/ops/users/{id}/:
+    get:
+      operationId: ops_users_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this custom user.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsUser'
+          description: ''
+    put:
+      operationId: ops_users_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this custom user.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsUserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsUserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsUserUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsUserUpdate'
+          description: ''
+    patch:
+      operationId: ops_users_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this custom user.
+        required: true
+      tags:
+      - ops
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsUserUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsUserUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsUserUpdateRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsUserUpdate'
+          description: ''
+    delete:
+      operationId: ops_users_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this custom user.
+        required: true
+      tags:
+      - ops
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/payments/stripe/billing-portal/:
     post:
       operationId: payments_stripe_billing_portal_create
@@ -4372,6 +5031,13 @@ paths:
       operationId: slots_list
       description: Mixin que automaticamente filtra querysets por tenant do usuário
         logado.
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
       tags:
       - slots
       security:
@@ -4520,6 +5186,26 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/users/captcha/new/:
+    get:
+      operationId: users_captcha_new_retrieve
+      description: Retorna uma chave e uma URL de imagem para desafio captcha simples.
+        A chave deve ser enviada junto com a resposta do usuário nos endpoints protegidos.
+      summary: Gera novo desafio Captcha
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptchaResponse'
+          description: Desafio gerado com sucesso
+        '429':
+          description: Muitas solicitações (Rate Limit)
   /api/users/credits/balance/:
     get:
       operationId: users_credits_balance_retrieve
@@ -4564,6 +5250,25 @@ paths:
     get:
       operationId: users_credits_history_list
       description: Lista histórico de transações de créditos de comunicação
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
       tags:
       - users
       security:
@@ -4573,9 +5278,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CommLedger'
+                $ref: '#/components/schemas/PaginatedCommLedgerList'
           description: ''
   /api/users/credits/purchase/:
     post:
@@ -4688,7 +5391,7 @@ paths:
           description: 'Retorna perfil do usuário logado. Cabeçalho de resposta: Content-Language'
     patch:
       operationId: users_me_profile_partial_update
-      description: Atualiza preferência de tema do usuário
+      description: Atualiza preferência de tema do usuário ou status de onboarding
       tags:
       - users
       requestBody:
@@ -4704,8 +5407,10 @@ paths:
                   - dark
                   - system
                   description: Preferência de tema do usuário
-              required:
-              - theme_preference
+                onboarding_status:
+                  type: object
+                  description: Status do onboarding do usuário (JSON)
+              required: []
       security:
       - jwtAuth: []
       responses:
@@ -4736,10 +5441,38 @@ paths:
                 $ref: '#/components/schemas/TenantSelfService'
           description: 'Retorna metadados do tenant do usuário logado. Cabeçalho de
             resposta: Content-Language'
+    delete:
+      operationId: users_me_tenant_destroy
+      description: Realiza o cancelamento (soft-delete) do tenant atual. Requer ser
+        proprietário (Owner).
+      summary: Cancelar conta
+      tags:
+      - users
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: Conta cancelada com sucesso
+        '403':
+          description: Apenas o proprietário pode cancelar a conta
+        '404':
+          description: Tenant não encontrado
   /api/users/password/reset/:
     post:
       operationId: users_password_reset_create
-      description: Solicita um reset de senha. Resposta é neutra para não vazar existência.
+      description: Envia email com link de redefinição. Requer captcha se CAPTCHA_ENABLED=True.
+      summary: Solicitar Reset de Senha
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - users
       requestBody:
@@ -4764,7 +5497,11 @@ paths:
       - {}
       responses:
         '200':
-          description: Always ok
+          description: Solicitação processada (sempre OK para não vazar emails)
+        '400':
+          description: Captcha inválido ou email ausente
+        '429':
+          description: Rate Limit Excedido
   /api/users/password/reset/confirm/:
     post:
       operationId: users_password_reset_confirm_create
@@ -4810,6 +5547,19 @@ paths:
   /api/users/register/:
     post:
       operationId: users_register_create
+      description: Cria novo usuário/tenant. Requer captcha se CAPTCHA_ENABLED=True.
+      summary: Registro de usuário
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - users
       requestBody:
@@ -4834,6 +5584,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserRegistration'
           description: ''
+        '400':
+          description: Erro de validação ou Captcha inválido
+        '429':
+          description: Rate Limit Excedido (verificar header Retry-After)
   /api/users/staff/:
     get:
       operationId: users_staff_list
@@ -5185,9 +5939,20 @@ paths:
   /api/users/token/:
     post:
       operationId: users_token_create
-      description: |-
-        Takes a set of user credentials and returns an access and refresh JSON web
-        token pair to prove the authentication of those credentials.
+      description: Obtém par de tokens (access/refresh) + contexto do tenant. Requer
+        captcha se CAPTCHA_ENABLED=True.
+      summary: Login (JWT)
+      parameters:
+      - in: header
+        name: X-Captcha-Key
+        schema:
+          type: string
+        description: Chave do captcha (alternativa ao body)
+      - in: header
+        name: X-Captcha-Value
+        schema:
+          type: string
+        description: Valor do captcha (alternativa ao body)
       tags:
       - users
       requestBody:
@@ -5211,6 +5976,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmailTokenObtainPair'
           description: ''
+        '400':
+          description: Credenciais inválidas ou Captcha inválido
+        '401':
+          description: Não autorizado
+        '429':
+          description: Rate Limit Excedido (verificar header Retry-After)
   /api/users/token/refresh/:
     post:
       operationId: users_token_refresh_create
@@ -5686,6 +6457,19 @@ components:
             minLength: 1
       required:
       - prefixes
+    CaptchaResponse:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Chave única para validação posterior (enviar como captcha_key)
+        image_url:
+          type: string
+          format: uri
+          description: URL completa da imagem do desafio
+      required:
+      - image_url
+      - key
     Channel307Enum:
       enum:
       - email
@@ -5719,7 +6503,6 @@ components:
             * `basic` - basic
             * `standard` - standard
             * `pro` - pro
-            * `enterprise` - enterprise
     CheckoutSessionResponse:
       type: object
       properties:
@@ -6079,6 +6862,9 @@ components:
         status:
           type: string
           description: Status da assinatura
+        status_label:
+          type: string
+          description: Status da assinatura (Traduzido)
         current_period_end:
           type: string
           format: date-time
@@ -6104,6 +6890,7 @@ components:
       - plan_name
       - price_monthly
       - status
+      - status_label
     DeviceTypeEnum:
       enum:
       - web
@@ -6148,6 +6935,10 @@ components:
           nullable: true
         category:
           $ref: '#/components/schemas/FeedbackCategoryEnum'
+        custom_category:
+          type: string
+          nullable: true
+          maxLength: 100
         rating:
           type: integer
           maximum: 9223372036854775807
@@ -6175,14 +6966,16 @@ components:
       - updated_at
     FeedbackCategoryEnum:
       enum:
-      - bug
-      - suggestion
+      - app
+      - support
+      - pwa
       - praise
       - other
       type: string
       description: |-
-        * `bug` - Bug
-        * `suggestion` - Suggestion
+        * `app` - App
+        * `support` - Support
+        * `pwa` - PWA
         * `praise` - Praise
         * `other` - Other
     FeedbackRequest:
@@ -6193,6 +6986,10 @@ components:
           nullable: true
         category:
           $ref: '#/components/schemas/FeedbackCategoryEnum'
+        custom_category:
+          type: string
+          nullable: true
+          maxLength: 100
         rating:
           type: integer
           maximum: 9223372036854775807
@@ -6377,6 +7174,7 @@ components:
         token:
           type: string
           description: Token do dispositivo para push notifications
+          maxLength: 512
         is_active:
           type: boolean
           description: Se o device está ativo para receber notificações
@@ -6412,6 +7210,7 @@ components:
           type: string
           minLength: 1
           description: Token do dispositivo para push notifications
+          maxLength: 512
         is_active:
           type: boolean
           description: Se o device está ativo para receber notificações
@@ -6657,63 +7456,44 @@ components:
           type: integer
           readOnly: true
         category:
-          allOf:
-          - $ref: '#/components/schemas/OpsAlertCategoryEnum'
-          readOnly: true
+          $ref: '#/components/schemas/OpsAlertCategoryEnum'
         severity:
-          allOf:
-          - $ref: '#/components/schemas/SeverityEnum'
-          readOnly: true
+          $ref: '#/components/schemas/SeverityEnum'
         message:
           type: string
-          readOnly: true
-        metadata:
-          readOnly: true
-        tenant:
-          type: integer
-          readOnly: true
-          nullable: true
-        tenant_name:
-          type: string
-          readOnly: true
-        notification_log:
-          type: integer
-          readOnly: true
-          nullable: true
-        resolved:
+          maxLength: 255
+        is_resolved:
           type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
           readOnly: true
         resolved_at:
           type: string
           format: date-time
           readOnly: true
           nullable: true
-        resolved_by:
+        metadata: {}
+        tenant:
           type: integer
-          readOnly: true
           nullable: true
-        created_at:
+        tenant_name:
           type: string
-          format: date-time
           readOnly: true
-        updated_at:
+        tenant_slug:
           type: string
-          format: date-time
           readOnly: true
       required:
       - category
       - created_at
       - id
+      - is_resolved
       - message
-      - metadata
-      - notification_log
-      - resolved
       - resolved_at
-      - resolved_by
       - severity
-      - tenant
       - tenant_name
-      - updated_at
+      - tenant_slug
     OpsAlertCategoryEnum:
       enum:
       - notification_failure
@@ -6724,24 +7504,264 @@ components:
         * `notification_failure` - Notification Failure
         * `security_incident` - Security Incident
         * `system` - System
+    OpsAlertRequest:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/OpsAlertCategoryEnum'
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+        message:
+          type: string
+          minLength: 1
+          maxLength: 255
+        metadata: {}
+        tenant:
+          type: integer
+          nullable: true
+      required:
+      - category
+      - message
+      - severity
     OpsClearLockoutRequest:
       type: object
       properties:
         lockout_id:
           type: integer
-        note:
+        user_id:
+          type: integer
+        ip_address:
           type: string
-          maxLength: 255
+          minLength: 1
+    OpsGlobalSetting:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        key:
+          type: string
+          description: Chave única da configuração
+          maxLength: 100
+        value:
+          type: string
+          description: Valor da configuração
+        value_type:
+          $ref: '#/components/schemas/ValueTypeEnum'
+        description:
+          type: string
+          description: Descrição para o admin
+        is_public:
+          type: boolean
+          description: Se visível para endpoints públicos
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        updated_by_email:
+          type: string
+          readOnly: true
       required:
-      - lockout_id
+      - id
+      - key
+      - updated_at
+      - updated_by
+      - updated_by_email
+      - value
+    OpsGlobalSettingRequest:
+      type: object
+      properties:
+        key:
+          type: string
+          minLength: 1
+          description: Chave única da configuração
+          maxLength: 100
+        value:
+          type: string
+          minLength: 1
+          description: Valor da configuração
+        value_type:
+          $ref: '#/components/schemas/ValueTypeEnum'
+        description:
+          type: string
+          description: Descrição para o admin
+        is_public:
+          type: boolean
+          description: Se visível para endpoints públicos
+      required:
+      - key
+      - value
+    OpsNotificationTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+          description: 'Código único do template (ex: PWA_INVITE)'
+          maxLength: 100
+        channel:
+          $ref: '#/components/schemas/OpsNotificationTemplateChannelEnum'
+        subject:
+          type: string
+          description: Assunto (apenas e-mail/push)
+          maxLength: 255
+        body_text:
+          type: string
+          description: Corpo em texto puro
+        body_html:
+          type: string
+          description: Corpo em HTML (apenas e-mail)
+        is_active:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - body_text
+      - channel
+      - code
+      - id
+      - updated_at
+    OpsNotificationTemplateChannelEnum:
+      enum:
+      - email
+      - sms
+      - whatsapp
+      - push
+      type: string
+      description: |-
+        * `email` - E-mail
+        * `sms` - SMS
+        * `whatsapp` - WhatsApp
+        * `push` - Push Notification
+    OpsNotificationTemplateRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          description: 'Código único do template (ex: PWA_INVITE)'
+          maxLength: 100
+        channel:
+          $ref: '#/components/schemas/OpsNotificationTemplateChannelEnum'
+        subject:
+          type: string
+          description: Assunto (apenas e-mail/push)
+          maxLength: 255
+        body_text:
+          type: string
+          minLength: 1
+          description: Corpo em texto puro
+        body_html:
+          type: string
+          description: Corpo em HTML (apenas e-mail)
+        is_active:
+          type: boolean
+      required:
+      - body_text
+      - channel
+      - code
     OpsResendNotificationRequest:
       type: object
       properties:
-        notification_log_id:
+        notification_id:
           type: integer
+        channel:
+          type: string
+          minLength: 1
       required:
-      - notification_log_id
-    OpsTenant:
+      - notification_id
+    OpsRoleEnum:
+      enum:
+      - ops_admin
+      - ops_support
+      type: string
+      description: |-
+        * `ops_admin` - Ops Admin
+        * `ops_support` - Ops Support
+    OpsSupportAuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/OpsSupportAuditLogActionEnum'
+          readOnly: true
+        actor:
+          type: integer
+          readOnly: true
+          nullable: true
+        actor_name:
+          type: string
+          readOnly: true
+        actor_email:
+          type: string
+          readOnly: true
+        target_user:
+          type: integer
+          readOnly: true
+          nullable: true
+        target_user_email:
+          type: string
+          readOnly: true
+        target_tenant:
+          type: integer
+          readOnly: true
+          nullable: true
+        target_tenant_name:
+          type: string
+          readOnly: true
+        payload:
+          readOnly: true
+        result:
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - actor
+      - actor_email
+      - actor_name
+      - created_at
+      - id
+      - payload
+      - result
+      - target_tenant
+      - target_tenant_name
+      - target_user
+      - target_user_email
+    OpsSupportAuditLogActionEnum:
+      enum:
+      - resend_notification
+      - clear_lockout
+      - resolve_alert
+      - update_setting
+      - update_template
+      - create_ops_user
+      - update_ops_user
+      - delete_ops_user
+      type: string
+      description: |-
+        * `resend_notification` - Resend Notification
+        * `clear_lockout` - Clear Lockout
+        * `resolve_alert` - Resolve Alert
+        * `update_setting` - Update Setting
+        * `update_template` - Update Template
+        * `create_ops_user` - Create Ops User
+        * `update_ops_user` - Update Ops User
+        * `delete_ops_user` - Delete Ops User
+    OpsTenantList:
       type: object
       properties:
         id:
@@ -6749,49 +7769,40 @@ components:
           readOnly: true
         name:
           type: string
-          readOnly: true
           description: Nome do salão/organização
+          maxLength: 255
         slug:
           type: string
-          readOnly: true
           description: Identificador único (URL-friendly)
+          maxLength: 50
           pattern: ^[-a-zA-Z0-9_]+$
         plan_tier:
           allOf:
           - $ref: '#/components/schemas/PlanTierEnum'
-          readOnly: true
           description: |-
             Nível do plano contratado
 
             * `basic` - Basic
             * `standard` - Standard
             * `pro` - Pro
-            * `enterprise` - Enterprise
         is_active:
           type: boolean
-          readOnly: true
-        timezone:
-          type: string
-          readOnly: true
-          description: Timezone do salão
-        currency:
-          type: string
-          readOnly: true
-          description: Moeda padrão (ISO 4217)
-        addons_enabled:
-          readOnly: true
-          description: 'Lista de addons habilitados (ex: [''rn_admin'', ''rn_client''])'
         created_at:
           type: string
           format: date-time
           readOnly: true
-        updated_at:
-          type: string
-          format: date-time
-          readOnly: true
-        feature_flags:
+        owner:
           type: object
-          additionalProperties: {}
+          additionalProperties:
+            type: string
+          nullable: true
+          readOnly: true
+        history:
+          oneOf:
+          - type: array
+            items: {}
+          - type: object
+            additionalProperties: {}
           readOnly: true
         user_counts:
           type: object
@@ -6800,49 +7811,57 @@ components:
           readOnly: true
         notification_consumption:
           type: object
-          additionalProperties: {}
-          readOnly: true
-        history:
-          type: object
           additionalProperties:
-            type: string
-            nullable: true
-          readOnly: true
-        owner:
-          type: object
-          additionalProperties:
-            nullable: true
+            type: integer
           readOnly: true
       required:
-      - addons_enabled
       - created_at
-      - currency
-      - feature_flags
       - history
       - id
-      - is_active
       - name
       - notification_consumption
       - owner
-      - plan_tier
       - slug
-      - timezone
-      - updated_at
       - user_counts
-    OpsTokenObtainPairRequest:
+    OpsTenantPlanUpdateRequest:
+      type: object
+      properties:
+        plan_tier:
+          $ref: '#/components/schemas/PlanTierEnum'
+        addons_enabled: {}
+        force:
+          type: boolean
+          default: false
+      required:
+      - plan_tier
+    OpsTenantResetOwnerRequest:
       type: object
       properties:
         email:
           type: string
           format: email
           minLength: 1
+        username:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+      required:
+      - email
+    OpsTokenObtainPairRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
         password:
           type: string
           writeOnly: true
           minLength: 1
       required:
-      - email
       - password
+      - username
     OpsTokenRefreshRequest:
       type: object
       properties:
@@ -6851,7 +7870,196 @@ components:
           minLength: 1
       required:
       - refresh
-    PaginatedOpsTenantList:
+    OpsUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+        last_login:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        date_joined:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - date_joined
+      - id
+      - last_login
+      - username
+    OpsUserCreate:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+      required:
+      - username
+    OpsUserCreateRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Email address
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+      required:
+      - password
+      - username
+    OpsUserUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+    OpsUserUpdateRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
+    PaginatedCommLedgerList:
       type: object
       required:
       - count
@@ -6873,7 +8081,7 @@ components:
         results:
           type: array
           items:
-            $ref: '#/components/schemas/OpsTenant'
+            $ref: '#/components/schemas/CommLedger'
     PasswordResetConfirmRequest:
       type: object
       properties:
@@ -6943,6 +8151,78 @@ components:
         is_read:
           type: boolean
           default: true
+    PatchedOpsGlobalSettingRequest:
+      type: object
+      properties:
+        key:
+          type: string
+          minLength: 1
+          description: Chave única da configuração
+          maxLength: 100
+        value:
+          type: string
+          minLength: 1
+          description: Valor da configuração
+        value_type:
+          $ref: '#/components/schemas/ValueTypeEnum'
+        description:
+          type: string
+          description: Descrição para o admin
+        is_public:
+          type: boolean
+          description: Se visível para endpoints públicos
+    PatchedOpsNotificationTemplateRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          description: 'Código único do template (ex: PWA_INVITE)'
+          maxLength: 100
+        channel:
+          $ref: '#/components/schemas/OpsNotificationTemplateChannelEnum'
+        subject:
+          type: string
+          description: Assunto (apenas e-mail/push)
+          maxLength: 255
+        body_text:
+          type: string
+          minLength: 1
+          description: Corpo em texto puro
+        body_html:
+          type: string
+          description: Corpo em HTML (apenas e-mail)
+        is_active:
+          type: boolean
+    PatchedOpsUserUpdateRequest:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        ops_role:
+          nullable: true
+          description: |-
+            Role de staff do console Ops (ops_admin ou ops_support)
+
+            * `ops_admin` - Ops Admin
+            * `ops_support` - Ops Support
+          oneOf:
+          - $ref: '#/components/schemas/OpsRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        is_active:
+          type: boolean
+          title: Active
+          description: Designates whether this user should be treated as active. Unselect
+            this instead of deleting accounts.
     PatchedProfessionalRequest:
       type: object
       properties:
@@ -7223,25 +8503,21 @@ components:
       - basic
       - standard
       - pro
-      - enterprise
       type: string
       description: |-
         * `basic` - basic
         * `standard` - standard
         * `pro` - pro
-        * `enterprise` - enterprise
     PlanTierEnum:
       enum:
       - basic
       - standard
       - pro
-      - enterprise
       type: string
       description: |-
         * `basic` - Basic
         * `standard` - Standard
         * `pro` - Pro
-        * `enterprise` - Enterprise
     PortalSessionResponse:
       type: object
       properties:
@@ -7783,7 +9059,6 @@ components:
             * `basic` - Basic
             * `standard` - Standard
             * `pro` - Pro
-            * `enterprise` - Enterprise
         feature_flags:
           type: object
           additionalProperties: {}
@@ -7847,6 +9122,9 @@ components:
           type: object
           additionalProperties: {}
           readOnly: true
+        billing_pending:
+          type: boolean
+          readOnly: true
         timezone:
           type: string
           readOnly: true
@@ -7868,6 +9146,7 @@ components:
           additionalProperties: {}
           readOnly: true
       required:
+      - billing_pending
       - branding
       - currency
       - feature_flags
@@ -8178,14 +9457,29 @@ components:
         language_preference:
           type: string
           readOnly: true
+        onboarding_status:
+          readOnly: true
       required:
       - email
       - first_name
       - id
       - language_preference
       - last_name
+      - onboarding_status
       - theme_preference
       - username
+    ValueTypeEnum:
+      enum:
+      - string
+      - boolean
+      - integer
+      - json
+      type: string
+      description: |-
+        * `string` - Texto
+        * `boolean` - Booleano
+        * `integer` - Inteiro
+        * `json` - JSON
   securitySchemes:
     jwtAuth:
       type: http
