@@ -293,9 +293,7 @@ class _BaseReports(APIView):
         """Retorna permissions incluindo feature flag de reports"""
         return [
             IsAuthenticated(),
-            RequiresFeatureFlag(
-                "reports", "Módulo de relatórios não habilitado para este plano."
-            ),
+            RequiresBasicReports(),  # Mudança: Base agora exige apenas Basic
         ]
 
     # garanta que 403 prevaleça sobre throttle
@@ -334,6 +332,8 @@ class _BaseReports(APIView):
 class OverviewReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+
+    # Overview é Basic, então herda _BaseReports (RequiresBasicReports)
 
     @cache_drf_response(
         prefix="reports:overview:json",
@@ -383,6 +383,13 @@ class OverviewReportView(_BaseReports):
 class TopServicesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+    
+    def get_permissions(self):
+        """Top Services exige plano Standard (Business Analysis)"""
+        return [
+            IsAuthenticated(),
+            RequiresStandardReports(),
+        ]
 
     @cache_drf_response(
         prefix="reports:top_services:json",
@@ -440,9 +447,16 @@ class TopServicesReportView(_BaseReports):
         )
 
 
-class RevenueReportView(_BaseReports):
+class RevenueSeriesReportView(_BaseReports):
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
+
+    def get_permissions(self):
+        """Revenue Series exige plano Standard (Business Analysis)"""
+        return [
+            IsAuthenticated(),
+            RequiresStandardReports(),
+        ]
 
     @cache_drf_response(
         prefix="reports:revenue:json",
@@ -874,7 +888,7 @@ class ExportRevenueCSVView(_BaseReports):
 class RequiresBasicReports(BasePermission):
     """
     Permission que permite acesso a relatórios básicos.
-    Todos os planos (Basic, Standard, Pro, Enterprise) têm acesso.
+    Todos os planos (Basic, Standard, Pro) têm acesso.
     """
 
     def has_permission(self, request, view):
@@ -885,18 +899,41 @@ class RequiresBasicReports(BasePermission):
             return False
 
         tenant = request.user.tenant
-        return tenant.can_use_reports()
+        return tenant.can_use_basic_reports()
 
 
-class RequiresAdvancedReports(BasePermission):
+class RequiresStandardReports(BasePermission):
     """
-    Permission que permite acesso a relatórios avançados.
-    Apenas planos Pro e Enterprise têm acesso.
+    Permission que permite acesso a relatórios de análise (Business Analysis).
+    Standard e Pro têm acesso.
     """
 
     def has_permission(self, request, view):
         if not hasattr(request, "user") or not request.user.is_authenticated:
             return False
+
+        if not hasattr(request.user, "tenant") or request.user.tenant is None:
+            return False
+
+        tenant = request.user.tenant
+        return tenant.can_use_standard_reports()
+
+
+class RequiresAdvancedReports(BasePermission):
+    """
+    Permission que permite acesso a relatórios avançados (Insights).
+    Apenas plano Pro tem acesso.
+    """
+
+    def has_permission(self, request, view):
+        if not hasattr(request, "user") or not request.user.is_authenticated:
+            return False
+
+        if not hasattr(request.user, "tenant") or request.user.tenant is None:
+            return False
+
+        tenant = request.user.tenant
+        return tenant.can_use_advanced_reports()
 
         if not hasattr(request.user, "tenant") or request.user.tenant is None:
             return False

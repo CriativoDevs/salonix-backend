@@ -27,8 +27,12 @@ class TestTenantFeatureFlags:
             plan_tier=Tenant.PLAN_BASIC,
         )
 
-        # Basic: apenas PWA Admin habilitado por padrão
-        assert not tenant.can_use_reports()
+        # Basic: PWA Admin habilitado e Relatórios Básicos
+        assert tenant.can_use_reports()  # Basic reports
+        assert tenant.can_use_basic_reports()
+        assert not tenant.can_use_standard_reports()
+        assert not tenant.can_use_advanced_reports()
+
         assert tenant.can_use_pwa_client()
         assert not tenant.can_use_white_label()
         assert not tenant.can_use_native_apps()
@@ -47,6 +51,10 @@ class TestTenantFeatureFlags:
 
         # Standard: reports + PWA client + Native Admin
         assert tenant.can_use_reports()
+        assert tenant.can_use_basic_reports()
+        assert tenant.can_use_standard_reports()
+        assert not tenant.can_use_advanced_reports()
+
         assert tenant.can_use_pwa_client()
         assert not tenant.can_use_white_label()
 
@@ -69,6 +77,10 @@ class TestTenantFeatureFlags:
 
         # Pro: todas as features básicas
         assert tenant.can_use_reports()
+        assert tenant.can_use_basic_reports()
+        assert tenant.can_use_standard_reports()
+        assert tenant.can_use_advanced_reports()
+
         assert tenant.can_use_pwa_client()
         assert tenant.can_use_white_label()
 
@@ -215,10 +227,10 @@ class TestRequiresFeatureFlagPermission:
         assert permission.has_permission(request, None) is True
 
     def test_permission_without_feature(self, tenant_fixture, user_fixture):
-        """Teste permission com feature desabilitada."""
-        # Tenant básico sem reports
+        """Teste permission com feature desabilitada (usando white_label que Basic não tem)."""
+        # Tenant básico não tem white_label
         tenant_fixture.plan_tier = Tenant.PLAN_BASIC
-        tenant_fixture.reports_enabled = False
+        # white_label não tem flag booleana direta no model (depende do plano), mas o check verifica o plano
         tenant_fixture.save()
 
         user_fixture.tenant = tenant_fixture
@@ -229,7 +241,8 @@ class TestRequiresFeatureFlagPermission:
         request = Mock()
         request.user = user_fixture
 
-        permission = RequiresFeatureFlag("reports")
+        # Basic não tem white_label
+        permission = RequiresFeatureFlag("white_label")
         assert permission.has_permission(request, None) is False
 
     def test_permission_without_tenant(self):
@@ -412,7 +425,9 @@ class TestPlanUpgradeScenarios:
         )
 
         # Antes do upgrade
-        assert not tenant.can_use_reports()
+        assert tenant.can_use_reports()
+        assert tenant.can_use_basic_reports()
+        assert not tenant.can_use_standard_reports()
         assert tenant.can_use_pwa_client()
 
         # Simular upgrade
@@ -421,6 +436,7 @@ class TestPlanUpgradeScenarios:
 
         # Depois do upgrade
         assert tenant.can_use_reports()
+        assert tenant.can_use_standard_reports()
         assert tenant.can_use_pwa_client()
         assert not tenant.can_use_white_label()  # Ainda não é Pro
 

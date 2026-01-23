@@ -122,12 +122,18 @@ def _get_or_create_client(user):
     fields = {f.name for f in ClientModel._meta.fields}
     if "user" in fields:
         payload["user"] = user
+    if "username" in fields:
+        import uuid
+
+        payload["username"] = f"client_user_{uuid.uuid4()}"
     if "name" in fields:
         payload["name"] = "Cliente Teste"
     if "full_name" in fields and "name" not in payload:
         payload["full_name"] = "Cliente Teste"
     if "email" in fields:
-        payload["email"] = "cliente@example.com"
+        import uuid
+
+        payload["email"] = f"cliente_{uuid.uuid4()}@example.com"
     if "phone" in fields:
         payload["phone"] = "999999999"
     client = (
@@ -148,6 +154,10 @@ def _get_or_create_professional(user):
     payload = {}
     if "user" in fields:
         payload["user"] = user
+    if "username" in fields:
+        import uuid
+
+        payload["username"] = f"prof_user_{uuid.uuid4()}"
     if "name" in fields:
         payload["name"] = "Profissional Teste"
     if "full_name" in fields and "name" not in payload:
@@ -316,35 +326,73 @@ def test_reports_revenue_series_day_ok():
 
 
 @pytest.mark.django_db
-def test_reports_guard_403_when_disabled():
-    # Criar tenant sem reports habilitados
+def test_reports_permissions_by_plan():
+    """
+    Testa se as permissões de relatórios são aplicadas corretamente por plano.
+    Basic: Acesso apenas ao Overview.
+    Standard/Pro: Acesso a relatórios de análise (Top Services, Revenue).
+    """
     from users.models import Tenant
+    import uuid
 
-    tenant = Tenant.objects.create(
-        slug="basic-tenant",
-        name="Basic Salon",
-        plan_tier=Tenant.PLAN_BASIC,  # Basic não tem reports
-        reports_enabled=False,  # Explicitamente desabilitado
-    )
+    suffix = str(uuid.uuid4())[:8]
 
-    user = User.objects.create_user(
-        username="free", password="x", email="f@e.com", tenant=tenant
+    # 1. Tenant Basic: Deve ter acesso ao Overview, mas NÃO aos outros
+    tenant_basic = Tenant.objects.create(
+        slug=f"basic-tenant-reports-{suffix}",
+        name="Basic Salon Reports",
+        plan_tier=Tenant.PLAN_BASIC,
+        reports_enabled=True,  # Habilitado, mas limitado pelo plano
     )
+    user_basic = User.objects.create_user(
+        username=f"basic_rep_{suffix}", password="x", email=f"basic_{suffix}@rep.com", tenant=tenant_basic
+    )
+    # UserFeatureFlags podem ser criadas automaticamente ou manualmente
     UserFeatureFlags.objects.update_or_create(
-        user=user, defaults={"is_pro": False, "reports_enabled": False}
+        user=user_basic, defaults={"is_pro": False, "reports_enabled": True}
     )
-    _seed_data(user)
+    _seed_data(user_basic)
 
     c = APIClient()
-    c.force_authenticate(user)
+    c.force_authenticate(user_basic)
 
-    for path in (
-        "/api/reports/overview/",
-        "/api/reports/top-services/",
-        "/api/reports/revenue/",
-    ):
-        r = c.get(path)
-        assert r.status_code == 403
-        # Com novo sistema de erros, a estrutura mudou
-        assert "error" in r.data
-        assert "permission" in r.data["error"]["message"].lower()
+    # Overview -> OK (Basic tem acesso)
+    r = c.get("/api/reports/overview/")
+    assert r.status_code == 200
+
+    # Top Services -> 403 (Requer Standard)
+    r = c.get("/api/reports/top-services/")
+    assert r.status_code == 403
+
+    # Revenue -> 403 (Requer Standard)
+    r = c.get("/api/reports/revenue/")
+    assert r.status_code == 403
+
+    # 2. Tenant Standard: Deve ter acesso a tudo (Overview + Analysis)
+    tenant_std = Tenant.objects.create(
+        slug=f"std-tenant-reports-{suffix}",
+        name="Std Salon Reports",
+        plan_tier=Tenant.PLAN_STANDARD,
+        reports_enabled=True,
+    )
+    user_std = User.objects.create_user(
+        username=f"std_rep_{suffix}", password="x", email=f"std_{suffix}@rep.com", tenant=tenant_std
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=user_std, defaults={"is_pro": False, "reports_enabled": True}
+    )
+    _seed_data(user_std)
+
+    c.force_authenticate(user_std)
+
+    # Overview -> OK
+    r = c.get("/api/reports/overview/")
+    assert r.status_code == 200
+
+    # Top Services -> OK
+    r = c.get("/api/reports/top-services/?limit=5")
+    assert r.status_code == 200
+
+    # Revenue -> OK
+    r = c.get("/api/reports/revenue/")
+    assert r.status_code == 200
