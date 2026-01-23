@@ -29,6 +29,10 @@ class CreditWebhookTestCase(TestCase):
         )
 
         self.tenant = Tenant.objects.create(name="Test Salon", slug="test-salon")
+        # Resetar créditos e ledger causados pelo signal para garantir estado limpo
+        Tenant.objects.filter(pk=self.tenant.pk).update(comm_credit_eur=Decimal("0.00"))
+        self.tenant.comm_ledger.all().delete()
+        self.tenant.refresh_from_db()
 
         # Criar pagamento de crédito
         self.credit_payment = CreditPayment.objects.create(

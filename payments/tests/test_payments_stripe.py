@@ -1,6 +1,7 @@
 # payments/tests/test_payments_stripe.py
 import json
 import pytest
+from decimal import Decimal
 from rest_framework.test import APIClient
 from users.models import CustomUser
 from payments.models import PaymentCustomer, Subscription
@@ -420,6 +421,11 @@ def test_webhook_invoice_payment_succeeded_applies_included_credits(
 
     c, user = auth_client()
     tenant = Tenant.objects.create(name="TB", slug="tb")
+    # Resetar créditos e ledger causados pelo signal para garantir estado limpo
+    Tenant.objects.filter(pk=tenant.pk).update(comm_credit_eur=Decimal("0.00"))
+    tenant.comm_ledger.all().delete()
+    tenant.refresh_from_db()
+
     user.tenant = tenant
     user.save()
     PaymentCustomer.objects.create(user=user, stripe_customer_id="cus_test_123")

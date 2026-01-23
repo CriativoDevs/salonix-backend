@@ -25,8 +25,13 @@ class PlanBonusWebhookTestCase(TestCase):
         self.tenant = Tenant.objects.create(
             name="Bonus Salon",
             slug="bonus-salon",
-            comm_credit_eur=Decimal("0.00"),  # Começa zerado
+            # comm_credit_eur=Decimal("0.00"),  # Signal sobrescreve
         )
+        # Resetar créditos e ledger para testes
+        Tenant.objects.filter(pk=self.tenant.pk).update(comm_credit_eur=Decimal("0.00"))
+        self.tenant.comm_ledger.all().delete()
+        self.tenant.refresh_from_db()
+        
         self.user.tenant = self.tenant
         self.user.save()
 

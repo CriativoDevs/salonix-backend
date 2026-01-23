@@ -13,10 +13,16 @@ class CommunicationCreditServiceTest(TestCase):
         self.tenant = Tenant.objects.create(
             name="Salão Teste",
             slug="salao-teste",
-            comm_credit_eur=Decimal("10.00"),  # €10 de crédito inicial
+            # comm_credit_eur=Decimal("10.00"),  # Removido pois o signal sobrescreve
             sms_enabled=True,
             whatsapp_enabled=True,
         )
+        # Forçar saldo para 10.00 para os testes, ignorando o signal
+        Tenant.objects.filter(pk=self.tenant.pk).update(
+            comm_credit_eur=Decimal("10.00")
+        )
+        self.tenant.comm_ledger.all().delete()  # Limpar ledger do signal
+        self.tenant.refresh_from_db()
 
         self.user = User.objects.create_user(
             username="testuser",
