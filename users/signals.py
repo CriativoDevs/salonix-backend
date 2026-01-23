@@ -21,6 +21,16 @@ def assign_initial_credits(sender, instance, created, **kwargs):
     }
 
     amount = credits_map.get(instance.plan_tier)
+    description = f"Crédito inicial do plano {instance.get_plan_tier_display()}"
+
+    # Founder tem garantia de 5.00 EUR (equivalente ao Basic)
+    if instance.is_founder:
+        founder_amount = Decimal("5.00")
+        # Se o plano atual der menos que o Founder (ex: None ou futuro plano menor), garante 5.00
+        # Se o plano der mais (ex: Pro), mantém o do plano.
+        if not amount or amount < founder_amount:
+            amount = founder_amount
+        description = "Crédito inicial Plano Founder"
     
     if amount and amount > 0:
         # Usa transação atômica para garantir consistência entre Ledger e Tenant
@@ -33,7 +43,7 @@ def assign_initial_credits(sender, instance, created, **kwargs):
                 balance_before=Decimal("0.00"), # Tenant novo começa com 0
                 balance_after=amount,
                 status=CommLedger.Status.COMPLETED,
-                description=f"Crédito inicial do plano {instance.get_plan_tier_display()}"
+                description=description
             )
             
             # Atualiza saldo do Tenant

@@ -226,6 +226,43 @@ class TenantService:
 
         tenant.is_active = False
         tenant.deleted_at = timezone.now()
-        tenant.save(update_fields=["is_active", "deleted_at", "updated_at"])
+        # Founder é perdido definitivamente no cancelamento
+        if tenant.is_founder:
+            tenant.is_founder = False
+            update_fields = ["is_active", "deleted_at", "updated_at", "is_founder"]
+        else:
+            update_fields = ["is_active", "deleted_at", "updated_at"]
+        
+        tenant.save(update_fields=update_fields)
 
         # Aqui poderíamos adicionar logs de auditoria ou disparar e-mails de "Adeus"
+
+
+class FounderService:
+    """Serviço para gerenciamento do plano Founder."""
+
+    FOUNDER_LIMIT = 500
+
+    @classmethod
+    def get_availability(cls) -> Dict[str, int]:
+        """
+        Retorna a disponibilidade do plano Founder.
+        
+        Returns:
+            Dict com 'total_limit', 'used_count' e 'remaining_count'.
+        """
+        used_count = Tenant.objects.filter(is_founder=True, is_active=True).count()
+        remaining_count = max(0, cls.FOUNDER_LIMIT - used_count)
+        
+        return {
+            "total_limit": cls.FOUNDER_LIMIT,
+            "used_count": used_count,
+            "remaining_count": remaining_count,
+        }
+
+    @classmethod
+    def can_assign_founder(cls) -> bool:
+        """Verifica se ainda há vagas para o plano Founder."""
+        availability = cls.get_availability()
+        return availability["remaining_count"] > 0
+

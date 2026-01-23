@@ -24,6 +24,7 @@ from .views import (
     TenantNotificationsSettingsView,
     TenantModulesSettingsView,
     TenantProfileView,
+    FounderAvailabilityView,
 )
 from .views_captcha import CaptchaGenerateView
 
@@ -54,6 +55,11 @@ urlpatterns = [
     ),
     path("me/features/", MeFeatureFlagsView.as_view(), name="me_feature_flags"),
     path("me/tenant/", MeTenantView.as_view(), name="me_tenant"),
+    path(
+        "founder-availability/",
+        FounderAvailabilityView.as_view(),
+        name="founder_availability",
+    ),
     path("tenant/meta/", TenantMetaView.as_view(), name="tenant_meta"),
     path("tenant/profile/", TenantProfileView.as_view(), name="tenant_profile"),
     path("token/", EmailTokenObtainPairView.as_view(), name="token_obtain_pair"),
