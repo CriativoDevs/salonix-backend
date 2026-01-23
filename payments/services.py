@@ -295,16 +295,16 @@ class SubscriptionService:
 
     @classmethod
     def create_checkout_session(
-        cls, user: User, plan: str, success_url: str, cancel_url: str
+        cls, user: User, plan: str, success_url: str, cancel_url: str, interval: str = "monthly"
     ) -> Dict[str, Any]:
         """Cria uma sessão de checkout para assinatura."""
         if plan not in cls.AVAILABLE_PLANS:
             raise ValueError(f"Plano inválido: {plan}")
 
         # Obter price_id do Stripe
-        price_id = get_price_id_for_plan(plan)
+        price_id = get_price_id_for_plan(plan, interval=interval)
         if not price_id:
-            raise ValueError(f"Price ID não encontrado para o plano: {plan}")
+            raise ValueError(f"Price ID não encontrado para o plano: {plan} ({interval})")
 
         # Obter ou criar customer
         customer_id = get_or_create_customer(user)
@@ -322,6 +322,7 @@ class SubscriptionService:
                     "user_id": user.id,
                     "tenant_id": user.tenant.id if user.tenant else None,
                     "plan_code": plan,
+                    "interval": interval,
                 },
             }
             if trial_days and not has_existing:
@@ -346,6 +347,7 @@ class SubscriptionService:
                     "user_id": user.id,
                     "tenant_id": user.tenant.id if user.tenant else None,
                     "plan_code": plan,
+                    "interval": interval,
                 },
                 subscription_data=subscription_data,
             )
