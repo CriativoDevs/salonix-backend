@@ -4,9 +4,22 @@ from typing import Optional, cast
 
 
 PLAN_PRICE_SETTING_KEYS = {
-    "basic": "STRIPE_PRICE_BASIC_MONTHLY_ID",
-    "standard": "STRIPE_PRICE_STANDARD_MONTHLY_ID",
-    "pro": "STRIPE_PRICE_PRO_MONTHLY_ID",
+    "basic": {
+        "monthly": "STRIPE_PRICE_BASIC_MONTHLY_ID",
+        "yearly": "STRIPE_PRICE_BASIC_YEARLY_ID",
+    },
+    "standard": {
+        "monthly": "STRIPE_PRICE_STANDARD_MONTHLY_ID",
+        "yearly": "STRIPE_PRICE_STANDARD_YEARLY_ID",
+    },
+    "pro": {
+        "monthly": "STRIPE_PRICE_PRO_MONTHLY_ID",
+        "yearly": "STRIPE_PRICE_PRO_YEARLY_ID",
+    },
+    "founder": {
+        "monthly": "STRIPE_PRICE_FOUNDER_MONTHLY_ID", # May not exist, but keeps structure
+        "yearly": "STRIPE_PRICE_FOUNDER_YEARLY_ID",
+    }
 }
 
 LEGACY_PLAN_SETTING_KEYS = {
@@ -21,13 +34,18 @@ def _read_setting(key: str) -> Optional[str]:
 
 
 def get_plan_price_map() -> dict[str, str]:
-    """Return mapping of plan codes to configured Stripe price ids."""
-
+    """
+    Return mapping of plan codes to configured Stripe price ids (Defaulting to monthly).
+    Kept for backward compatibility.
+    """
     mapping: dict[str, str] = {}
-    for plan, setting_name in PLAN_PRICE_SETTING_KEYS.items():
-        value = _read_setting(setting_name)
-        if value:
-            mapping[plan] = value
+    for plan, intervals in PLAN_PRICE_SETTING_KEYS.items():
+        # Default to monthly if available
+        setting_name = intervals.get("monthly")
+        if setting_name:
+            value = _read_setting(setting_name)
+            if value:
+                mapping[plan] = value
     return mapping
 
 
@@ -40,25 +58,39 @@ def get_legacy_price_map() -> dict[str, str]:
     return mapping
 
 
-def get_price_id_for_plan(plan_code: str) -> Optional[str]:
+def get_price_id_for_plan(plan_code: str, interval: str = "monthly") -> Optional[str]:
     plan = (plan_code or "").lower()
-    mapping = get_plan_price_map()
-    if plan in mapping:
-        return mapping[plan]
+    interval = (interval or "monthly").lower()
+    
+    if interval == "annual":
+        interval = "yearly"
 
-    legacy_mapping = get_legacy_price_map()
-    return legacy_mapping.get(plan)
+    if plan in PLAN_PRICE_SETTING_KEYS:
+        setting_key = PLAN_PRICE_SETTING_KEYS[plan].get(interval)
+        if setting_key:
+            return _read_setting(setting_key)
+
+    # Fallback to legacy map if not found in structured map
+    # (Only if requesting monthly, or if legacy map has yearly logic which it does somewhat)
+    if interval == "monthly":
+        legacy_mapping = get_legacy_price_map()
+        return legacy_mapping.get(plan)
+        
+    return None
 
 
 def get_plan_code_from_price(price_id: Optional[str]) -> Optional[str]:
     if not price_id:
         return None
 
-    mapping = get_plan_price_map()
-    inverse = {value: key for key, value in mapping.items()}
-    if price_id in inverse:
-        return inverse[price_id]
+    # Search in new structure (both monthly and yearly)
+    for plan, intervals in PLAN_PRICE_SETTING_KEYS.items():
+        for _, setting_key in intervals.items():
+            val = _read_setting(setting_key)
+            if val and val == price_id:
+                return plan
 
+    # Legacy fallback
     legacy_mapping = get_legacy_price_map()
     inverse_legacy = {value: key for key, value in legacy_mapping.items()}
     return inverse_legacy.get(price_id)
