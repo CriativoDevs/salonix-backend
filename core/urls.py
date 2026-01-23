@@ -25,6 +25,8 @@ from core.views import (
     ClientAccessLinkView,
     ClientAccessAcceptView,
     ClientSessionRefreshView,
+    ClientLoginView,
+    ClientSetPasswordView,
     PublicClientAccessLinkView,
     ClientsMeAppointmentsUpcomingView,
     ClientsMeAppointmentsHistoryView,
@@ -72,6 +74,16 @@ urlpatterns = [
         "clients/session/refresh/",
         ClientSessionRefreshView.as_view(),
         name="clients_session_refresh",
+    ),
+    path(
+        "clients/login/",
+        ClientLoginView.as_view(),
+        name="clients_login",
+    ),
+    path(
+        "clients/set-password/",
+        ClientSetPasswordView.as_view(),
+        name="clients_set_password",
     ),
     # Cliente autenticado via cookie de sessão
     path(

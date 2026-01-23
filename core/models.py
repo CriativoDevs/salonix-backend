@@ -18,7 +18,18 @@ class SalonCustomer(models.Model):
     notes = models.TextField(blank=True)
     marketing_opt_in = models.BooleanField(default=cast(Any, False))
     is_active = models.BooleanField(default=cast(Any, True))
+    password = models.CharField(max_length=128, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def set_password(self, raw_password):
+        from django.contrib.auth.hashers import make_password
+
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        from django.contrib.auth.hashers import check_password
+
+        return check_password(raw_password, self.password)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

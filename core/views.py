@@ -60,6 +60,8 @@ from core.serializers import (
     ClientAccessAcceptSerializer,
     PublicClientAccessLinkRequestSerializer,
     FeedbackSerializer,
+    ClientLoginSerializer,
+    ClientSetPasswordSerializer,
 )
 from core.mixins import TenantIsolatedMixin
 from core.utils.pagination import get_limit_offset, set_pagination_headers
@@ -2506,30 +2508,30 @@ class ClientAccessAcceptView(APIView):
                 tenant_id=str(tenant_id),
             ).inc()
             raise ValidationError("Token inválido")
-            
+
         remaining = ttl - (int(timezone.now().timestamp()) - ts)
         if remaining < 0:
             remaining = 0
-            
+
         cache_key = f"client_invite_jti:{tenant_id}:{customer_id}:{jti}"
         current_ts = int(timezone.now().timestamp())
-        
+
         # add é atômico: retorna False se já existir. Armazenamos o timestamp do 1º uso.
         added = cache.add(cache_key, current_ts, timeout=remaining or ttl)
-        
+
         if not added:
             # Se já existe, verifica se foi usado recentemente (grace period de 10s)
             # Isso resolve problemas onde clientes de email (iOS) ou browsers fazem pre-fetch
             # ou o redirecionamento do PWA causa duplo request.
             first_used_ts = cache.get(cache_key)
-            
+
             # Se o valor no cache for True (legado) ou timestamp antigo -> Bloqueia
             # Se for timestamp recente (< 15s) -> Permite (Idempotência)
             is_recent = False
             if isinstance(first_used_ts, int):
                 if (current_ts - first_used_ts) < 15:
                     is_recent = True
-            
+
             if not is_recent:
                 CLIENT_ACCESS_EVENTS_TOTAL.labels(
                     event="accept",
@@ -2677,6 +2679,100 @@ class ClientSessionRefreshView(APIView):
             path="/",
         )
         return resp
+
+
+class ClientLoginView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersClientAccessLinkThrottle]
+
+    @extend_schema(
+        request=ClientLoginSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        description="Login de cliente via email/senha. Retorna cookie de sessão.",
+    )
+    def post(self, request):
+        serializer = ClientLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        tenant_slug = data["tenant_slug"]
+        email = data["email"]
+        password = data["password"]
+
+        try:
+            tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+        except Tenant.DoesNotExist:
+            raise ValidationError("Tenant inválido.")
+
+        if not tenant.can_use_pwa_client():
+            raise ValidationError("Funcionalidade indisponível para este tenant.")
+
+        try:
+            customer = SalonCustomer.objects.get(
+                tenant=tenant, email=email, is_active=True
+            )
+        except SalonCustomer.DoesNotExist:
+            raise ValidationError("Credenciais inválidas.")
+
+        if not customer.password:
+            raise ValidationError(
+                "Cliente não possui senha definida. Use o link de acesso mágico."
+            )
+
+        if not customer.check_password(password):
+            raise ValidationError("Credenciais inválidas.")
+
+        # Criar cookie de sessão para cliente
+        session_payload = {
+            "tenant_id": tenant.id,
+            "customer_id": customer.id,
+            "iat": int(timezone.now().timestamp()),
+        }
+        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
+
+        resp = Response(
+            {
+                "session": "created",
+                "tenant_id": tenant.id,
+                "customer_id": customer.id,
+            },
+            status=drf_status.HTTP_200_OK,
+        )
+
+        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
+        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
+        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
+
+        resp.set_cookie(
+            "client_session",
+            session_token,
+            max_age=max_age,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+            path="/",
+        )
+        return resp
+
+
+class ClientSetPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        request=ClientSetPasswordSerializer,
+        responses={200: OpenApiTypes.OBJECT},
+        description="Define senha para o cliente autenticado via cookie.",
+    )
+    def post(self, request):
+        tenant, customer = _get_client_session_or_raise(request)
+
+        serializer = ClientSetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        customer.set_password(serializer.validated_data["password"])
+        customer.save()
+
+        return Response({"status": "password_set"}, status=drf_status.HTTP_200_OK)
 
 
 class ClientsMeAppointmentsUpcomingView(APIView):
