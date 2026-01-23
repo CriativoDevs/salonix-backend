@@ -268,8 +268,9 @@ class Tenant(models.Model):
         ]
 
     def can_use_pwa_client(self):
-        """Verifica se pode usar PWA Cliente (Standard+)"""
+        """Verifica se pode usar PWA Cliente (Todos os planos)"""
         return self.pwa_client_enabled or self.plan_tier in [
+            self.PLAN_BASIC,
             self.PLAN_STANDARD,
             self.PLAN_PRO,
         ]
@@ -290,14 +291,20 @@ class Tenant(models.Model):
         """Indica renovação automática de créditos; depende somente de comm_auto_renew."""
         return self.comm_auto_renew
 
-    def can_use_native_apps(self):
-        """Verifica se pode usar apps nativos (Pro + addons)"""
-        from typing import cast
+    def can_use_native_admin(self):
+        """Verifica se pode usar app nativo Admin (Standard+ ou flag explícita)"""
+        return self.rn_admin_enabled or self.plan_tier in [
+            self.PLAN_STANDARD,
+            self.PLAN_PRO,
+        ]
 
-        addons = cast(list[str], (self.addons_enabled or []))
-        return self.plan_tier == self.PLAN_PRO and (
-            "rn_admin" in addons or "rn_client" in addons
-        )
+    def can_use_native_client(self):
+        """Verifica se pode usar app nativo Cliente (Pro+ ou flag explícita)"""
+        return self.rn_client_enabled or self.plan_tier == self.PLAN_PRO
+
+    def can_use_native_apps(self):
+        """Verifica se pode usar qualquer app nativo"""
+        return self.can_use_native_admin() or self.can_use_native_client()
 
     def can_use_advanced_notifications(self):
         allowed_by_plan = self.plan_tier == self.PLAN_PRO
@@ -333,10 +340,8 @@ class Tenant(models.Model):
                 "reports_enabled": self.can_use_reports(),
                 "pwa_admin_enabled": self.pwa_admin_enabled,
                 "pwa_client_enabled": self.can_use_pwa_client(),
-                "rn_admin_enabled": self.rn_admin_enabled
-                and self.can_use_native_apps(),
-                "rn_client_enabled": self.rn_client_enabled
-                and self.can_use_native_apps(),
+                "rn_admin_enabled": self.can_use_native_admin(),
+                "rn_client_enabled": self.can_use_native_client(),
             },
             "notifications": {
                 "push_web": self.push_web_enabled,

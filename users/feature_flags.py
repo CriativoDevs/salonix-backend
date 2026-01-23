@@ -49,8 +49,8 @@ class RequiresFeatureFlag(BasePermission):
             "push_web": tenant.push_web_enabled,
             "push_mobile": tenant.push_mobile_enabled,
             "pwa_admin": tenant.pwa_admin_enabled,
-            "rn_admin": tenant.rn_admin_enabled,
-            "rn_client": tenant.rn_client_enabled,
+            "rn_admin": tenant.can_use_native_admin(),
+            "rn_client": tenant.can_use_native_client(),
         }
 
         return feature_map.get(self.feature_flag, False)
@@ -194,8 +194,8 @@ def check_feature_flag(tenant, feature_flag):
         "sms": tenant.sms_enabled,
         "whatsapp": tenant.whatsapp_enabled,
         "pwa_admin": tenant.pwa_admin_enabled,
-        "rn_admin": tenant.rn_admin_enabled,
-        "rn_client": tenant.rn_client_enabled,
+        "rn_admin": tenant.can_use_native_admin(),
+        "rn_client": tenant.can_use_native_client(),
     }
 
     return feature_map.get(feature_flag, False)
