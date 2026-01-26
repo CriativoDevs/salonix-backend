@@ -1863,6 +1863,10 @@ class TenantNotificationsSettingsView(APIView):
             tenant.push_mobile_enabled = desired
             updates.add("push_mobile_enabled")
 
+        if "push_web_enabled" in v:
+            tenant.push_web_enabled = bool(v["push_web_enabled"])
+            updates.add("push_web_enabled")
+
         if updates:
             tenant.save(update_fields=list(updates) + ["updated_at"])
 
@@ -1871,6 +1875,7 @@ class TenantNotificationsSettingsView(APIView):
                 "sms_enabled": tenant.sms_enabled,
                 "whatsapp_enabled": tenant.whatsapp_enabled,
                 "push_mobile_enabled": tenant.push_mobile_enabled,
+                "push_web_enabled": tenant.push_web_enabled,
             },
             status=status.HTTP_200_OK,
         )
