@@ -167,7 +167,7 @@ class Tenant(models.Model):
 
     # Feature Flags - Canais de Notificação
     push_web_enabled = models.BooleanField(
-        default=cast(Any, False), help_text="Habilita notificações web push"
+        default=cast(Any, True), help_text="Habilita notificações web push"
     )
     push_mobile_enabled = models.BooleanField(
         default=cast(Any, False), help_text="Habilita notificações mobile push"

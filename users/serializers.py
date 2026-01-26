@@ -85,6 +85,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
     branding = serializers.SerializerMethodField()
     plan = serializers.SerializerMethodField()
     billing_pending = serializers.SerializerMethodField()
+    onboarding_state = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -94,6 +95,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "slug",
             "plan",
             "billing_pending",
+            "onboarding_state",
             "timezone",
             "currency",
             "preferred_language",
@@ -101,6 +103,37 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "branding",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_onboarding_state(self, obj):
+        """
+        Retorna estado do onboarding do tenant.
+
+        Estados possíveis:
+        - "billing_pending": Tenant sem assinatura ativa (precisa escolher plano)
+        - "completed": Tenant com assinatura ativa (acesso liberado)
+
+        Returns:
+            str: "billing_pending" ou "completed"
+        """
+        try:
+            Subscription = apps.get_model("payments", "Subscription")
+
+            # Verifica se tem assinatura ativa ou em trial
+            has_active_subscription = Subscription.objects.filter(
+                user__tenant=obj,
+                status__in=["active", "trialing"]
+            ).exists()
+
+            if has_active_subscription:
+                return "completed"
+
+            # Se não tem assinatura, precisa escolher plano
+            return "billing_pending"
+
+        except LookupError:
+            # Se o model Subscription não existir (improvável), assume completed
+            return "completed"
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_billing_pending(self, obj):
@@ -935,6 +968,7 @@ class TenantNotificationsUpdateSerializer(serializers.Serializer):
     sms_enabled = serializers.BooleanField(required=False)
     whatsapp_enabled = serializers.BooleanField(required=False)
     push_mobile_enabled = serializers.BooleanField(required=False)
+    push_web_enabled = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         return attrs
