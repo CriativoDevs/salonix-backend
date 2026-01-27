@@ -232,7 +232,7 @@ class TenantService:
             update_fields = ["is_active", "deleted_at", "updated_at", "is_founder"]
         else:
             update_fields = ["is_active", "deleted_at", "updated_at"]
-        
+
         tenant.save(update_fields=update_fields)
 
         # Aqui poderíamos adicionar logs de auditoria ou disparar e-mails de "Adeus"
@@ -247,13 +247,17 @@ class FounderService:
     def get_availability(cls) -> Dict[str, int]:
         """
         Retorna a disponibilidade do plano Founder.
-        
+
         Returns:
             Dict com 'total_limit', 'used_count' e 'remaining_count'.
         """
         used_count = Tenant.objects.filter(is_founder=True, is_active=True).count()
         remaining_count = max(0, cls.FOUNDER_LIMIT - used_count)
-        
+
+        print(
+            f"[FounderService] Limit: {cls.FOUNDER_LIMIT}, Used: {used_count}, Remaining: {remaining_count}"
+        )
+
         return {
             "total_limit": cls.FOUNDER_LIMIT,
             "used_count": used_count,
@@ -265,4 +269,3 @@ class FounderService:
         """Verifica se ainda há vagas para o plano Founder."""
         availability = cls.get_availability()
         return availability["remaining_count"] > 0
-

@@ -17,7 +17,7 @@ import json
 
 from . import stripe_utils
 from .models import Subscription, PaymentCustomer, CreditPayment, StripeWebhookEvent
-from users.services import CreditService
+from users.services import CreditService, FounderService
 from .services import (
     CreditPurchaseService,
     SubscriptionService,
@@ -61,10 +61,16 @@ class CreateCheckoutSession(APIView):
             "basic",
             "standard",
             "pro",
+            "founder",
         }
 
         if requested_plan not in allowed_plans:
             return Response({"detail": "Plano inválido."}, status=400)
+
+        if requested_plan == "founder" and not FounderService.can_assign_founder():
+            return Response(
+                {"detail": "O plano Founder não está mais disponível."}, status=400
+            )
 
         price_id = stripe_utils.get_price_id_for_plan(requested_plan)
         if not price_id:
@@ -541,19 +547,33 @@ class StripeWebhookView(APIView):
                                 "basic",
                                 "standard",
                                 "pro",
+                                "founder",
                             }:
                                 tenant = pc.user.tenant
-                                if tenant.plan_tier != meta_plan:
+                                target_tier = meta_plan
+
+                                if meta_plan == "founder":
+                                    target_tier = "basic"
+                                    if not tenant.is_founder:
+                                        tenant.is_founder = True
+                                        tenant.save(
+                                            update_fields=["is_founder", "updated_at"]
+                                        )
+                                        logger.info(
+                                            f"[WEBHOOK] Tenant {tenant.slug} promoted to Founder."
+                                        )
+
+                                if tenant.plan_tier != target_tier:
                                     logger.info(
-                                        f"[WEBHOOK] Forcing tenant plan update: {tenant.plan_tier} -> {meta_plan}"
+                                        f"[WEBHOOK] Forcing tenant plan update: {tenant.plan_tier} -> {target_tier}"
                                     )
-                                    tenant.plan_tier = meta_plan
+                                    tenant.plan_tier = target_tier
                                     tenant.save(
                                         update_fields=["plan_tier", "updated_at"]
                                     )
                                 else:
                                     logger.info(
-                                        f"[WEBHOOK] Tenant plan already synced: {meta_plan}"
+                                        f"[WEBHOOK] Tenant plan already synced: {target_tier}"
                                     )
                         except Exception as e:
                             logger.error(f"[WEBHOOK] Failed to force tenant sync: {e}")

@@ -16,6 +16,7 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
+from .services import FounderService
 from salonix_backend.validators import (
     validate_phone_number,
     sanitize_text_input,
@@ -121,8 +122,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
 
             # Verifica se tem assinatura ativa ou em trial
             has_active_subscription = Subscription.objects.filter(
-                user__tenant=obj,
-                status__in=["active", "trialing"]
+                user__tenant=obj, status__in=["active", "trialing"]
             ).exists()
 
             if has_active_subscription:
@@ -174,6 +174,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     tenant = TenantSelfServiceSerializer(read_only=True)
+    plan = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = CustomUser
@@ -185,6 +186,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             "salon_name",
             "phone_number",
             "tenant",
+            "plan",
         ]
         read_only_fields = ["id", "tenant"]
 
@@ -256,9 +258,20 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             )
 
         tenant_slug = _generate_unique_tenant_slug(sanitized_display_name)
+
+        # Verifica plano Founder
+        is_founder = False
+        if data.get("plan") == "founder":
+            if not FounderService.can_assign_founder():
+                raise serializers.ValidationError(
+                    {"plan": "O plano Founder não está mais disponível."}
+                )
+            is_founder = True
+
         tenant = Tenant.objects.create(
             name=sanitized_display_name or data["username"],
             slug=tenant_slug,
+            is_founder=is_founder,
         )
 
         user = CustomUser.objects.create_user(
