@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -169,20 +170,86 @@ FEEDBACK_CATEGORY_TOTAL = _get_or_create_counter(
 )
 
 
-def _get_client_session_or_raise(request):
-    raw = request.COOKIES.get("client_session")
-    if not raw:
-        raise ValidationError("Sessão ausente")
-    try:
-        payload = signing.loads(raw, salt="CLIENT_PWA_SESSION_SALT")
-    except signing.BadSignature:
-        raise ValidationError("Sessão inválida")
+def _create_client_jwt_tokens(tenant, customer):
+    """
+    Cria tokens JWT para autenticação de cliente (similar ao sistema de User/Staff).
 
-    tenant_id = int(payload.get("tenant_id"))
-    customer_id = int(payload.get("customer_id"))
+    Args:
+        tenant: Instância de Tenant
+        customer: Instância de SalonCustomer
+
+    Returns:
+        dict com 'access', 'refresh', 'tenant_id', 'customer_id'
+    """
+
+    # Criar um token "fake" usando o customer_id como identificador único
+    # JWT tokens normalmente são para Users, mas podemos adaptá-los
+    # Usamos uma classe wrapper temporária que simula um User
+    class CustomerTokenWrapper:
+        def __init__(self, customer_id):
+            self.id = customer_id
+            self.is_active = True
+
+    wrapper = CustomerTokenWrapper(customer.id)
+    refresh = RefreshToken.for_user(wrapper)
+
+    # Adicionar informações customizadas ao token
+    refresh["scope"] = "client"
+    refresh["tenant_id"] = str(tenant.id)
+    refresh["tenant_slug"] = tenant.slug
+    refresh["customer_id"] = customer.id
+
+    access_token = refresh.access_token
+    access_token["scope"] = "client"
+    access_token["tenant_id"] = str(tenant.id)
+    access_token["tenant_slug"] = tenant.slug
+    access_token["customer_id"] = customer.id
+
+    return {
+        "access": str(access_token),
+        "refresh": str(refresh),
+        "tenant_id": tenant.id,
+        "customer_id": customer.id,
+    }
+
+
+def _get_client_from_jwt(request):
+    """
+    Extrai tenant e customer do JWT token no header Authorization.
+
+    Args:
+        request: Request do DRF
+
+    Returns:
+        tuple (tenant, customer)
+
+    Raises:
+        ValidationError se token inválido ou dados não encontrados
+    """
+    from rest_framework_simplejwt.authentication import JWTAuthentication
+
+    jwt_auth = JWTAuthentication()
 
     try:
-        tenant = Tenant.objects.get(id=tenant_id, is_active=True)
+        validated_token = jwt_auth.get_validated_token(
+            jwt_auth.get_raw_token(jwt_auth.get_header(request))
+        )
+    except Exception:
+        raise ValidationError("Token de autenticação inválido ou ausente")
+
+    # Verificar se é token de cliente
+    scope = validated_token.get("scope")
+    if scope != "client":
+        raise ValidationError("Token não é de cliente")
+
+    tenant_id = validated_token.get("tenant_id")
+    customer_id = validated_token.get("customer_id")
+
+    if not tenant_id or not customer_id:
+        raise ValidationError("Token inválido: dados ausentes")
+
+    try:
+        tenant = Tenant.objects.get(id=int(tenant_id), is_active=True)
     except Tenant.DoesNotExist:
         raise ValidationError("Tenant inválido")
 
@@ -195,32 +262,6 @@ def _get_client_session_or_raise(request):
         raise ValidationError("Cliente inválido")
 
     return tenant, customer
-
-
-def _get_client_cookie_params():
-    """
-    Retorna parâmetros corretos para o cookie client_session.
-    Garante SameSite=None + Secure=True em staging/prod para suportar iOS Safari.
-    """
-    env = getattr(settings, "ENV", "dev")
-    max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
-
-    # Em staging/prod cross-domain, forçar SameSite=None + Secure=True
-    if env in ("staging", "uat", "prod"):
-        secure = True
-        samesite = "None"
-    else:
-        # Em dev, usar configuração do settings (ou defaults)
-        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
-        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
-
-    return {
-        "max_age": max_age,
-        "httponly": True,
-        "secure": secure,
-        "samesite": samesite,
-        "path": "/",
-    }
 
 
 APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
@@ -2581,109 +2622,19 @@ class ClientAccessAcceptView(APIView):
             ).inc()
             raise ValidationError("Cliente inválido")
 
-        # Criar cookie de sessão para cliente
-        session_payload = {
-            "tenant_id": tenant.id,
-            "customer_id": customer.id,
-            "iat": int(timezone.now().timestamp()),
-        }
-        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
+        # Criar tokens JWT para cliente
+        tokens = _create_client_jwt_tokens(tenant, customer)
 
-        resp = Response(
-            {
-                "session": "created",
-                "tenant_id": tenant.id,
-                "customer_id": customer.id,
-                "has_password": bool(customer.password),
-            },
-            status=drf_status.HTTP_200_OK,
-        )
         CLIENT_ACCESS_EVENTS_TOTAL.labels(
             event="accept",
             result="success",
             tenant_id=str(tenant.id),
         ).inc()
-        cookie_params = _get_client_cookie_params()
-        resp.set_cookie("client_session", session_token, **cookie_params)
-        return resp
 
+        # Adicionar informação se cliente já tem senha
+        tokens["has_password"] = bool(customer.password)
 
-class ClientSessionRefreshView(APIView):
-    permission_classes = [AllowAny]
-    throttle_classes = [UsersClientAccessLinkThrottle]
-    throttle_scope = "clients_access_link"
-
-    @extend_schema(
-        request=None,
-        responses={
-            200: OpenApiResponse(response=OpenApiTypes.OBJECT),
-            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
-        },
-        examples=[
-            OpenApiExample(
-                name="Sessão renovada",
-                value={"session": "refreshed"},
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="Sessão ausente",
-                value={"detail": "Sessão ausente"},
-                response_only=True,
-                status_codes=["400"],
-            ),
-            OpenApiExample(
-                name="Sessão inválida",
-                value={"detail": "Sessão inválida"},
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-        description="Renova sessão do cliente (sliding window) e reemite cookie.",
-    )
-    def post(self, request):
-        raw = request.COOKIES.get("client_session")
-        if not raw:
-            CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                event="refresh",
-                result="absent",
-                tenant_id=str(0),
-            ).inc()
-            raise ValidationError("Sessão ausente")
-        try:
-            payload = signing.loads(raw, salt="CLIENT_PWA_SESSION_SALT")
-        except signing.BadSignature:
-            CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                event="refresh",
-                result="bad_signature",
-                tenant_id=str(0),
-            ).inc()
-            raise ValidationError("Sessão inválida")
-
-        # Pode validar tenant/customer existentes se necessário
-        tenant_id = int(payload.get("tenant_id"))
-        customer_id = int(payload.get("customer_id"))
-
-        session_payload = {
-            "tenant_id": tenant_id,
-            "customer_id": customer_id,
-            "iat": int(timezone.now().timestamp()),
-        }
-        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
-
-        resp = Response({"session": "refreshed"}, status=drf_status.HTTP_200_OK)
-        CLIENT_ACCESS_EVENTS_TOTAL.labels(
-            event="refresh",
-            result="success",
-            tenant_id=str(tenant_id),
-        ).inc()
-        cookie_params = _get_client_cookie_params()
-        # Refresh tem TTL maior (45 dias vs 30 dias)
-        cookie_params["max_age"] = getattr(
-            settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600
-        )
-        resp.set_cookie("client_session", session_token, **cookie_params)
-        return resp
+        return Response(tokens, status=drf_status.HTTP_200_OK)
 
 
 class ClientLoginView(APIView):
@@ -2693,7 +2644,7 @@ class ClientLoginView(APIView):
     @extend_schema(
         request=ClientLoginSerializer,
         responses={200: OpenApiTypes.OBJECT},
-        description="Login de cliente via email/senha. Retorna cookie de sessão.",
+        description="Login de cliente via email/senha. Retorna tokens JWT (access + refresh).",
     )
     def post(self, request):
         serializer = ClientLoginSerializer(data=request.data)
@@ -2727,26 +2678,10 @@ class ClientLoginView(APIView):
         if not customer.check_password(password):
             raise ValidationError("Credenciais inválidas.")
 
-        # Criar cookie de sessão para cliente
-        session_payload = {
-            "tenant_id": tenant.id,
-            "customer_id": customer.id,
-            "iat": int(timezone.now().timestamp()),
-        }
-        session_token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
+        # Criar tokens JWT para cliente
+        tokens = _create_client_jwt_tokens(tenant, customer)
 
-        resp = Response(
-            {
-                "session": "created",
-                "tenant_id": tenant.id,
-                "customer_id": customer.id,
-            },
-            status=drf_status.HTTP_200_OK,
-        )
-
-        cookie_params = _get_client_cookie_params()
-        resp.set_cookie("client_session", session_token, **cookie_params)
-        return resp
+        return Response(tokens, status=drf_status.HTTP_200_OK)
 
 
 class ClientSetPasswordView(APIView):
@@ -2755,10 +2690,10 @@ class ClientSetPasswordView(APIView):
     @extend_schema(
         request=ClientSetPasswordSerializer,
         responses={200: OpenApiTypes.OBJECT},
-        description="Define senha para o cliente autenticado via cookie.",
+        description="Define senha para o cliente autenticado via JWT.",
     )
     def post(self, request):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
 
         serializer = ClientSetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -2774,7 +2709,7 @@ class ClientsMeAppointmentsUpcomingView(APIView):
 
     @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
         now = timezone.now()
         qs = (
             Appointment.objects.filter(
@@ -2795,7 +2730,7 @@ class ClientsMeAppointmentsHistoryView(APIView):
 
     @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
         now = timezone.now()
         qs = (
             Appointment.objects.filter(
@@ -2820,7 +2755,7 @@ class ClientsMeAppointmentCreateView(APIView):
         request=AppointmentSerializer, responses={201: AppointmentDetailSerializer}
     )
     def post(self, request):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
 
         raw = request.data or {}
         try:
@@ -2954,7 +2889,7 @@ class ClientsMeProfileView(APIView):
 
     @extend_schema(responses={200: SalonCustomerSerializer})
     def get(self, request):
-        _, customer = _get_client_session_or_raise(request)
+        _, customer = _get_client_from_jwt(request)
         ser = SalonCustomerSerializer(customer)
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
@@ -2962,7 +2897,7 @@ class ClientsMeProfileView(APIView):
         request=SalonCustomerSerializer, responses={200: SalonCustomerSerializer}
     )
     def patch(self, request):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
         allowed = {"name", "phone_number", "notes", "marketing_opt_in"}
         data = {k: v for k, v in request.data.items() if k in allowed}
         ser = SalonCustomerSerializer(customer, data=data, partial=True)
@@ -2976,7 +2911,7 @@ class ClientAppointmentCancelView(APIView):
 
     @extend_schema(request=None, responses={200: AppointmentSerializer})
     def patch(self, request, pk: int):
-        tenant, customer = _get_client_session_or_raise(request)
+        tenant, customer = _get_client_from_jwt(request)
         appt = get_object_or_404(
             Appointment.objects.select_related("slot", "tenant"),
             pk=pk,
