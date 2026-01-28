@@ -197,6 +197,32 @@ def _get_client_session_or_raise(request):
     return tenant, customer
 
 
+def _get_client_cookie_params():
+    """
+    Retorna parâmetros corretos para o cookie client_session.
+    Garante SameSite=None + Secure=True em staging/prod para suportar iOS Safari.
+    """
+    env = getattr(settings, "ENV", "dev")
+    max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
+
+    # Em staging/prod cross-domain, forçar SameSite=None + Secure=True
+    if env in ("staging", "uat", "prod"):
+        secure = True
+        samesite = "None"
+    else:
+        # Em dev, usar configuração do settings (ou defaults)
+        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
+        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
+
+    return {
+        "max_age": max_age,
+        "httponly": True,
+        "secure": secure,
+        "samesite": samesite,
+        "path": "/",
+    }
+
+
 APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
     "appointment_series_errors_total",
     "Total number of series update errors",
@@ -2577,18 +2603,8 @@ class ClientAccessAcceptView(APIView):
             result="success",
             tenant_id=str(tenant.id),
         ).inc()
-        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
-        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
-        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
-        resp.set_cookie(
-            "client_session",
-            session_token,
-            max_age=max_age,
-            httponly=True,
-            secure=secure,
-            samesite=samesite,
-            path="/",
-        )
+        cookie_params = _get_client_cookie_params()
+        resp.set_cookie("client_session", session_token, **cookie_params)
         return resp
 
 
@@ -2661,18 +2677,12 @@ class ClientSessionRefreshView(APIView):
             result="success",
             tenant_id=str(tenant_id),
         ).inc()
-        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600)
-        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
-        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
-        resp.set_cookie(
-            "client_session",
-            session_token,
-            max_age=max_age,
-            httponly=True,
-            secure=secure,
-            samesite=samesite,
-            path="/",
+        cookie_params = _get_client_cookie_params()
+        # Refresh tem TTL maior (45 dias vs 30 dias)
+        cookie_params["max_age"] = getattr(
+            settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 45 * 24 * 3600
         )
+        resp.set_cookie("client_session", session_token, **cookie_params)
         return resp
 
 
@@ -2734,19 +2744,8 @@ class ClientLoginView(APIView):
             status=drf_status.HTTP_200_OK,
         )
 
-        max_age = getattr(settings, "CLIENT_PWA_SESSION_TTL_SECONDS", 30 * 24 * 3600)
-        secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
-        samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
-
-        resp.set_cookie(
-            "client_session",
-            session_token,
-            max_age=max_age,
-            httponly=True,
-            secure=secure,
-            samesite=samesite,
-            path="/",
-        )
+        cookie_params = _get_client_cookie_params()
+        resp.set_cookie("client_session", session_token, **cookie_params)
         return resp
 
 
