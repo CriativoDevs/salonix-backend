@@ -101,7 +101,10 @@ import secrets
 def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]):
     existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
     if existing is not None:
-        return existing
+        if isinstance(existing, Counter):
+            return existing
+        # If it exists but isn't a Counter, unregister and recreate
+        REGISTRY.unregister(existing)  # type: ignore[attr-defined]
     return Counter(name, documentation, labelnames)
 
 
@@ -2453,6 +2456,7 @@ class ClientAccessAcceptView(APIView):
                     "session": "created",
                     "tenant_id": 1,
                     "customer_id": 42,
+                    "has_password": False,
                 },
                 response_only=True,
                 status_codes=["200"],
@@ -2514,31 +2518,21 @@ class ClientAccessAcceptView(APIView):
             remaining = 0
 
         cache_key = f"client_invite_jti:{tenant_id}:{customer_id}:{jti}"
-        current_ts = int(timezone.now().timestamp())
 
-        # add é atômico: retorna False se já existir. Armazenamos o timestamp do 1º uso.
-        added = cache.add(cache_key, current_ts, timeout=remaining or ttl)
+        # Verificar contador de usos no cache
+        use_count = cache.get(cache_key, 0)
 
-        if not added:
-            # Se já existe, verifica se foi usado recentemente (grace period de 10s)
-            # Isso resolve problemas onde clientes de email (iOS) ou browsers fazem pre-fetch
-            # ou o redirecionamento do PWA causa duplo request.
-            first_used_ts = cache.get(cache_key)
+        # Permitir até 2 usos do token
+        if use_count >= 2:
+            CLIENT_ACCESS_EVENTS_TOTAL.labels(
+                event="accept",
+                result="reused",
+                tenant_id=str(tenant_id),
+            ).inc()
+            raise ValidationError("Token já utilizado")
 
-            # Se o valor no cache for True (legado) ou timestamp antigo -> Bloqueia
-            # Se for timestamp recente (< 15s) -> Permite (Idempotência)
-            is_recent = False
-            if isinstance(first_used_ts, int):
-                if (current_ts - first_used_ts) < 15:
-                    is_recent = True
-
-            if not is_recent:
-                CLIENT_ACCESS_EVENTS_TOTAL.labels(
-                    event="accept",
-                    result="reused",
-                    tenant_id=str(tenant_id),
-                ).inc()
-                raise ValidationError("Token já utilizado")
+        # Incrementar contador de usos
+        cache.set(cache_key, use_count + 1, timeout=remaining or ttl)
 
         # Verificar existência
         try:
@@ -2574,6 +2568,7 @@ class ClientAccessAcceptView(APIView):
                 "session": "created",
                 "tenant_id": tenant.id,
                 "customer_id": customer.id,
+                "has_password": bool(customer.password),
             },
             status=drf_status.HTTP_200_OK,
         )
