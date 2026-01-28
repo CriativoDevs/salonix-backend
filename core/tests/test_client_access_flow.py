@@ -53,10 +53,12 @@ class TestClientAccessFlow:
         response = self.client.post(url, {"token": token}, format="json")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["session"] == "created"
+        # JWT tokens in response
+        assert "access" in response.data
+        assert "refresh" in response.data
         assert response.data["tenant_id"] == self.tenant.id
         assert response.data["customer_id"] == self.customer.id
-        assert "client_session" in response.cookies
+        assert "has_password" in response.data
 
     def test_accept_expired_token(self):
         # Create a payload with old timestamp
@@ -96,6 +98,7 @@ class TestClientAccessFlow:
 
         # Third use (after grace period) - Should be blocked
         from datetime import timedelta
+
         future = timezone.now() + timedelta(seconds=20)
         with patch("django.utils.timezone.now", return_value=future):
             response3 = self.client.post(url, {"token": token}, format="json")

@@ -6,6 +6,7 @@ from django.core import signing
 from users.models import Tenant
 from core.models import SalonCustomer
 
+
 @pytest.mark.django_db
 class TestClientLoginFlow:
     def setup_method(self):
@@ -26,7 +27,7 @@ class TestClientLoginFlow:
     def test_set_and_check_password_model(self):
         self.customer.set_password("securepass123")
         self.customer.save()
-        
+
         self.customer.refresh_from_db()
         assert self.customer.password is not None
         assert self.customer.check_password("securepass123")
@@ -40,13 +41,16 @@ class TestClientLoginFlow:
         data = {
             "email": "client@test.com",
             "password": "securepass123",
-            "tenant_slug": "test-salon"
+            "tenant_slug": "test-salon",
         }
         response = self.client.post(url, data, format="json")
 
         assert response.status_code == status.HTTP_200_OK
-        assert "client_session" in response.cookies
-        assert response.data["session"] == "created"
+        # JWT tokens in response
+        assert "access" in response.data
+        assert "refresh" in response.data
+        assert response.data["tenant_id"] == self.tenant.id
+        assert response.data["customer_id"] == self.customer.id
 
     def test_login_invalid_password(self):
         self.customer.set_password("securepass123")
@@ -56,7 +60,7 @@ class TestClientLoginFlow:
         data = {
             "email": "client@test.com",
             "password": "wrongpass",
-            "tenant_slug": "test-salon"
+            "tenant_slug": "test-salon",
         }
         response = self.client.post(url, data, format="json")
 
@@ -69,7 +73,7 @@ class TestClientLoginFlow:
         data = {
             "email": "client@test.com",
             "password": "any",
-            "tenant_slug": "test-salon"
+            "tenant_slug": "test-salon",
         }
         response = self.client.post(url, data, format="json")
 
@@ -77,22 +81,30 @@ class TestClientLoginFlow:
         assert "não possui senha definida" in str(response.data)
 
     def test_set_password_flow(self):
-        # 1. Simulate authenticated session via cookie
-        session_payload = {
-            "tenant_id": self.tenant.id,
-            "customer_id": self.customer.id,
-        }
-        token = signing.dumps(session_payload, salt="CLIENT_PWA_SESSION_SALT")
-        self.client.cookies["client_session"] = token
+        # Test através do fluxo de access-accept que cria o JWT
+        # e depois usar esse JWT para set-password
 
-        # 2. Call set-password
+        # 1. Create access link token using helper
+        from core.utils.client_access import create_client_access_data
+
+        _, token_str, _ = create_client_access_data(self.tenant, self.customer)
+
+        # 2. Accept the access link (this will return JWT tokens)
+        url = reverse("clients_access_accept")
+        response = self.client.post(url, {"token": token_str}, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        access_token = response.data["access"]
+
+        # 3. Use JWT to set password
         url = reverse("clients_set_password")
         data = {"password": "newpassword123"}
-        response = self.client.post(url, data, format="json")
+        response = self.client.post(
+            url, data, format="json", HTTP_AUTHORIZATION=f"Bearer {access_token}"
+        )
 
         assert response.status_code == status.HTTP_200_OK
-        
-        # 3. Verify in DB
+
+        # 4. Verify in DB
         self.customer.refresh_from_db()
         assert self.customer.check_password("newpassword123")
 
@@ -101,4 +113,6 @@ class TestClientLoginFlow:
         data = {"password": "newpassword123"}
         response = self.client.post(url, data, format="json")
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST # ValidationError "Sessão ausente"
+        assert (
+            response.status_code == status.HTTP_400_BAD_REQUEST
+        )  # ValidationError "Sessão ausente"

@@ -2686,6 +2686,7 @@ class ClientLoginView(APIView):
 
 class ClientSetPasswordView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
     @extend_schema(
         request=ClientSetPasswordSerializer,
@@ -2706,6 +2707,7 @@ class ClientSetPasswordView(APIView):
 
 class ClientsMeAppointmentsUpcomingView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
     @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
@@ -2727,6 +2729,7 @@ class ClientsMeAppointmentsUpcomingView(APIView):
 
 class ClientsMeAppointmentsHistoryView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
     @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
     def get(self, request):
@@ -2748,6 +2751,7 @@ class ClientsMeAppointmentsHistoryView(APIView):
 
 class ClientsMeAppointmentCreateView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "clients_me_appointments_create"
 
@@ -2886,6 +2890,7 @@ class ClientsMeAppointmentCreateView(APIView):
 
 class ClientsMeProfileView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
     @extend_schema(responses={200: SalonCustomerSerializer})
     def get(self, request):
@@ -2908,6 +2913,7 @@ class ClientsMeProfileView(APIView):
 
 class ClientAppointmentCancelView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
     @extend_schema(request=None, responses={200: AppointmentSerializer})
     def patch(self, request, pk: int):

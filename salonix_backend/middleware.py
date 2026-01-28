@@ -202,7 +202,35 @@ class ScopeAccessMiddleware(MiddlewareMixin):
         if not auth_header.startswith("Bearer"):
             return None
 
+        # For client tokens, validate but don't try to get user
+        # The view will handle token extraction manually
         try:
+            from rest_framework_simplejwt.authentication import JWTAuthentication
+
+            jwt_auth = JWTAuthentication()
+
+            # Extract token
+            header = jwt_auth.get_header(request)
+            if header is None:
+                return None
+
+            raw_token = jwt_auth.get_raw_token(header)
+            if raw_token is None:
+                return None
+
+            # Validate token
+            validated_token = jwt_auth.get_validated_token(raw_token)
+
+            # If it's a client token, skip user loading
+            scope = validated_token.get("scope")
+            if scope == "client":
+                # Set token on request for views to use
+                request.auth = validated_token
+                request.auth_scope = "client"
+                request.user = None  # No user for client tokens
+                return None  # Let the view handle it
+
+            # For non-client tokens, proceed with normal authentication
             auth_result = self.authenticator.authenticate(request)
         except InvalidToken:
             return self._build_error_response(
