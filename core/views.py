@@ -214,13 +214,21 @@ def _get_client_cookie_params():
         secure = getattr(settings, "SESSION_COOKIE_SECURE", False)
         samesite = getattr(settings, "SESSION_COOKIE_SAMESITE", "Lax")
 
-    return {
+    params = {
         "max_age": max_age,
         "httponly": True,
         "secure": secure,
         "samesite": samesite,
         "path": "/",
     }
+    
+    # Log para debug (remover após identificar o problema)
+    logger.info(
+        f"[CLIENT_COOKIE] ENV={env}, secure={secure}, samesite={samesite}, "
+        f"max_age={max_age}, httponly=True, path=/"
+    )
+    
+    return params
 
 
 APPOINTMENT_SERIES_ERRORS_TOTAL = _get_or_create_counter(
@@ -2643,6 +2651,11 @@ class ClientSessionRefreshView(APIView):
     )
     def post(self, request):
         raw = request.COOKIES.get("client_session")
+        
+        # Debug: log todos os cookies recebidos
+        all_cookies = list(request.COOKIES.keys())
+        logger.info(f"[CLIENT_REFRESH] Cookies recebidos: {all_cookies}")
+        
         if not raw:
             CLIENT_ACCESS_EVENTS_TOTAL.labels(
                 event="refresh",
