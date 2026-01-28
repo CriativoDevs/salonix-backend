@@ -66,6 +66,32 @@ class FounderCheckoutTest(TestCase):
         self.assertEqual(kwargs["metadata"]["plan_code"], "founder")
 
     @patch("payments.views.stripe_utils.get_stripe")
+    @patch("payments.views.stripe_utils.get_price_id_for_plan")
+    @patch("users.services.FounderService.can_assign_founder")
+    def test_create_checkout_session_founder_annual(
+        self, mock_can_assign, mock_get_price, mock_get_stripe
+    ):
+        mock_can_assign.return_value = True
+        mock_get_price.return_value = "price_founder_yearly_123"
+
+        mock_stripe = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "http://checkout.url"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
+
+        url = reverse("payments:create_checkout_session")
+        data = {"plan": "founder", "interval": "annual"}
+
+        response = self.client.post(url, data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["checkout_url"], "http://checkout.url")
+
+        # Verify get_price_id_for_plan was called with interval='annual'
+        mock_get_price.assert_called_with("founder", interval="annual")
+
+    @patch("payments.views.stripe_utils.get_stripe")
     @patch("users.services.FounderService.can_assign_founder")
     def test_create_checkout_session_founder_denied(
         self, mock_can_assign, mock_get_stripe
@@ -199,3 +225,105 @@ class FounderCheckoutTest(TestCase):
         self.tenant.refresh_from_db()
         self.assertFalse(self.tenant.is_founder)  # Should remain False
         self.assertEqual(self.tenant.plan_tier, "standard")
+
+    @patch("payments.views.stripe_utils.get_plan_code_from_price")
+    @patch("payments.views.stripe.Webhook.construct_event")
+    def test_webhook_subscription_deleted_removes_founder_status(
+        self, mock_construct_event, mock_get_plan
+    ):
+        """
+        Testa que customer.subscription.deleted remove is_founder quando tenant é Founder.
+        Regra 6 de founderplan.md: "O status Founder é perdido definitivamente"
+        """
+        # Setup: Tenant é Founder ativo
+        self.tenant.is_founder = True
+        self.tenant.plan_tier = "founder"
+        self.tenant.save()
+
+        # Mock get_plan_code_from_price para retornar "founder"
+        mock_get_plan.return_value = "founder"
+
+        # Payload do evento customer.subscription.deleted
+        payload = {
+            "id": "evt_deleted_123",
+            "type": "customer.subscription.deleted",
+            "data": {
+                "object": {
+                    "id": "sub_founder_123",
+                    "customer": "cus_test123",
+                    "status": "canceled",
+                    "metadata": {"plan_code": "founder", "user_id": str(self.user.id)},
+                    "items": {"data": [{"price": {"id": "price_founder_123"}}]},
+                }
+            },
+        }
+
+        # Mock event
+        mock_event = MagicMock()
+        mock_event.__getitem__.side_effect = payload.__getitem__
+        mock_event.get.side_effect = lambda key, default=None: payload.get(key, default)
+        mock_construct_event.return_value = mock_event
+
+        # Chamar webhook
+        url = reverse("payments:stripe_webhook")
+        response = self.client.post(
+            url, json.dumps(payload), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        # Verificar que is_founder foi removido
+        self.tenant.refresh_from_db()
+        self.assertFalse(
+            self.tenant.is_founder,
+            "is_founder deve ser False após subscription.deleted de plano Founder",
+        )
+
+    @patch("payments.views.stripe_utils.get_plan_code_from_price")
+    @patch("payments.views.stripe.Webhook.construct_event")
+    def test_webhook_subscription_deleted_preserves_non_founder(
+        self, mock_construct_event, mock_get_plan
+    ):
+        """
+        Testa que customer.subscription.deleted NÃO remove is_founder se o plano não for Founder.
+        """
+        # Setup: Tenant NÃO é Founder (mas tem outro plano)
+        self.tenant.is_founder = False
+        self.tenant.plan_tier = "basic"
+        self.tenant.save()
+
+        # Mock get_plan_code_from_price para retornar "basic"
+        mock_get_plan.return_value = "basic"
+
+        # Payload do evento customer.subscription.deleted
+        payload = {
+            "id": "evt_deleted_456",
+            "type": "customer.subscription.deleted",
+            "data": {
+                "object": {
+                    "id": "sub_basic_456",
+                    "customer": "cus_test123",
+                    "status": "canceled",
+                    "metadata": {"plan_code": "basic", "user_id": str(self.user.id)},
+                    "items": {"data": [{"price": {"id": "price_basic_123"}}]},
+                }
+            },
+        }
+
+        # Mock event
+        mock_event = MagicMock()
+        mock_event.__getitem__.side_effect = payload.__getitem__
+        mock_event.get.side_effect = lambda key, default=None: payload.get(key, default)
+        mock_construct_event.return_value = mock_event
+
+        # Chamar webhook
+        url = reverse("payments:stripe_webhook")
+        response = self.client.post(
+            url, json.dumps(payload), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        # Verificar que is_founder permanece False (não foi tocado)
+        self.tenant.refresh_from_db()
+        self.assertFalse(self.tenant.is_founder)

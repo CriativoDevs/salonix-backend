@@ -4,6 +4,7 @@ Serviços para gerenciamento de créditos de comunicação.
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any
 from django.db import transaction, models
@@ -88,7 +89,7 @@ class CreditService:
         description: str,
         reference_id: Optional[str] = None,
         created_by: Optional[Any] = None,
-        expires_at: Optional[timezone.datetime] = None,
+        expires_at: Optional[datetime] = None,
     ) -> CommLedger:
         """
         Adiciona créditos ao tenant.
@@ -251,7 +252,30 @@ class FounderService:
         Returns:
             Dict com 'total_limit', 'used_count' e 'remaining_count'.
         """
-        used_count = Tenant.objects.filter(is_founder=True, is_active=True).count()
+        # Contar HISTÓRICO de quantos tenants JÁ USARAM Founder (não apenas os ativos)
+        # Busca em subscriptions para pegar histórico, não apenas is_founder atual
+        try:
+            from payments.models import Subscription
+            from payments.stripe_utils import get_plan_code_from_price
+
+            # Pega todos os tenants que já tiveram subscription Founder alguma vez
+            founder_subscriptions = Subscription.objects.filter(
+                price_id__isnull=False
+            ).select_related("user__tenant")
+
+            founder_tenant_ids = set()
+            for sub in founder_subscriptions:
+                if sub.price_id:
+                    plan = get_plan_code_from_price(sub.price_id)
+                    if plan == "founder" and sub.user and sub.user.tenant:
+                        founder_tenant_ids.add(sub.user.tenant.id)
+
+            used_count = len(founder_tenant_ids)
+        except (ImportError, Exception) as e:
+            # Fallback: se erro ao importar ou buscar subscriptions, usa o método antigo
+            print(f"[FounderService] Erro ao buscar histórico: {e}. Usando fallback.")
+            used_count = Tenant.objects.filter(is_founder=True, is_active=True).count()
+
         remaining_count = max(0, cls.FOUNDER_LIMIT - used_count)
 
         print(
@@ -265,7 +289,73 @@ class FounderService:
         }
 
     @classmethod
-    def can_assign_founder(cls) -> bool:
-        """Verifica se ainda há vagas para o plano Founder."""
+    def can_assign_founder(cls, tenant: Optional[Tenant] = None) -> bool:
+        """
+        Verifica se ainda há vagas para o plano Founder e se o tenant pode ser atribuído.
+
+        Args:
+            tenant: Tenant opcional. Se fornecido, verifica se o tenant já teve Founder.
+
+        Returns:
+            bool: True se há vagas E (sem tenant ou tenant é elegível)
+        """
         availability = cls.get_availability()
-        return availability["remaining_count"] > 0
+
+        if availability["remaining_count"] <= 0:
+            print("[FounderService.can_assign_founder] Limite de Founders atingido")
+            return False
+
+        if tenant:
+            print(
+                f"[FounderService.can_assign_founder] Validando tenant: {tenant.slug}, is_founder={tenant.is_founder}"
+            )
+
+            # Se já é founder ativo, mantém elegibilidade para renovação
+            if tenant.is_founder:
+                print(
+                    f"[FounderService.can_assign_founder] {tenant.slug} é Founder ativo - mantém elegibilidade"
+                )
+                return True
+
+            # Verificar se já teve assinatura Founder no passado
+            # Se sim, nega o direito de volta (oferta única por tenant)
+            try:
+                from payments.models import Subscription
+                from payments.stripe_utils import get_plan_code_from_price
+
+                # Busca ALL assinaturas históricas do tenant (via users)
+                subs = Subscription.objects.filter(user__tenant=tenant)
+                print(
+                    f"[FounderService.can_assign_founder] {tenant.slug} possui {subs.count()} subscriptions no histórico"
+                )
+
+                for sub in subs:
+                    print(
+                        f"[FounderService.can_assign_founder]   Subscription: price_id={sub.price_id}, status={sub.status}"
+                    )
+                    if sub.price_id:
+                        plan = get_plan_code_from_price(sub.price_id)
+                        print(
+                            f"[FounderService.can_assign_founder]   -> Plano detectado: {plan}"
+                        )
+                        if plan == "founder":
+                            # Já teve founder no passado => perdeu o direito para sempre
+                            print(
+                                f"[FounderService.can_assign_founder] {tenant.slug} JÁ TEVE FOUNDER NO PASSADO - NEGANDO"
+                            )
+                            return False
+            except ImportError:
+                print(
+                    f"[FounderService.can_assign_founder] Erro ao importar - assumindo elegível"
+                )
+                # Se erro ao importar, assume que pode (fail-open para não bloquear checkout)
+                pass
+
+            print(
+                f"[FounderService.can_assign_founder] {tenant.slug} é elegível para Founder"
+            )
+
+            return True
+
+        # Sem tenant: apenas validação de limite global
+        return True
