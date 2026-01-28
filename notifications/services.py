@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 def send_customer_pwa_invite(
-    tenant: Tenant, customer, invited_by: Optional[Any] = None, link: Optional[str] = None
+    tenant: Tenant,
+    customer,
+    invited_by: Optional[Any] = None,
+    link: Optional[str] = None,
 ) -> bool:
     """Envia convite do PWA Cliente por e-mail com link de acesso.
 
@@ -54,7 +57,7 @@ def send_customer_pwa_invite(
     <div style="font-family: Arial, sans-serif;">
       <p>Olá,</p>
       <p>Para acessar sua área de cliente no <strong>{getattr(tenant, 'name', 'TimelyOne')}</strong>, utilize o link abaixo:</p>
-      <p><a href="{link}" style="background:#2563eb;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none">Acessar</a></p>
+      <p><a href="{link}" style="color:#2563eb;text-decoration:underline">Acessar</a></p>
       <p>Se você não solicitou este acesso, ignore esta mensagem.</p>
       <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
       <p style="font-size: 12px; color: #777;">
