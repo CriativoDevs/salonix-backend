@@ -2,9 +2,10 @@ import stripe
 import logging
 from decimal import Decimal
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
+
 from django.conf import settings
-from django.contrib.auth import get_user_model
-from typing import Dict, List, Optional, Any
+
 from .models import PaymentCustomer, Subscription, CreditPayment
 from users.models import Tenant
 from .stripe_utils import (
@@ -13,19 +14,22 @@ from .stripe_utils import (
     get_plan_code_from_price,
 )
 
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractBaseUser as UserType
+else:
+    UserType = Any
+
 logger = logging.getLogger(__name__)
 
 # Configurar Stripe
 stripe.api_key = settings.STRIPE_API_KEY
-
-User = get_user_model()
 
 
 class StripePaymentService:
     """Serviço para gerenciar pagamentos com Stripe."""
 
     @staticmethod
-    def get_or_create_customer(user: User) -> str:
+    def get_or_create_customer(user: UserType) -> str:
         """Obtém ou cria um customer no Stripe para o usuário."""
         try:
             payment_customer = PaymentCustomer.objects.get(user=user)
@@ -53,7 +57,7 @@ class StripePaymentService:
 
     @staticmethod
     def create_credit_payment_intent(
-        user: User, tenant: Tenant, credits_amount: Decimal, price_id: str
+        user: UserType, tenant: Tenant, credits_amount: Decimal, price_id: str
     ) -> Dict[str, Any]:
         """
         Cria um PaymentIntent no Stripe para compra de créditos.
@@ -196,7 +200,7 @@ class CreditPurchaseService:
 
     @classmethod
     def create_payment_intent(
-        cls, user: User, tenant: Tenant, price_id: str
+        cls, user: UserType, tenant: Tenant, price_id: str
     ) -> Dict[str, Any]:
         """
         Cria um PaymentIntent para compra de créditos.
@@ -263,9 +267,20 @@ class SubscriptionService:
 
     @classmethod
     def get_available_plans(
-        cls, current_plan: Optional[str] = None
+        cls, current_plan: Optional[str] = None, tenant: Optional["Tenant"] = None
     ) -> List[Dict[str, Any]]:
-        """Retorna lista de planos disponíveis com informações de upgrade."""
+        """
+        Retorna lista de planos disponíveis com informações de upgrade.
+
+        Args:
+            current_plan: Código do plano atual do usuário
+            tenant: Tenant do usuário para verificar elegibilidade (esp. para Founder)
+
+        Returns:
+            Lista de planos com informações de disponibilidade
+        """
+        from users.services import FounderService
+
         plans = []
         plan_order = ["basic", "standard", "pro"]
         current_index = (
@@ -288,14 +303,47 @@ class SubscriptionService:
                     "comm_auto_renew": bool(plan_info.get("comm_auto_renew", False)),
                     "is_current": plan_code == current_plan,
                     "can_upgrade": i > current_index,
+                    "is_available": True,  # Planos padrão sempre disponíveis
                 }
             )
 
+        # Adicionar plano Founder se disponível globalmente
+        founder_available = FounderService.can_assign_founder(tenant=tenant)
+        if founder_available:
+            plans.insert(
+                0,
+                {
+                    "plan_code": "founder",
+                    "name": "Founder",
+                    "price_monthly": Decimal("15.00"),
+                    "features": [
+                        "Preço Vitalício",
+                        "PWA Admin, Staff e Client",
+                        "Relatórios: Visão Geral",
+                        "€5 de crédito para comunicações",
+                    ],
+                    "credits_included": int(Decimal("5.00")),
+                    "comm_extra_allowed": True,
+                    "comm_auto_renew": False,
+                    "is_current": current_plan == "founder",
+                    "can_upgrade": False,  # Founder não é upgrade, é uma oferta única
+                    "is_available": founder_available,
+                },
+            )
+
+        print(
+            f"[get_available_plans] tenant={tenant}, founder_available={founder_available}, plans={[p['plan_code'] for p in plans]}"
+        )
         return plans
 
     @classmethod
     def create_checkout_session(
-        cls, user: User, plan: str, success_url: str, cancel_url: str, interval: str = "monthly"
+        cls,
+        user: UserType,
+        plan: str,
+        success_url: str,
+        cancel_url: str,
+        interval: str = "monthly",
     ) -> Dict[str, Any]:
         """Cria uma sessão de checkout para assinatura."""
         if plan not in cls.AVAILABLE_PLANS:
@@ -304,7 +352,9 @@ class SubscriptionService:
         # Obter price_id do Stripe
         price_id = get_price_id_for_plan(plan, interval=interval)
         if not price_id:
-            raise ValueError(f"Price ID não encontrado para o plano: {plan} ({interval})")
+            raise ValueError(
+                f"Price ID não encontrado para o plano: {plan} ({interval})"
+            )
 
         # Obter ou criar customer
         customer_id = get_or_create_customer(user)
@@ -317,7 +367,7 @@ class SubscriptionService:
             if trial_days is None:
                 trial_days = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
 
-            subscription_data = {
+            subscription_data: Dict[str, Any] = {
                 "metadata": {
                     "user_id": user.id,
                     "tenant_id": user.tenant.id if user.tenant else None,
@@ -363,7 +413,7 @@ class SubscriptionService:
             raise Exception(f"Erro ao criar sessão de checkout: {str(e)}")
 
     @classmethod
-    def create_portal_session(cls, user: User, return_url: str) -> Dict[str, Any]:
+    def create_portal_session(cls, user: UserType, return_url: str) -> Dict[str, Any]:
         """Cria uma sessão do portal de billing."""
         customer_id = get_or_create_customer(user)
 
@@ -382,7 +432,7 @@ class SubscriptionService:
             raise Exception(f"Erro ao criar sessão do portal: {str(e)}")
 
     @classmethod
-    def get_current_subscription(cls, user: User) -> Optional[Dict[str, Any]]:
+    def get_current_subscription(cls, user: UserType) -> Optional[Dict[str, Any]]:
         try:
             subscription = (
                 Subscription.objects.filter(
@@ -401,15 +451,22 @@ class SubscriptionService:
             )
 
             price_id = None
+            interval = "month"
             try:
-                price_id = stripe_sub.items.data[0].price.id
+                price_obj = stripe_sub.items.data[0].price
+                price_id = price_obj.id
+                if hasattr(price_obj, "recurring") and hasattr(
+                    price_obj.recurring, "interval"
+                ):
+                    interval = price_obj.recurring.interval
             except Exception:
                 price_id = None
+                interval = "month"
 
             plan_code = None
             try:
-                md = getattr(stripe_sub, "metadata", {})
-                plan_code = md.get("plan_code") or md.get("plan")
+                metadata: Dict[str, Any] = getattr(stripe_sub, "metadata", {}) or {}
+                plan_code = metadata.get("plan_code") or metadata.get("plan")
                 if plan_code:
                     plan_code = plan_code.lower()
             except Exception:
@@ -477,6 +534,7 @@ class SubscriptionService:
                 "cancel_at_period_end": cancel_at_period_end,
                 "next_billing_date": next_billing,
                 "price_monthly": plan_info.get("price_monthly", Decimal("0.00")),
+                "interval": interval,
             }
 
         except Subscription.DoesNotExist:
@@ -523,7 +581,9 @@ class SubscriptionService:
                 return None
 
     @classmethod
-    def cancel_subscription(cls, user: User, cancel_at_period_end: bool = True) -> bool:
+    def cancel_subscription(
+        cls, user: UserType, cancel_at_period_end: bool = True
+    ) -> bool:
         """Cancela a assinatura do usuário."""
         try:
             subscription = Subscription.objects.get(
@@ -557,7 +617,7 @@ class SubscriptionService:
             return False
 
     @classmethod
-    def reactivate_subscription(cls, user: User) -> bool:
+    def reactivate_subscription(cls, user: UserType) -> bool:
         """Reativa uma assinatura cancelada."""
         try:
             subscription = Subscription.objects.get(
@@ -589,7 +649,7 @@ class BillingService:
     """Serviço para gerenciar informações de billing."""
 
     @classmethod
-    def get_billing_overview(cls, user: User) -> Dict[str, Any]:
+    def get_billing_overview(cls, user: UserType) -> Dict[str, Any]:
         """Retorna visão geral completa do billing do usuário."""
         current_subscription = SubscriptionService.get_current_subscription(user)
         available_plans = SubscriptionService.get_available_plans(
@@ -649,7 +709,7 @@ class BillingService:
         }
 
     @classmethod
-    def get_payment_history(cls, user: User, limit: int = 50) -> Dict[str, Any]:
+    def get_payment_history(cls, user: UserType, limit: int = 50) -> Dict[str, Any]:
         """Retorna histórico de pagamentos do usuário."""
         transactions = []
         total_spent = Decimal("0.00")

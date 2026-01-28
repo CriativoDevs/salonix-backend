@@ -4,9 +4,15 @@ from decimal import Decimal
 
 class CheckoutSessionRequestSerializer(serializers.Serializer):
     plan = serializers.ChoiceField(
-        choices=["basic", "standard", "pro"],
+        choices=["basic", "standard", "pro", "founder"],
         required=False,
         help_text="Plano desejado",
+    )
+    interval = serializers.ChoiceField(
+        choices=["monthly", "annual"],
+        required=False,
+        default="monthly",
+        help_text="Ciclo de faturamento (monthly/annual)",
     )
 
 
@@ -60,6 +66,9 @@ class AvailablePlansSerializer(serializers.Serializer):
     can_upgrade = serializers.BooleanField(
         help_text="Se pode fazer upgrade para este plano"
     )
+    is_available = serializers.BooleanField(
+        help_text="Se o plano está disponível para o usuário (false = oferta encerrada ou já utilizada)"
+    )
 
 
 class CurrentSubscriptionSerializer(serializers.Serializer):
@@ -78,6 +87,9 @@ class CurrentSubscriptionSerializer(serializers.Serializer):
     )
     price_monthly = serializers.DecimalField(
         max_digits=10, decimal_places=2, help_text="Preço mensal"
+    )
+    interval = serializers.CharField(
+        help_text="Ciclo de cobrança (month/year)", default="month"
     )
 
 

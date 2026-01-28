@@ -130,10 +130,12 @@ class Tenant(models.Model):
     PLAN_BASIC = "basic"
     PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
+    PLAN_FOUNDER = "founder"
     PLAN_CHOICES = [
         (PLAN_BASIC, "Basic"),
         (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
+        (PLAN_FOUNDER, "Founder"),
     ]
 
     plan_tier = models.CharField(

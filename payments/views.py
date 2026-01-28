@@ -57,6 +57,8 @@ class CreateCheckoutSession(APIView):
         stripe_utils.get_stripe()
 
         requested_plan = (request.data.get("plan") or "basic").lower()
+        requested_interval = (request.data.get("interval") or "monthly").lower()
+
         allowed_plans = {
             "basic",
             "standard",
@@ -67,12 +69,30 @@ class CreateCheckoutSession(APIView):
         if requested_plan not in allowed_plans:
             return Response({"detail": "Plano inválido."}, status=400)
 
-        if requested_plan == "founder" and not FounderService.can_assign_founder():
-            return Response(
-                {"detail": "O plano Founder não está mais disponível."}, status=400
-            )
+        # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
+        staff = getattr(request.user, "staff_member", None)
+        tenant = getattr(request.user, "tenant", None)
+        if not tenant:
+            return Response({"detail": "Tenant não associado."}, status=403)
 
-        price_id = stripe_utils.get_price_id_for_plan(requested_plan)
+        # Validar elegibilidade do Founder para este tenant específico
+
+        if requested_plan == "founder":
+            print(
+                f"[CreateCheckoutSession] Tentativa de checkout Founder para tenant {tenant.slug}"
+            )
+            can_assign = FounderService.can_assign_founder(tenant=tenant)
+            print(
+                f"[CreateCheckoutSession] can_assign_founder({tenant.slug}) = {can_assign}"
+            )
+            if not can_assign:
+                return Response(
+                    {"detail": "O plano Founder não está mais disponível para você."},
+                    status=400,
+                )
+        price_id = stripe_utils.get_price_id_for_plan(
+            requested_plan, interval=requested_interval
+        )
         if not price_id:
             return Response(
                 {"detail": "Price ID não configurado para o plano informado."},
@@ -81,11 +101,6 @@ class CreateCheckoutSession(APIView):
 
         canonical_plan = requested_plan
 
-        # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
-        staff = getattr(request.user, "staff_member", None)
-        tenant = getattr(request.user, "tenant", None)
-        if not tenant:
-            return Response({"detail": "Tenant não associado."}, status=403)
         if (
             not staff
             or staff.role != TenantStaffMember.Role.OWNER
@@ -388,10 +403,26 @@ class StripeWebhookView(APIView):
                 if desired_plan and tenant.plan_tier != desired_plan:
                     old_plan = tenant.plan_tier
                     tenant.plan_tier = desired_plan
-                    tenant.save(update_fields=["plan_tier", "updated_at"])
-                    logger.info(
-                        f"Updated tenant {tenant.slug} plan_tier: {old_plan} -> {desired_plan} (status: {status})"
-                    )
+
+                    # Se o tenant era founder e mudou de plano, perde o status de founder
+                    # Só removemos se detectarmos explicitamente um plano diferente (para evitar remover em caso de erro de detecção)
+                    if (
+                        tenant.is_founder
+                        and detected_plan
+                        and detected_plan != "founder"
+                    ):
+                        tenant.is_founder = False
+                        tenant.save(
+                            update_fields=["plan_tier", "updated_at", "is_founder"]
+                        )
+                        logger.info(
+                            f"Updated tenant {tenant.slug} plan_tier: {old_plan} -> {desired_plan} (Removed Founder status)"
+                        )
+                    else:
+                        tenant.save(update_fields=["plan_tier", "updated_at"])
+                        logger.info(
+                            f"Updated tenant {tenant.slug} plan_tier: {old_plan} -> {desired_plan} (status: {status})"
+                        )
                 else:
                     logger.info(
                         f"Tenant {tenant.slug} plan_tier remains {tenant.plan_tier} (status: {status}, desired: {desired_plan})"
@@ -785,6 +816,17 @@ class StripeWebhookView(APIView):
                             from users.models import CommLedger
 
                             tenant = pc.user.tenant
+
+                            # Remove status Founder se for um cancelamento de plano Founder
+                            # Regra 6 de founderplan.md: "O status Founder é perdido definitivamente"
+                            if plan_code == "founder" and tenant.is_founder:
+                                tenant.is_founder = False
+                                tenant.save(update_fields=["is_founder", "updated_at"])
+                                logger.info(
+                                    f"[WEBHOOK] Removed Founder status from tenant {tenant.slug} "
+                                    f"(subscription.deleted: {subscription_id})"
+                                )
+
                             ref_prefix = f"trial_bonus:{subscription_id}:"
                             bonus_entries = CommLedger.objects.filter(
                                 tenant=tenant,
@@ -1083,7 +1125,8 @@ class AvailablePlansView(APIView):
                 current_subscription["plan_code"] if current_subscription else None
             )
 
-            plans = SubscriptionService.get_available_plans(current_plan)
+            tenant = getattr(request.user, "tenant", None)
+            plans = SubscriptionService.get_available_plans(current_plan, tenant=tenant)
 
             return Response(plans, status=200)
 

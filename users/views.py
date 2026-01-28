@@ -288,6 +288,32 @@ class FounderAvailabilityView(APIView):
     )
     def get(self, request):
         availability = FounderService.get_availability()
+
+        # Se usuário autenticado, verificar elegibilidade pessoal
+        if (
+            request.user
+            and request.user.is_authenticated
+            and hasattr(request.user, "tenant")
+        ):
+            tenant = request.user.tenant
+            logger.info(
+                f"[FounderAvailability] User {request.user.email} tenant {tenant.slug}: "
+                f"is_founder={tenant.is_founder}, plan_tier={tenant.plan_tier}"
+            )
+            can_assign = FounderService.can_assign_founder(tenant)
+            logger.info(
+                f"[FounderAvailability] Tenant {tenant.slug} can_assign_founder: {can_assign}"
+            )
+            if not can_assign:
+                # Se não for elegível (ex: já teve founder e cancelou), mostramos 0 vagas restantes para ele
+                # Isso fará o frontend esconder o card do Founder
+                original_remaining = availability["remaining_count"]
+                availability["remaining_count"] = 0
+                logger.info(
+                    f"[FounderAvailability] Tenant {tenant.slug} NOT ELIGIBLE - "
+                    f"Overriding remaining_count from {original_remaining} to 0"
+                )
+
         return Response(availability, status=status.HTTP_200_OK)
 
 
