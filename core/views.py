@@ -480,6 +480,41 @@ class PublicSlotListView(ListAPIView):
         return qs.order_by("start_time")
 
 
+class PublicTenantDetailView(APIView):
+    """
+    GET /api/public/tenants/<slug>/
+
+    Endpoint PÚBLICO para obter informações básicas do tenant.
+    NÃO requer autenticação.
+
+    Retorna apenas dados públicos: nome, endereço, contato, branding.
+    NÃO expõe: feature flags, plan_tier, dados sensíveis.
+
+    Usado por clientes PWA para carregar informações do salão sem autenticação.
+    """
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        responses={200: "users.serializers.TenantPublicSerializer"},
+        description="Retorna informações públicas do tenant (nome, endereço, logo, contato).",
+    )
+    def get(self, request, slug):
+        from users.models import Tenant
+        from users.serializers import TenantPublicSerializer
+
+        try:
+            tenant = Tenant.objects.get(slug=slug, is_active=True)
+        except Tenant.DoesNotExist:
+            return Response(
+                {"detail": "Tenant não encontrado."},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = TenantPublicSerializer(tenant)
+        return Response(serializer.data, status=drf_status.HTTP_200_OK)
+
+
 class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer

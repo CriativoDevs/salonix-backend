@@ -815,6 +815,58 @@ class TenantMetaSerializer(serializers.ModelSerializer):
         }
 
 
+class TenantPublicSerializer(serializers.ModelSerializer):
+    """
+    Serializer para informações PÚBLICAS do tenant (sem feature flags ou dados sensíveis).
+    Usado pelo endpoint /api/public/tenants/{slug}/
+
+    SEGURANÇA: Expõe apenas dados que podem ser vistos por qualquer pessoa (incluindo não-autenticados).
+    """
+
+    logo_url = serializers.SerializerMethodField()
+    profile = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tenant
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "logo_url",
+            "favicon_url",
+            "app_name",
+            "timezone",
+            "currency",
+            "preferred_language",
+            "address_street",
+            "address_number",
+            "address_complement",
+            "address_neighborhood",
+            "address_city",
+            "address_state",
+            "address_zip",
+            "address_country",
+            "profile",
+        ]
+        read_only_fields = fields
+
+    @extend_schema_field(OpenApiTypes.URI)
+    def get_logo_url(self, obj):
+        """Retorna a URL do logo (upload ou URL externa)"""
+        return obj.get_logo_url
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_profile(self, obj):
+        """
+        Retorna dados públicos de contato.
+        Não expõe email do owner se contact_email não estiver definido.
+        """
+        return {
+            "email": getattr(obj, "contact_email", None),
+            "phone": getattr(obj, "contact_phone", None),
+        }
+
+
 class TenantProfileSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(

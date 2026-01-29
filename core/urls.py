@@ -18,6 +18,7 @@ from core.views import (
     PublicServiceListView,
     PublicProfessionalListView,
     PublicSlotListView,
+    PublicTenantDetailView,
     SalonAppointmentViewSet,
     SalonCustomerViewSet,
     ServiceViewSet,
@@ -114,6 +115,11 @@ urlpatterns = [
     path("public/services/", PublicServiceListView.as_view()),
     path("public/professionals/", PublicProfessionalListView.as_view()),
     path("public/slots/", PublicSlotListView.as_view()),
+    path(
+        "public/tenants/<slug:slug>/",
+        PublicTenantDetailView.as_view(),
+        name="public-tenant-detail",
+    ),
     path(
         "public/appointments/<int:pk>/ics/",
         AppointmentICSDownloadPublicView.as_view(),
