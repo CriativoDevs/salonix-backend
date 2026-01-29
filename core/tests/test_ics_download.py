@@ -64,7 +64,8 @@ class TestICSGenerator:
         assert "END:VCALENDAR" in ics_content
         assert "BEGIN:VEVENT" in ics_content
         assert "END:VEVENT" in ics_content
-        assert "SUMMARY:Teste Service - Teste Professional" in ics_content
+        # SUMMARY agora inclui o nome do tenant ao invés do professional
+        assert "SUMMARY:Teste Service - Test Default Salon" in ics_content
         assert "DESCRIPTION:" in ics_content
         assert "DTSTART:" in ics_content
         assert "DTEND:" in ics_content

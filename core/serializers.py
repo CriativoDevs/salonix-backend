@@ -423,6 +423,7 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
     client_username = serializers.CharField(source="client.username", read_only=True)
     client_email = serializers.EmailField(source="client.email", read_only=True)
     customer = SalonCustomerMiniSerializer(read_only=True)
+    ics_token = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
@@ -437,8 +438,18 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
             "service",
             "professional",
             "slot",
+            "ics_token",
         ]
         read_only_fields = fields
+
+    def get_ics_token(self, obj):
+        """Gerar token HMAC para download público de ICS."""
+        from core.utils.ics import compute_public_ics_token
+
+        try:
+            return compute_public_ics_token(obj.id, obj.slot.start_time)
+        except Exception:
+            return None
 
 
 class BulkAppointmentSlotSerializer(serializers.Serializer):
