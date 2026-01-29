@@ -24,7 +24,6 @@ from core.views import (
     ScheduleSlotViewSet,
     ClientAccessLinkView,
     ClientAccessAcceptView,
-    ClientSessionRefreshView,
     ClientLoginView,
     ClientSetPasswordView,
     PublicClientAccessLinkView,
@@ -69,11 +68,6 @@ urlpatterns = [
         "clients/access-accept/",
         ClientAccessAcceptView.as_view(),
         name="clients_access_accept",
-    ),
-    path(
-        "clients/session/refresh/",
-        ClientSessionRefreshView.as_view(),
-        name="clients_session_refresh",
     ),
     path(
         "clients/login/",
