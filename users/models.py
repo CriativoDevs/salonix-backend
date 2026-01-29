@@ -273,8 +273,9 @@ class Tenant(models.Model):
         return self.can_use_basic_reports()
 
     def can_use_basic_reports(self):
-        """Verifica se pode usar relatórios básicos/overview (Basic+)"""
+        """Verifica se pode usar relatórios básicos/overview (Todos os planos)"""
         return self.reports_enabled or self.plan_tier in [
+            self.PLAN_FOUNDER,  # Conforme Decision Brief: todos têm acesso
             self.PLAN_BASIC,
             self.PLAN_STANDARD,
             self.PLAN_PRO,

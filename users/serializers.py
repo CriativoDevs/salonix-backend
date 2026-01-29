@@ -645,6 +645,16 @@ class UserSelfSerializer(serializers.Serializer):
     theme_preference = serializers.CharField(read_only=True)
     language_preference = serializers.CharField(read_only=True)
     onboarding_status = serializers.JSONField(read_only=True)
+    is_owner = serializers.SerializerMethodField()
+    staff_role = serializers.SerializerMethodField()
+
+    def get_is_owner(self, instance):
+        """Retorna True se o usuário é owner do tenant."""
+        return instance.is_owner
+
+    def get_staff_role(self, instance):
+        """Retorna o role do usuário (owner, manager, collaborator) ou None."""
+        return instance.staff_role
 
     def to_representation(self, instance):
         return {
@@ -656,6 +666,8 @@ class UserSelfSerializer(serializers.Serializer):
             "theme_preference": instance.theme_preference,
             "language_preference": getattr(instance, "language_preference", "system"),
             "onboarding_status": instance.onboarding_status,
+            "is_owner": self.get_is_owner(instance),
+            "staff_role": self.get_staff_role(instance),
         }
 
 

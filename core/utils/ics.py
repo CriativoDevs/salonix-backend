@@ -73,7 +73,13 @@ class ICSGenerator:
         end_utc = end_time.astimezone(dt_timezone.utc)
 
         # Informações do agendamento
-        summary = f"{appointment.service.name} - {appointment.professional.name}"
+        # Incluir nome do tenant no summary para identificação no calendário
+        tenant_name = appointment.tenant.name if appointment.tenant else ""
+        if tenant_name:
+            summary = f"{appointment.service.name} - {tenant_name}"
+        else:
+            summary = f"{appointment.service.name} - {appointment.professional.name}"
+
         description = ICSGenerator._build_description(appointment)
         location = ICSGenerator._build_location(appointment)
 
