@@ -2719,6 +2719,60 @@ class ClientLoginView(APIView):
         return Response(tokens, status=drf_status.HTTP_200_OK)
 
 
+class ClientTokenRefreshView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        request={"refresh": OpenApiTypes.STR},
+        responses={200: OpenApiTypes.OBJECT},
+        description="Renova access token de cliente usando refresh token.",
+    )
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+        if not refresh_token:
+            raise ValidationError("Refresh token é obrigatório")
+
+        try:
+            from rest_framework_simplejwt.tokens import RefreshToken
+
+            refresh = RefreshToken(refresh_token)
+
+            # Verificar se é token de cliente
+            scope = refresh.get("scope")
+            if scope != "client":
+                raise ValidationError("Token não é de cliente")
+
+            tenant_id = refresh.get("tenant_id")
+            customer_id = refresh.get("customer_id")
+
+            if not tenant_id or not customer_id:
+                raise ValidationError("Token inválido: dados ausentes")
+
+            # Validar se tenant e customer ainda existem
+            try:
+                tenant = Tenant.objects.get(id=tenant_id, is_active=True)
+                customer = SalonCustomer.objects.get(
+                    id=customer_id, tenant=tenant, is_active=True
+                )
+            except (Tenant.DoesNotExist, SalonCustomer.DoesNotExist):
+                raise ValidationError("Tenant ou cliente inválido")
+
+            # Gerar novo access token
+            access_token = refresh.access_token
+            access_token["scope"] = "client"
+            access_token["tenant_id"] = str(tenant.id)
+            access_token["tenant_slug"] = tenant.slug
+            access_token["customer_id"] = customer.id
+
+            return Response(
+                {"access": str(access_token), "refresh": str(refresh)},
+                status=drf_status.HTTP_200_OK,
+            )
+        except Exception as e:
+            raise ValidationError(f"Token inválido: {str(e)}")
+
+
 class ClientSetPasswordView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # No auto-authentication, we handle JWT manually

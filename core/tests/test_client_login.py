@@ -116,3 +116,63 @@ class TestClientLoginFlow:
         assert (
             response.status_code == status.HTTP_400_BAD_REQUEST
         )  # ValidationError "Sessão ausente"
+
+    def test_client_token_refresh_success(self):
+        """Test refresh token para cliente"""
+        self.customer.set_password("securepass123")
+        self.customer.save()
+
+        # 1. Login para obter tokens
+        url = reverse("clients_login")
+        data = {
+            "email": "client@test.com",
+            "password": "securepass123",
+            "tenant_slug": "test-salon",
+        }
+        response = self.client.post(url, data, format="json")
+        assert response.status_code == status.HTTP_200_OK
+        refresh_token = response.data["refresh"]
+
+        # 2. Usar refresh token para obter novo access token
+        url = reverse("clients_token_refresh")
+        response = self.client.post(url, {"refresh": refresh_token}, format="json")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "access" in response.data
+        assert "refresh" in response.data
+
+    def test_client_token_refresh_invalid_token(self):
+        """Test refresh com token inválido"""
+        url = reverse("clients_token_refresh")
+        response = self.client.post(url, {"refresh": "invalid_token"}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_client_token_refresh_staff_token(self):
+        """Test que token de staff não funciona no endpoint de cliente"""
+        from users.models import CustomUser
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        # Criar user/staff token
+        user = CustomUser.objects.create_user(
+            username="staff", email="staff@test.com", password="pass123"
+        )
+        user.tenant = self.tenant
+        user.save()
+
+        refresh = RefreshToken.for_user(user)
+        refresh["scope"] = "tenant"  # scope de staff
+
+        url = reverse("clients_token_refresh")
+        response = self.client.post(url, {"refresh": str(refresh)}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "não é de cliente" in str(response.data)
+
+    def test_client_token_refresh_missing_refresh(self):
+        """Test sem enviar refresh token"""
+        url = reverse("clients_token_refresh")
+        response = self.client.post(url, {}, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "obrigatório" in str(response.data)
