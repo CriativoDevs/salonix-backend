@@ -27,6 +27,7 @@ from core.views import (
     ClientAccessAcceptView,
     ClientLoginView,
     ClientSetPasswordView,
+    ClientTokenRefreshView,
     PublicClientAccessLinkView,
     ClientsMeAppointmentsUpcomingView,
     ClientsMeAppointmentsHistoryView,
@@ -74,6 +75,11 @@ urlpatterns = [
         "clients/login/",
         ClientLoginView.as_view(),
         name="clients_login",
+    ),
+    path(
+        "clients/token/refresh/",
+        ClientTokenRefreshView.as_view(),
+        name="clients_token_refresh",
     ),
     path(
         "clients/set-password/",
