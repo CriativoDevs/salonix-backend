@@ -75,6 +75,14 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         if hasattr(request, "request_id"):
             response["X-Request-ID"] = request.request_id
 
+        # Adicionar headers de cache para APIs (evitar cache no browser/PWA)
+        if request.path.startswith("/api/"):
+            response["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, private, max-age=0"
+            )
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+
         # Log do fim do request
         logger.info(
             "Request completed",
