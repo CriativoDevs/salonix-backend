@@ -47,6 +47,8 @@ from core.views import (
     ExportCustomersCSVView,
     ExportServicesCSVView,
     ExportStaffCSVView,
+    TenantCancelView,
+    TenantReactivateView,
 )
 
 router = DefaultRouter()
@@ -214,4 +216,15 @@ urlpatterns = [
         "export/services.csv", ExportServicesCSVView.as_view(), name="export-services"
     ),
     path("export/staff.csv", ExportStaffCSVView.as_view(), name="export-staff"),
+    # Sistema de Cancelamento de Conta (BE-ACCOUNT-CANCEL #396)
+    path(
+        "tenants/cancel-account/",
+        TenantCancelView.as_view(),
+        name="tenant-cancel",
+    ),
+    path(
+        "tenants/reactivate/",
+        TenantReactivateView.as_view(),
+        name="tenant-reactivate",
+    ),
 ]

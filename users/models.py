@@ -251,10 +251,54 @@ class Tenant(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # ===== NOVOS CAMPOS: Sistema de Cancelamento (BE-ACCOUNT-CANCEL #396) =====
+    STATUS_ACTIVE = "active"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_DELETED = "deleted"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_DELETED, "Permanently Deleted"),
+    ]
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_ACTIVE,
+        db_index=True,
+        help_text="Status da conta do tenant",
+    )
+
+    cancelled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Data/hora do cancelamento (soft delete)",
+    )
+
+    cancellation_reason = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Motivo opcional fornecido pelo owner ao cancelar",
+    )
+
+    scheduled_deletion_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Data agendada para hard delete (calculada automaticamente)",
+    )
+
+    reactivation_token = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Token HMAC para link de reativação seguro",
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=["slug"]),
             models.Index(fields=["is_active"]),
+            models.Index(fields=["status", "cancelled_at"]),  # Para Celery query
         ]
 
     def __str__(self):
@@ -355,6 +399,45 @@ class Tenant(models.Model):
             channels.append("whatsapp")
 
         return channels
+
+    # ===== Métodos para Sistema de Cancelamento (BE-ACCOUNT-CANCEL #396) =====
+
+    def get_retention_days(self):
+        """Retorna dias de retenção baseado no plano."""
+        RETENTION_DAYS = {
+            self.PLAN_BASIC: 30,
+            self.PLAN_STANDARD: 60,
+            self.PLAN_PRO: 90,
+            self.PLAN_FOUNDER: 90,
+        }
+        return RETENTION_DAYS.get(self.plan_tier, 30)
+
+    def calculate_deletion_date(self):
+        """Calcula data de hard delete baseada em cancelled_at + retenção."""
+        if not self.cancelled_at:
+            return None
+        from datetime import timedelta
+
+        retention_days = self.get_retention_days()
+        return self.cancelled_at + timedelta(days=retention_days)
+
+    def can_reactivate(self):
+        """Verifica se ainda está dentro do período de reativação."""
+        if self.status != self.STATUS_CANCELLED:
+            return False
+        deletion_date = self.calculate_deletion_date()
+        if not deletion_date:
+            return False
+        return timezone.now() < deletion_date
+
+    def generate_reactivation_token(self):
+        """Gera token seguro para link de reativação."""
+        import hmac
+        import hashlib
+
+        secret = settings.SECRET_KEY.encode()
+        message = f"{self.id}{self.slug}{self.cancelled_at}".encode()
+        return hmac.new(secret, message, hashlib.sha256).hexdigest()[:32]
 
     def get_feature_flags_dict(self):
         """Retorna dicionário com todas as feature flags para APIs"""

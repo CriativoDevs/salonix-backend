@@ -350,3 +350,265 @@ Equipe {salon_name}
     """
 
     return _send_email_safe(subject, body_plain, body_html, to_email)
+
+
+def send_account_cancellation_email(
+    tenant,
+    owner_user,
+    reactivation_url: str,
+):
+    """
+    Envia email de confirmação de cancelamento de conta (BE-ACCOUNT-CANCEL #396).
+
+    Args:
+        tenant: Instância do Tenant cancelado
+        owner_user: Usuário owner que cancelou
+        reactivation_url: URL completa para reativar a conta
+    """
+    subject = "Conta cancelada - TimelyOne"
+
+    deletion_date_formatted = tenant.scheduled_deletion_at.strftime("%d/%m/%Y")
+
+    body_plain = f"""
+Olá {owner_user.first_name or owner_user.username},
+
+Sua conta "{tenant.name}" foi cancelada com sucesso.
+
+📅 Data de cancelamento: {tenant.cancelled_at.strftime("%d/%m/%Y às %H:%M")}
+🗑️ Exclusão permanente em: {deletion_date_formatted}
+
+O que acontece agora?
+• Seu acesso e de todos os membros da equipe foi bloqueado
+• Suas assinaturas Stripe foram canceladas (você não será mais cobrado)
+• Seus dados serão mantidos até {deletion_date_formatted}
+• Após essa data, todos os dados serão excluídos permanentemente
+
+Mudou de ideia?
+Você pode reativar sua conta a qualquer momento até {deletion_date_formatted}:
+{reactivation_url}
+
+Se tiver alguma dúvida ou feedback, responda este email.
+
+Obrigado por ter usado o TimelyOne,
+Equipe TimelyOne
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #d9534f;">Conta cancelada</h2>
+          
+          <p>Olá <strong>{owner_user.first_name or owner_user.username}</strong>,</p>
+          
+          <p>Sua conta "<strong>{tenant.name}</strong>" foi cancelada com sucesso.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #d9534f; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>📅 Data de cancelamento:</strong> {tenant.cancelled_at.strftime("%d/%m/%Y às %H:%M")}</p>
+            <p style="margin: 5px 0;"><strong>🗑️ Exclusão permanente em:</strong> {deletion_date_formatted}</p>
+          </div>
+          
+          <h3 style="color: #333; font-size: 16px;">O que acontece agora?</h3>
+          <ul style="line-height: 1.8;">
+            <li>Seu acesso e de todos os membros da equipe foi <strong>bloqueado</strong></li>
+            <li>Suas assinaturas Stripe foram <strong>canceladas</strong> (você não será mais cobrado)</li>
+            <li>Seus dados serão mantidos até <strong>{deletion_date_formatted}</strong></li>
+            <li>Após essa data, todos os dados serão <strong>excluídos permanentemente</strong></li>
+          </ul>
+          
+          <div style="background-color: #d1ecf1; padding: 15px; border-left: 4px solid #0c5460; margin: 20px 0;">
+            <h3 style="color: #0c5460; margin-top: 0; font-size: 16px;">Mudou de ideia?</h3>
+            <p>Você pode reativar sua conta a qualquer momento até <strong>{deletion_date_formatted}</strong>:</p>
+            <p style="text-align: center; margin: 15px 0;">
+              <a href="{reactivation_url}" 
+                 style="display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Reativar minha conta
+              </a>
+            </p>
+          </div>
+          
+          <p style="margin-top: 30px; color: #666; font-size: 12px;">
+            Se tiver alguma dúvida ou feedback, responda este email.
+          </p>
+          
+          <p style="margin-top: 20px;">
+            Obrigado por ter usado o TimelyOne,<br/>
+            <strong>Equipe TimelyOne</strong>
+          </p>
+        </div>
+    """
+
+    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+
+
+def send_deletion_reminder_email(
+    tenant,
+    owner_user,
+    reactivation_url: str,
+    days_remaining: int = 7,
+):
+    """
+    Envia lembrete de exclusão iminente (BE-ACCOUNT-CANCEL #396).
+
+    Args:
+        tenant: Instância do Tenant a ser deletado
+        owner_user: Usuário owner
+        reactivation_url: URL completa para reativar a conta
+        days_remaining: Dias restantes até exclusão
+    """
+    subject = f"⚠️ Sua conta será excluída em {days_remaining} dias - TimelyOne"
+
+    deletion_date_formatted = tenant.scheduled_deletion_at.strftime("%d/%m/%Y")
+
+    body_plain = f"""
+Olá {owner_user.first_name or owner_user.username},
+
+Este é um lembrete de que sua conta "{tenant.name}" será excluída permanentemente em {days_remaining} dias.
+
+🗑️ Data de exclusão: {deletion_date_formatted}
+
+O que será excluído?
+• Todos os agendamentos e histórico
+• Dados de clientes e profissionais
+• Relatórios e estatísticas
+• Configurações personalizadas
+
+⚠️ Esta ação é IRREVERSÍVEL após {deletion_date_formatted}.
+
+Quer manter sua conta?
+Reative agora mesmo:
+{reactivation_url}
+
+Se você realmente deseja cancelar, não é necessário fazer nada. Seus dados serão automaticamente excluídos na data mencionada.
+
+Equipe TimelyOne
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+            <h2 style="color: #856404; margin-top: 0;">⚠️ Lembrete importante</h2>
+          </div>
+          
+          <p>Olá <strong>{owner_user.first_name or owner_user.username}</strong>,</p>
+          
+          <p>Este é um lembrete de que sua conta "<strong>{tenant.name}</strong>" será excluída permanentemente em <strong>{days_remaining} dias</strong>.</p>
+          
+          <div style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #d9534f; margin: 20px 0; text-align: center;">
+            <p style="margin: 0; font-size: 18px; color: #721c24;">
+              <strong>🗑️ Data de exclusão: {deletion_date_formatted}</strong>
+            </p>
+          </div>
+          
+          <h3 style="color: #333; font-size: 16px;">O que será excluído?</h3>
+          <ul style="line-height: 1.8;">
+            <li>Todos os <strong>agendamentos e histórico</strong></li>
+            <li>Dados de <strong>clientes e profissionais</strong></li>
+            <li><strong>Relatórios e estatísticas</strong></li>
+            <li><strong>Configurações personalizadas</strong></li>
+          </ul>
+          
+          <div style="background-color: #f8d7da; padding: 10px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 0; color: #721c24; font-weight: bold; text-align: center;">
+              ⚠️ Esta ação é IRREVERSÍVEL após {deletion_date_formatted}
+            </p>
+          </div>
+          
+          <div style="background-color: #d1ecf1; padding: 15px; border-left: 4px solid #0c5460; margin: 20px 0;">
+            <h3 style="color: #0c5460; margin-top: 0; font-size: 16px;">Quer manter sua conta?</h3>
+            <p style="text-align: center; margin: 15px 0;">
+              <a href="{reactivation_url}" 
+                 style="display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                Reativar minha conta agora
+              </a>
+            </p>
+          </div>
+          
+          <p style="margin-top: 30px; color: #666; font-size: 12px;">
+            Se você realmente deseja cancelar, não é necessário fazer nada. Seus dados serão automaticamente excluídos na data mencionada.
+          </p>
+          
+          <p style="margin-top: 20px;">
+            <strong>Equipe TimelyOne</strong>
+          </p>
+        </div>
+    """
+
+    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+
+
+def send_account_reactivation_email(
+    tenant,
+    owner_user,
+):
+    """
+    Envia confirmação de reativação de conta (BE-ACCOUNT-CANCEL #396).
+
+    Args:
+        tenant: Instância do Tenant reativado
+        owner_user: Usuário owner que reativou
+    """
+    subject = "✅ Conta reativada com sucesso - TimelyOne"
+
+    body_plain = f"""
+Olá {owner_user.first_name or owner_user.username},
+
+Sua conta "{tenant.name}" foi reativada com sucesso!
+
+✅ Seu acesso foi restaurado
+✅ Todos os dados foram preservados
+✅ Sua equipe pode acessar novamente
+
+O que acontece agora?
+• Você e sua equipe podem fazer login normalmente
+• Todos os dados permanecem intactos
+• Para retomar as assinaturas, acesse as configurações de billing
+
+Bem-vindo de volta! 🎉
+
+Se precisar de ajuda, estamos à disposição.
+
+Equipe TimelyOne
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin-bottom: 20px;">
+            <h2 style="color: #155724; margin-top: 0;">✅ Conta reativada com sucesso</h2>
+          </div>
+          
+          <p>Olá <strong>{owner_user.first_name or owner_user.username}</strong>,</p>
+          
+          <p>Sua conta "<strong>{tenant.name}</strong>" foi reativada com sucesso!</p>
+          
+          <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.8;">
+              <li>✅ Seu acesso foi <strong>restaurado</strong></li>
+              <li>✅ Todos os dados foram <strong>preservados</strong></li>
+              <li>✅ Sua equipe pode <strong>acessar novamente</strong></li>
+            </ul>
+          </div>
+          
+          <h3 style="color: #333; font-size: 16px;">O que acontece agora?</h3>
+          <ul style="line-height: 1.8;">
+            <li>Você e sua equipe podem fazer <strong>login normalmente</strong></li>
+            <li>Todos os dados permanecem <strong>intactos</strong></li>
+            <li>Para retomar as assinaturas, acesse as <strong>configurações de billing</strong></li>
+          </ul>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <p style="font-size: 24px; margin: 0;">🎉</p>
+            <p style="font-size: 18px; color: #28a745; font-weight: bold; margin: 10px 0;">
+              Bem-vindo de volta!
+            </p>
+          </div>
+          
+          <p style="margin-top: 30px; color: #666; font-size: 12px;">
+            Se precisar de ajuda, estamos à disposição.
+          </p>
+          
+          <p style="margin-top: 20px;">
+            <strong>Equipe TimelyOne</strong>
+          </p>
+        </div>
+    """
+
+    return _send_email_safe(subject, body_plain, body_html, owner_user.email)

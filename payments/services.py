@@ -644,6 +644,81 @@ class SubscriptionService:
             logger.error(f"Stripe error reactivating subscription: {str(e)}")
             return False
 
+    @classmethod
+    def cancel_tenant_subscriptions(cls, tenant) -> Dict[str, Any]:
+        """
+        Cancela todas as assinaturas ativas de um tenant (BE-ACCOUNT-CANCEL #396).
+
+        Args:
+            tenant: Instância do Tenant cujas subscriptions devem ser canceladas
+
+        Returns:
+            Dict com estatísticas: {
+                "success": bool,
+                "cancelled_count": int,
+                "failed_count": int,
+                "errors": List[str]
+            }
+        """
+        from users.models import CustomUser
+
+        result = {
+            "success": True,
+            "cancelled_count": 0,
+            "failed_count": 0,
+            "errors": [],
+        }
+
+        try:
+            # Buscar todos os usuários do tenant com subscriptions ativas
+            tenant_users = CustomUser.objects.filter(tenant=tenant)
+            active_subscriptions = Subscription.objects.filter(
+                user__in=tenant_users, status__in=["active", "trialing", "past_due"]
+            )
+
+            for subscription in active_subscriptions:
+                try:
+                    # Cancelar imediatamente no Stripe (não aguardar fim do período)
+                    stripe.Subscription.cancel(subscription.stripe_subscription_id)
+
+                    # Atualizar estado local
+                    subscription.status = "canceled"
+                    subscription.cancel_at_period_end = False
+                    subscription.save(update_fields=["status", "cancel_at_period_end"])
+
+                    result["cancelled_count"] += 1
+                    logger.info(
+                        f"Cancelled subscription {subscription.stripe_subscription_id} "
+                        f"for tenant {tenant.id} (user {subscription.user.id})"
+                    )
+
+                except stripe.error.StripeError as e:
+                    result["failed_count"] += 1
+                    result["success"] = False
+                    error_msg = f"Stripe error cancelling {subscription.stripe_subscription_id}: {str(e)}"
+                    result["errors"].append(error_msg)
+                    logger.error(error_msg)
+
+                except Exception as e:
+                    result["failed_count"] += 1
+                    result["success"] = False
+                    error_msg = f"Unexpected error cancelling {subscription.stripe_subscription_id}: {str(e)}"
+                    result["errors"].append(error_msg)
+                    logger.error(error_msg)
+
+            if result["cancelled_count"] == 0 and result["failed_count"] == 0:
+                logger.info(f"No active subscriptions found for tenant {tenant.id}")
+
+            return result
+
+        except Exception as e:
+            result["success"] = False
+            result["errors"].append(f"Failed to query subscriptions: {str(e)}")
+            logger.error(
+                f"Error in cancel_tenant_subscriptions for tenant {tenant.id}: {str(e)}"
+            )
+            return result
+
 
 class BillingService:
     """Serviço para gerenciar informações de billing."""

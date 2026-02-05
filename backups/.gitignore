@@ -1,0 +1,3 @@
+# Backups locais de tenants (BE-ACCOUNT-CANCEL #396)
+# Não versionar backups com dados sensíveis
+/backups/
