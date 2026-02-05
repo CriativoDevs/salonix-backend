@@ -3,6 +3,7 @@ from django.template.response import TemplateResponse
 from django.urls import path
 from django.db.models import Count, Q
 from django.urls import reverse
+
 from users.models import (
     Tenant,
     CustomUser,
@@ -265,6 +266,38 @@ class TimelyOneAdminSite(AdminSite):
 
 # Instância personalizada do admin
 admin_site = TimelyOneAdminSite(name="timelyone_admin")
+
+# Celery Results (BE-ACCOUNT-CANCEL #396)
+from django_celery_results.models import TaskResult, GroupResult
+from django_celery_results.admin import TaskResultAdmin, GroupResultAdmin
+
+admin_site.register(TaskResult, TaskResultAdmin)
+admin_site.register(GroupResult, GroupResultAdmin)
+
+# Celery Beat (agendamento de tasks via Django Admin)
+try:
+    from django_celery_beat.models import (
+        PeriodicTask,
+        IntervalSchedule,
+        CrontabSchedule,
+        SolarSchedule,
+        ClockedSchedule,
+    )
+    from django_celery_beat.admin import (
+        PeriodicTaskAdmin,
+        IntervalScheduleAdmin,
+        CrontabScheduleAdmin,
+        SolarScheduleAdmin,
+        ClockedScheduleAdmin,
+    )
+
+    admin_site.register(PeriodicTask, PeriodicTaskAdmin)
+    admin_site.register(IntervalSchedule, IntervalScheduleAdmin)
+    admin_site.register(CrontabSchedule, CrontabScheduleAdmin)
+    admin_site.register(SolarSchedule, SolarScheduleAdmin)
+    admin_site.register(ClockedSchedule, ClockedScheduleAdmin)
+except ImportError:
+    pass
 
 admin_site.register(Tenant, TenantAdmin)
 admin_site.register(CustomUser, CustomUserAdmin)

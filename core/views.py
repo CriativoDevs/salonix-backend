@@ -5864,3 +5864,243 @@ class FeedbackRetentionEnforceView(APIView):
             extra={"tenant_id": tenant.id, "deleted": deleted, "days": int(days)},
         )
         return Response({"deleted": deleted, "retention_days": int(days)})
+
+
+# ===== Sistema de Cancelamento de Conta (BE-ACCOUNT-CANCEL #396) =====
+
+
+class TenantCancelView(APIView):
+    """
+    POST /api/tenants/cancel-account/
+
+    Cancela conta do tenant (soft delete).
+    Requer autenticação de OWNER + confirmação dupla.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Tenants"],
+        summary="Cancelar conta do tenant",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "password": {"type": "string", "writeOnly": True},
+                    "confirmation_text": {"type": "string", "writeOnly": True},
+                    "cancellation_reason": {"type": "string", "nullable": True},
+                },
+                "required": ["password", "confirmation_text"],
+            }
+        },
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Conta cancelada com sucesso",
+            ),
+            400: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Senha incorreta ou confirmação inválida",
+            ),
+            403: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Apenas owner pode cancelar",
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                name="Sucesso",
+                value={
+                    "message": "Conta cancelada com sucesso.",
+                    "cancelled_at": "2026-02-05T14:00:00Z",
+                    "deletion_date": "2026-04-06T14:00:00Z",
+                    "reactivation_link": "/reativar/123/abc123token/",
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def post(self, request):
+        # Importar aqui para evitar circular import
+        from core.permissions import IsOwner
+        from core.serializers import TenantCancelSerializer
+
+        # Verificar se é owner
+        is_owner_perm = IsOwner()
+        if not is_owner_perm.has_permission(request, self):
+            raise PermissionDenied("Somente o owner pode cancelar a conta.")
+
+        serializer = TenantCancelSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        tenant = request.user.tenant
+
+        # 1. Soft delete do tenant
+        tenant.status = Tenant.STATUS_CANCELLED
+        tenant.cancelled_at = timezone.now()
+        tenant.cancellation_reason = serializer.validated_data.get(
+            "cancellation_reason", ""
+        )
+        tenant.scheduled_deletion_at = tenant.calculate_deletion_date()
+        tenant.reactivation_token = tenant.generate_reactivation_token()
+        tenant.save()
+
+        # 2. Cancelar assinaturas Stripe (BE-ACCOUNT-CANCEL #396)
+        stripe_result = {"success": True, "cancelled_count": 0}
+        try:
+            from payments.services import SubscriptionService
+
+            stripe_result = SubscriptionService.cancel_tenant_subscriptions(tenant)
+
+            if not stripe_result["success"]:
+                logger.warning(
+                    f"Stripe cancellation had errors for tenant {tenant.id}: "
+                    f"{stripe_result['errors']}"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao cancelar Stripe para tenant {tenant.id}: {e}")
+            stripe_result = {"success": False, "cancelled_count": 0, "errors": [str(e)]}
+
+        # 3. Enviar email de confirmação (BE-ACCOUNT-CANCEL #396)
+        try:
+            from core.email_utils import send_account_cancellation_email
+
+            # Construir URL de reativação (ajustar conforme frontend)
+            reactivation_url = f"{settings.FRONTEND_URL}/reativar/{tenant.id}/{tenant.reactivation_token}/"
+            send_account_cancellation_email(tenant, request.user, reactivation_url)
+            logger.info(f"Email de cancelamento enviado para {request.user.email}")
+        except Exception as e:
+            logger.error(f"Erro ao enviar email para tenant {tenant.id}: {e}")
+
+        # 4. Registrar log de auditoria
+        logger.info(
+            f"Tenant {tenant.id} ({tenant.slug}) cancelado por owner {request.user.id}. "
+            f"Deletado em {tenant.scheduled_deletion_at}. "
+            f"Stripe: {stripe_result['cancelled_count']} assinaturas canceladas"
+        )
+
+        return Response(
+            {
+                "message": "Conta cancelada com sucesso.",
+                "cancelled_at": tenant.cancelled_at,
+                "deletion_date": tenant.scheduled_deletion_at,
+                "reactivation_link": f"/reativar/{tenant.id}/{tenant.reactivation_token}/",
+                "stripe_subscriptions_cancelled": stripe_result["cancelled_count"],
+            },
+            status=drf_status.HTTP_200_OK,
+        )
+
+
+class TenantReactivateView(APIView):
+    """
+    POST /api/tenants/reactivate/
+
+    Reativa conta cancelada (dentro do período de retenção).
+    Requer token válido do email de cancelamento.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Tenants"],
+        summary="Reativar conta cancelada",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "token": {"type": "string"},
+                },
+                "required": ["token"],
+            }
+        },
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Conta reativada com sucesso",
+            ),
+            400: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Conta não está cancelada",
+            ),
+            403: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Apenas owner pode reativar",
+            ),
+            410: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Período de reativação expirado",
+            ),
+        },
+    )
+    def post(self, request):
+        # Importar aqui para evitar circular import
+        from core.permissions import IsOwner
+        from core.serializers import TenantReactivateSerializer
+
+        # Verificar se é owner
+        is_owner_perm = IsOwner()
+        if not is_owner_perm.has_permission(request, self):
+            raise PermissionDenied("Somente o owner pode reativar a conta.")
+
+        tenant = request.user.tenant
+
+        # 1. Validar que está cancelled
+        if tenant.status != Tenant.STATUS_CANCELLED:
+            return Response(
+                {"error": "Conta não está cancelada."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 2. Validar período de retenção
+        if not tenant.can_reactivate():
+            return Response(
+                {"error": "Período de reativação expirado. Dados já foram deletados."},
+                status=drf_status.HTTP_410_GONE,
+            )
+
+        # 3. Validar token
+        serializer = TenantReactivateSerializer(
+            data=request.data, context={"tenant": tenant}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        # 4. Reativar tenant
+        tenant.status = Tenant.STATUS_ACTIVE
+        tenant.cancelled_at = None
+        tenant.scheduled_deletion_at = None
+        tenant.reactivation_token = None
+        tenant.save()
+
+        # 5. Reativar Stripe (TODO: implementar se possível)
+        # try:
+        #     from payments.services import reactivate_stripe_subscription
+        #     reactivate_stripe_subscription(tenant)
+        # except Exception as e:
+        #     logger.error(f"Erro ao reativar Stripe para tenant {tenant.id}: {e}")
+
+        # 6. Enviar email de confirmação (BE-ACCOUNT-CANCEL #396)
+        try:
+            from core.email_utils import send_account_reactivation_email
+
+            send_account_reactivation_email(tenant, request.user)
+            logger.info(f"Email de reativação enviado para {request.user.email}")
+        except Exception as e:
+            logger.error(
+                f"Erro ao enviar email de reativação para tenant {tenant.id}: {e}"
+            )
+
+        # 7. Log auditoria
+        logger.info(
+            f"Tenant {tenant.id} ({tenant.slug}) reativado por owner {request.user.id}"
+        )
+
+        return Response(
+            {
+                "message": "Conta reativada com sucesso!",
+                "status": tenant.status,
+            },
+            status=drf_status.HTTP_200_OK,
+        )

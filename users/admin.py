@@ -20,6 +20,7 @@ class TenantAdmin(admin.ModelAdmin):
         "name",
         "slug",
         "plan_tier",
+        "status",
         "is_active",
         "users_count",
         "feature_summary",
@@ -27,6 +28,7 @@ class TenantAdmin(admin.ModelAdmin):
     ]
     list_filter = [
         "plan_tier",
+        "status",
         "is_active",
         "reports_enabled",
         "auto_invite_enabled",
@@ -36,7 +38,14 @@ class TenantAdmin(admin.ModelAdmin):
     ]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ("name",)}
-    readonly_fields = ["created_at", "updated_at", "users_count", "feature_summary"]
+    readonly_fields = [
+        "created_at",
+        "updated_at",
+        "users_count",
+        "feature_summary",
+        "scheduled_deletion_at",
+        "reactivation_token",
+    ]
 
     fieldsets = (
         (
@@ -44,6 +53,19 @@ class TenantAdmin(admin.ModelAdmin):
             {"fields": ("name", "slug", "is_active", "timezone", "currency")},
         ),
         ("Plano e Configurações", {"fields": ("plan_tier", "addons_enabled")}),
+        (
+            "Cancelamento de Conta",
+            {
+                "fields": (
+                    "status",
+                    "cancelled_at",
+                    "cancellation_reason",
+                    "scheduled_deletion_at",
+                    "reactivation_token",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
         (
             "Branding/White-label",
             {

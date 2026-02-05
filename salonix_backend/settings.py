@@ -107,6 +107,10 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "drf_spectacular_sidecar",
     "django_prometheus",
+    # Celery results (para admin panel - BE-ACCOUNT-CANCEL #396)
+    "django_celery_results",
+    # Celery beat (agendamento de tasks via Django Admin)
+    "django_celery_beat",
     # APPS
     "salonix_backend",
     "core.apps.CoreConfig",
@@ -193,6 +197,12 @@ if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
         CORS_ALLOWED_ORIGIN_REGEXES = [
             r"^https://salonix-frontend-web-.*\.vercel\.app$",
         ]
+
+# Frontend URL para construção de links em emails (BE-ACCOUNT-CANCEL #396)
+FRONTEND_URL = env_get(
+    "FRONTEND_URL",
+    "https://salonix-frontend-web.vercel.app" if not DEBUG else "http://localhost:5173",
+)
 
 # CSRF
 csrf_origins_raw = str(env_get("CSRF_TRUSTED_ORIGINS", "")).strip()
@@ -505,6 +515,26 @@ STRIPE_PRICE_STANDARD_YEARLY_ID = env_get("STRIPE_PRICE_STANDARD_YEARLY_ID", "")
 STRIPE_PRICE_PRO_YEARLY_ID = env_get("STRIPE_PRICE_PRO_YEARLY_ID", "")
 STRIPE_PRICE_FOUNDER_YEARLY_ID = env_get("STRIPE_PRICE_FOUNDER_YEARLY_ID", "")
 
+# ============================================
+# Celery Configuration (BE-ACCOUNT-CANCEL #396)
+# ============================================
+CELERY_BROKER_URL = env_get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = "django-db"  # Usa django_celery_results
+CELERY_RESULT_EXTENDED = True  # Armazena metadados extras (args, kwargs, etc.)
+CELERY_CACHE_BACKEND = "default"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "America/Sao_Paulo"
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos max por task
+
+# Diretório para backups locais de tenants (BE-ACCOUNT-CANCEL #396)
+# Production (Railway): /data (montado como Volume)
+# Staging (PythonAnywhere): /home/username/backups
+# Dev: BASE_DIR / "backups"
+BACKUP_ROOT = Path(env_get("BACKUP_ROOT", str(BASE_DIR / "backups")))
+
 # Credit packages
 STRIPE_PRICE_CREDITS_5_ID = env_get("STRIPE_PRICE_CREDITS_5_ID", "")
 STRIPE_PRICE_CREDITS_10_ID = env_get("STRIPE_PRICE_CREDITS_10_ID", "")
@@ -767,3 +797,20 @@ CAPTCHA_TIMEOUT = 5  # Minutos
 
 # Bypass para dev/smoke: se definido e token igual, considera válido
 CAPTCHA_BYPASS_TOKEN = env_get("CAPTCHA_BYPASS_TOKEN", "")
+
+# ============================================
+# Celery Configuration (BE-ACCOUNT-CANCEL #396)
+# ============================================
+CELERY_BROKER_URL = env_get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = "django-db"  # Usa django_celery_results
+CELERY_RESULT_EXTENDED = True  # Armazena metadados extras (args, kwargs, etc.)
+CELERY_CACHE_BACKEND = "default"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE  # Usa o mesmo timezone do Django
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos max por task
+
+# django-celery-beat: scheduler no banco de dados
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"

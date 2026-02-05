@@ -43,3 +43,9 @@ django-filter==25.2
 python-dotenv==1.0.1
 dj-database-url==2.1.0
 mysqlclient==2.2.4
+
+# Celery para tasks assíncronas (BE-ACCOUNT-CANCEL #396)
+celery[redis]==5.4.0
+redis==5.0.3
+django-celery-results==2.5.1
+django-celery-beat==2.8.1  # Agendamento de tasks via Django Admin

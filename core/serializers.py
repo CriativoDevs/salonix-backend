@@ -980,3 +980,55 @@ class ClientLoginSerializer(serializers.Serializer):
 
 class ClientSetPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=6)
+
+
+# ===== Sistema de Cancelamento de Conta (BE-ACCOUNT-CANCEL #396) =====
+
+
+class TenantCancelSerializer(serializers.Serializer):
+    """
+    Serializer para validar dados de cancelamento de conta.
+    Requer senha do owner + confirmação textual.
+    """
+
+    password = serializers.CharField(write_only=True, required=True)
+    confirmation_text = serializers.CharField(write_only=True, required=True)
+    cancellation_reason = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_password(self, value):
+        """Valida senha do owner."""
+        from django.contrib.auth.hashers import check_password
+
+        user = self.context["request"].user
+        if not check_password(value, user.password):
+            raise serializers.ValidationError("Senha incorreta.")
+        return value
+
+    def validate_confirmation_text(self, value):
+        """Valida texto de confirmação (deve ser exato)."""
+        if value != "CANCELAR CONTA":
+            raise serializers.ValidationError(
+                "Digite 'CANCELAR CONTA' (exatamente) para confirmar."
+            )
+        return value
+
+
+class TenantReactivateSerializer(serializers.Serializer):
+    """
+    Serializer para validar reativação de conta.
+    Requer token HMAC do link de email.
+    """
+
+    token = serializers.CharField(required=True)
+
+    def validate_token(self, value):
+        """Valida token HMAC."""
+        tenant = self.context.get("tenant")
+        if not tenant:
+            raise serializers.ValidationError("Tenant não encontrado.")
+
+        # Comparar com token salvo, não gerar novo
+        if value != tenant.reactivation_token:
+            raise serializers.ValidationError("Token inválido.")
+
+        return value
