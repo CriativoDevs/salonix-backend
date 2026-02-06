@@ -385,7 +385,9 @@ class WebPushDriver(NotificationDriverBase):
 
 
 class MobilePushDriver(NotificationDriverBase):
-    """Driver para mobile push notifications via Expo (stub na fase 1)"""
+    """Driver para mobile push notifications via Expo Push Notifications Service"""
+
+    EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
     def send(
         self,
@@ -396,7 +398,7 @@ class MobilePushDriver(NotificationDriverBase):
         message: str,
         metadata: Dict[str, Any],
     ) -> bool:
-        """Simular envio de mobile push"""
+        """Enviar mobile push via Expo Push Notifications Service"""
         device = NotificationDevice.objects.filter(
             tenant=tenant, user=user, device_type="mobile", is_active=True
         ).first()
@@ -408,18 +410,104 @@ class MobilePushDriver(NotificationDriverBase):
             )
             return False
 
-        # FASE 1: Apenas simular e logar
-        logger.info(
-            f"[SIMULADO] Mobile push (Expo) enviado para {user.username}",
-            extra={
-                "tenant_id": tenant.id,
-                "user_id": user.id,
-                "expo_token": device.token[:20] + "...",
-                "title": title,
-                "notification_message": message,  # Renomeado para evitar conflito
-            },
-        )
-        return True
+        # Montar payload para Expo
+        expo_token = device.token
+        data = metadata.copy() if metadata else {}
+
+        # Adicionar deep link se houver appointment_id
+        if "appointment_id" in data:
+            data["route"] = f"appointment/{data['appointment_id']}"
+
+        payload = {
+            "to": expo_token,
+            "title": title,
+            "body": message,
+            "data": data,
+            "sound": "default",
+            "priority": "high",
+            "channelId": "default",
+        }
+
+        try:
+            # Enviar requisição HTTP POST para Expo
+            response = requests.post(
+                self.EXPO_PUSH_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10,
+            )
+            response.raise_for_status()
+
+            result = response.json()
+
+            # Verificar resposta do Expo
+            if "data" in result and len(result["data"]) > 0:
+                ticket = result["data"][0]
+
+                if ticket.get("status") == "error":
+                    error_details = ticket.get("details", {})
+                    error_type = error_details.get("error")
+
+                    # DeviceNotRegistered: token inválido/expirado
+                    if error_type == "DeviceNotRegistered":
+                        logger.warning(
+                            f"Token Expo inválido para {user.username} - desativando device",
+                            extra={
+                                "tenant_id": tenant.id,
+                                "user_id": user.id,
+                                "device_id": device.id,
+                            },
+                        )
+                        device.is_active = False
+                        device.save()
+                        return False
+
+                    # Outros erros
+                    logger.error(
+                        f"Erro Expo ao enviar push para {user.username}: {error_type}",
+                        extra={
+                            "tenant_id": tenant.id,
+                            "user_id": user.id,
+                            "error": error_details,
+                        },
+                    )
+                    return False
+
+            # Sucesso - atualizar last_used_at
+            device.last_used_at = timezone.now()
+            device.save(update_fields=["last_used_at"])
+
+            logger.info(
+                f"Mobile push enviado para {user.username}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "device_id": device.id,
+                    "title": title,
+                },
+            )
+            return True
+
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Erro HTTP ao enviar push para {user.username}: {str(e)}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "error": str(e),
+                },
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"Erro inesperado ao enviar push para {user.username}: {str(e)}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": user.id,
+                    "error": str(e),
+                },
+            )
+            return False
 
 
 class SMSDriver(NotificationDriverBase):

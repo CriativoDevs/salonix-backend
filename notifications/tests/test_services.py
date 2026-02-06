@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch, Mock
 from django.contrib.auth import get_user_model
 from notifications.models import Notification, NotificationDevice, NotificationLog
 from notifications.services import (
@@ -181,7 +182,10 @@ class TestNotificationDrivers:
         # Deve simular sucesso
         assert result is True
 
-    def test_mobile_push_driver_with_device(self, tenant_fixture, user_fixture):
+    @patch("notifications.services.requests.post")
+    def test_mobile_push_driver_with_device(
+        self, mock_post, tenant_fixture, user_fixture
+    ):
         """Teste driver mobile push com device registrado"""
         # Criar device mobile
         NotificationDevice.objects.create(
@@ -190,6 +194,12 @@ class TestNotificationDrivers:
             device_type="mobile",
             token="ExponentPushToken[abc123]",
         )
+
+        # Mock Expo response
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": [{"status": "ok"}]}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
 
         driver = MobilePushDriver()
 
