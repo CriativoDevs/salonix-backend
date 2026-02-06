@@ -115,6 +115,42 @@ class NotificationTestSerializer(serializers.Serializer):
         return value.strip()
 
 
+class TestPushNotificationSerializer(serializers.Serializer):
+    """
+    Serializer para testar push notifications mobile.
+    Usado no endpoint POST /api/notifications/test-push/
+    """
+
+    user_id = serializers.IntegerField(
+        help_text="ID do usuário para enviar push de teste"
+    )
+    title = serializers.CharField(
+        max_length=100,
+        default="Teste de Push",
+        help_text="Título da notificação",
+    )
+    message = serializers.CharField(
+        max_length=500,
+        default="Esta é uma notificação de teste",
+        help_text="Mensagem da notificação",
+    )
+    appointment_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID do agendamento (opcional, para testar deep link)",
+    )
+
+    def validate_title(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError("Título é obrigatório.")
+        return value.strip()
+
+    def validate_message(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError("Mensagem é obrigatória.")
+        return value.strip()
+
+
 class NotificationLogSerializer(serializers.ModelSerializer):
     """
     Serializer para logs de notificações.

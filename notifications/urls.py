@@ -5,6 +5,7 @@ from .views import (
     NotificationMarkAllReadView,
     NotificationDeviceRegisterView,
     NotificationTestView,
+    TestPushNotificationView,
     NotificationStatsView,
     NotificationLogListView,
     CommunicationConsentListView,
@@ -34,6 +35,12 @@ urlpatterns = [
     ),
     # Teste de canais
     path("test/", NotificationTestView.as_view(), name="notification-test"),
+    # Teste de push mobile (admin only)
+    path(
+        "test-push/",
+        TestPushNotificationView.as_view(),
+        name="notification-test-push",
+    ),
     # Logs (debug)
     path("logs/", NotificationLogListView.as_view(), name="notification-logs"),
     # Comunicação RGPD - consentimentos

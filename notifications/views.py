@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.contrib.auth import get_user_model
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -15,6 +16,7 @@ from .serializers import (
     NotificationDeviceSerializer,
     NotificationMarkReadSerializer,
     NotificationTestSerializer,
+    TestPushNotificationSerializer,
     NotificationLogSerializer,
     NotificationMarkAllReadResponseSerializer,
     NotificationTestResponseSerializer,
@@ -23,9 +25,9 @@ from .serializers import (
     CommunicationConsentCreateSerializer,
     CommunicationConsentWithdrawSerializer,
 )
-from .services import notification_service
-from django.core import signing
+from .services import notification_service, MobilePushDriver
 
+User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
@@ -240,6 +242,111 @@ class NotificationTestView(TenantIsolatedMixin, APIView):
                     if success
                     else "Falha ao enviar notificação de teste"
                 ),
+            }
+        )
+
+
+class TestPushNotificationView(TenantIsolatedMixin, APIView):
+    """
+    POST /api/notifications/test-push/
+
+    Testa envio de push notification mobile (Expo) para um usuário específico.
+    Apenas para admins/staff.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=TestPushNotificationSerializer,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "message": {"type": "string"},
+                    "user_id": {"type": "integer"},
+                    "has_device": {"type": "boolean"},
+                },
+            }
+        },
+    )
+    def post(self, request):
+        # Apenas admins/staff podem usar este endpoint
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Apenas administradores podem testar push notifications"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = TestPushNotificationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        v = cast(Dict[str, Any], serializer.validated_data)
+        user_id = v["user_id"]
+        title = v["title"]
+        message = v["message"]
+        appointment_id = v.get("appointment_id")
+
+        # Buscar usuário no tenant
+        try:
+            user = User.objects.get(id=user_id, tenant=request.tenant)
+        except User.DoesNotExist:
+            return Response(
+                {"error": f"Usuário {user_id} não encontrado no tenant"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Verificar se tem device registrado
+        has_device = NotificationDevice.objects.filter(
+            tenant=request.tenant, user=user, device_type="mobile", is_active=True
+        ).exists()
+
+        if not has_device:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"Usuário {user.username} não tem dispositivo mobile registrado",
+                    "user_id": user_id,
+                    "has_device": False,
+                }
+            )
+
+        # Preparar metadata com deep link se houver appointment_id
+        metadata = {}
+        if appointment_id:
+            metadata["appointment_id"] = appointment_id
+
+        # Enviar push
+        driver = MobilePushDriver()
+        success = driver.send(
+            tenant=request.tenant,
+            user=user,
+            notification_type="test",
+            title=title,
+            message=message,
+            metadata=metadata,
+        )
+
+        logger.info(
+            f"Teste de push para {user.username}: {'sucesso' if success else 'falha'}",
+            extra={
+                "tenant_id": request.tenant.id,
+                "user_id": user.id,
+                "requester_id": request.user.id,
+                "success": success,
+            },
+        )
+
+        return Response(
+            {
+                "success": success,
+                "message": (
+                    f"Push enviado com sucesso para {user.username}"
+                    if success
+                    else f"Falha ao enviar push para {user.username}"
+                ),
+                "user_id": user_id,
+                "has_device": True,
             }
         )
 

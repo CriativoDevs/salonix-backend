@@ -42,6 +42,24 @@ class NotificationDevice(models.Model):
         default=cast(Any, True),
         help_text="Se o device está ativo para receber notificações",
     )
+    platform = models.CharField(
+        max_length=10,
+        choices=[("ios", "iOS"), ("android", "Android")],
+        null=True,
+        blank=True,
+        help_text="Sistema operacional do dispositivo (iOS/Android)",
+    )
+    app_version = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        help_text="Versão do app mobile (ex: 1.2.3)",
+    )
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Data/hora do último uso bem-sucedido deste token",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
