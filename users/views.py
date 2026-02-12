@@ -40,7 +40,7 @@ import time
 import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
-from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
+from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser
 from .services import CreditService, TenantService, FounderService
 from .permissions import IsActiveTenant
 
@@ -228,12 +228,17 @@ class EmailTokenObtainPairView(TokenObtainPairView):
         },
     )
     def post(self, request, *args, **kwargs):
+        # Read X-App-Type header (admin/client/web)
+        app_type = request.headers.get("X-App-Type", "web").lower()
+
         try:
             enforce_captcha_or_raise(request)
         except ValidationError:
             USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="failure").inc()
             raise
         resp = super().post(request, *args, **kwargs)
+
+        # Validate mobile app access if authentication succeeded
         if resp.status_code in (status.HTTP_201_CREATED, status.HTTP_200_OK):
             USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="success").inc()
             logger.info(
@@ -241,8 +246,91 @@ class EmailTokenObtainPairView(TokenObtainPairView):
                 extra={
                     "email": request.data.get("email"),
                     "status_code": resp.status_code,
+                    "app_type": app_type,
                 },
             )
+
+            # Validate plan for mobile app access (admin/client)
+            if app_type in ["admin", "client"]:
+                user_email = request.data.get("email")
+                try:
+                    user = CustomUser.objects.get(email=user_email)
+                    tenant = user.tenant
+
+                    if not tenant:
+                        USERS_AUTH_EVENTS_TOTAL.labels(
+                            event=f"login_{app_type}_denied", result="failure"
+                        ).inc()
+                        return Response(
+                            {"detail": "Usuário não possui tenant associado."},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+
+                    # Validate Admin App access (Standard+ required)
+                    if app_type == "admin" and not tenant.can_use_native_admin():
+                        USERS_AUTH_EVENTS_TOTAL.labels(
+                            event="login_admin_denied", result="failure"
+                        ).inc()
+                        logger.warning(
+                            "Admin app login denied - insufficient plan",
+                            extra={
+                                "tenant_id": tenant.id,
+                                "tenant_slug": tenant.slug,
+                                "current_plan": tenant.plan_tier,
+                                "required_plan": "standard",
+                                "user_email": user_email,
+                            },
+                        )
+                        return Response(
+                            {
+                                "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Standard para desbloquear.",
+                                "plan_required": "standard",
+                                "current_plan": tenant.plan_tier,
+                                "upgrade_url": "/pricing",
+                            },
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+
+                    # Validate Client App access (Pro required)
+                    if app_type == "client" and not tenant.can_use_native_client():
+                        USERS_AUTH_EVENTS_TOTAL.labels(
+                            event="login_client_denied", result="failure"
+                        ).inc()
+                        logger.warning(
+                            "Client app login denied - insufficient plan",
+                            extra={
+                                "tenant_id": tenant.id,
+                                "tenant_slug": tenant.slug,
+                                "current_plan": tenant.plan_tier,
+                                "required_plan": "pro",
+                                "user_email": user_email,
+                            },
+                        )
+                        return Response(
+                            {
+                                "detail": "Seu plano não permite acesso ao Client App. Upgrade para Pro para desbloquear.",
+                                "plan_required": "pro",
+                                "current_plan": tenant.plan_tier,
+                                "upgrade_url": "/pricing",
+                            },
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+
+                    logger.info(
+                        f"{app_type.capitalize()} app access granted",
+                        extra={
+                            "tenant_id": tenant.id,
+                            "tenant_slug": tenant.slug,
+                            "current_plan": tenant.plan_tier,
+                            "user_email": user_email,
+                        },
+                    )
+
+                except CustomUser.DoesNotExist:
+                    logger.error(
+                        f"User not found after successful auth: {user_email}",
+                        extra={"email": user_email},
+                    )
         else:
             USERS_AUTH_EVENTS_TOTAL.labels(event="login", result="failure").inc()
             logger.warning(
