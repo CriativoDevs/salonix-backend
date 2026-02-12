@@ -349,7 +349,7 @@ OPS_AUTH_THROTTLE_REFRESH = env_get("OPS_AUTH_THROTTLE_REFRESH", "60/min")
 # REST_FRAMEWORK config
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "users.authentication.JWTVersionAuthentication",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",

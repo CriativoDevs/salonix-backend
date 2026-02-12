@@ -1,6 +1,7 @@
 import logging
 import stripe
 from django.conf import settings
+from django.db.models import F
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -252,6 +253,10 @@ class StripeWebhookView(View):
                     tenant.plan_tier = plan_code
                     tenant.save()
 
+                    # BE-MOBILE-SEC-03: Invalidar tokens JWT existentes ao alterar plano
+                    # Incrementa versão para todos os usuários do tenant
+                    tenant.users.update(jwt_version=F("jwt_version") + 1)
+
             logger.info(
                 f"Subscription created/updated for user {payment_customer.user.id}"
             )
@@ -309,6 +314,10 @@ class StripeWebhookView(View):
                 if tenant:
                     tenant.plan_tier = plan_code
                     tenant.save()
+
+                    # BE-MOBILE-SEC-03: Invalidar tokens JWT existentes ao alterar plano
+                    # Incrementa versão para todos os usuários do tenant
+                    tenant.users.update(jwt_version=F("jwt_version") + 1)
 
             # Cancelar outras assinaturas do tenant
             if payment_customer.user and payment_customer.user.tenant:
