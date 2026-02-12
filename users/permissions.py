@@ -76,3 +76,52 @@ class HasProFeature(BasePermission):
     def has_permission(self, request, view):
         ff = getattr(request.user, "featureflags", None)
         return bool(ff and ff.is_pro)
+
+
+class RequiresMobileAccess(BasePermission):
+    """
+    Permite acesso somente se o tenant do usuário tiver permissão para usar
+    o aplicativo nativo (Plano Standard ou superior).
+    Retorna 403 com payload específico de upgrade se o plano for insuficiente.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Superusers sempre têm acesso
+        if request.user.is_superuser:
+            return True
+
+        tenant = getattr(request.user, "tenant", None)
+
+        if not tenant:
+            # Se não tem tenant, teoricamente não deveria acessar endpoints de tenant,
+            # mas deixamos passar aqui para outras permissions barrarem se necessário,
+            # ou bloqueamos se for estritamente endpoint de tenant.
+            # Como é uma verificação de "Mobile Access" que depende do plano do tenant,
+            # se não tem tenant, não tem plano => bloqueia.
+            return False
+
+        if tenant.can_use_native_admin():
+            return True
+
+        # Se chegou aqui, não tem permissão.
+        # Construir exceção com payload rico para o frontend/mobile
+        from rest_framework.exceptions import PermissionDenied
+
+        # Hack para passar dados extras no erro 403
+        # O DRF padrão não suporta payload JSON arbitrário na PermissionDenied simples sem subclassing
+        # Mas podemos injetar atributos na exceção se o exception handler suportar,
+        # ou usar uma exceção customizada.
+        # Vamos usar uma exceção customizada que o exception handler (se existir) possa tratar,
+        # ou simplesmente raising PermissionDenied com dict (DRF suporta dict no detail).
+
+        detail = {
+            "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Standard para desbloquear.",
+            "plan_required": "standard",
+            "current_plan": tenant.plan_tier,
+            "upgrade_url": "/pricing",
+            "code": "PLAN_UPGRADE_REQUIRED",
+        }
+        raise PermissionDenied(detail=detail, code="PLAN_UPGRADE_REQUIRED")
