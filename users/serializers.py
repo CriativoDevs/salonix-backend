@@ -698,6 +698,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
         refresh = RefreshToken.for_user(user)
         refresh["scope"] = "tenant"
         refresh["ops_role"] = None
+        refresh["jwt_version"] = getattr(user, "jwt_version", 1)
         if user.tenant:
             refresh["tenant_slug"] = user.tenant.slug
             refresh["tenant_id"] = str(user.tenant_id)
@@ -705,6 +706,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
         access_token = refresh.access_token
         access_token["scope"] = refresh["scope"]
         access_token["ops_role"] = refresh["ops_role"]
+        access_token["jwt_version"] = refresh["jwt_version"]
         if user.tenant:
             access_token["tenant_slug"] = user.tenant.slug
             access_token["tenant_id"] = str(user.tenant_id)

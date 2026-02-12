@@ -520,6 +520,10 @@ class CustomUser(AbstractUser):
         blank=True,
         help_text="Status do onboarding do usuário (ex: {'tour_completed': True})",
     )
+    jwt_version = models.IntegerField(
+        default=1,
+        help_text="Versão do token JWT. Incrementado para invalidar tokens existentes.",
+    )
     objects: Any = CustomUserManager()
 
     class Meta:
