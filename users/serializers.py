@@ -727,6 +727,7 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "last_name": user.last_name or "",
                 "theme_preference": user.theme_preference,
                 "language_preference": getattr(user, "language_preference", "system"),
+                "staff_role": user.staff_role,
             },
         }
 
