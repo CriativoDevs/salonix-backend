@@ -467,6 +467,13 @@ class PublicSlotListView(ListAPIView):
             professional_id=professional_id, is_available=True
         )
 
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            qs = qs.filter(start_time__gte=date_from)
+        if date_to:
+            qs = qs.filter(start_time__lte=date_to)
+
         if tenant_slug:
             try:
                 from users.models import Tenant
@@ -4336,6 +4343,13 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         if is_available is not None:
             val = str(is_available).lower() in {"1", "true", "t", "yes", "y"}
             qs = qs.filter(is_available=val)
+
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+        if date_from:
+            qs = qs.filter(start_time__gte=date_from)
+        if date_to:
+            qs = qs.filter(start_time__lte=date_to)
 
         return qs
 
