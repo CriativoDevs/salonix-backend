@@ -173,19 +173,19 @@ class NotificationDeviceRegisterView(TenantIsolatedMixin, generics.CreateAPIView
             # Retornar o device existente
             self.instance = existing_device
         else:
-            # Criar novo device
-            serializer.save(tenant=self.request.tenant, user=self.request.user)
+            # Criar novo device - tenant/user são resolvidos no serializer
+            device = serializer.save()
 
             logger.info(
-                f"Novo device {serializer.instance.device_type} registrado para {self.request.user.username}",
+                f"Novo device {device.device_type} registrado para {self.request.user.username}",
                 extra={
-                    "tenant_id": self.request.tenant.id,
-                    "user_id": self.request.user.id,
-                    "device_type": serializer.instance.device_type,
+                    "tenant_id": device.tenant_id,
+                    "user_id": device.user_id,
+                    "device_type": device.device_type,
                 },
             )
 
-            self.instance = serializer.instance
+            self.instance = device
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

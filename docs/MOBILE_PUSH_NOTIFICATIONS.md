@@ -203,9 +203,9 @@ if response_data.get("data", [{}])[0].get("status") == "error":
 
 ## Mobile App Integration (MOB-04)
 
-**Not implemented yet** — separate task for mobile team.
+**Status:** ✅ Implementado no app `salonix-mobile` (Expo)
 
-### Required Steps:
+### Required Steps (resumo da implementação atual):
 1. Install Expo Notifications:
    ```bash
    npx expo install expo-notifications
