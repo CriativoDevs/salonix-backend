@@ -16,9 +16,32 @@ from core.models import CustomerCommunicationConsent, Feedback
 from core.utils.client_access import create_client_access_data
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
+from users.services import sms_rate_limiter
+from salonix_backend.error_handling import BusinessError, ErrorCodes
+from prometheus_client import Counter, REGISTRY
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]) -> Counter:
+    existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
+    if existing is not None:
+        return existing  # type: ignore[return-value]
+    return Counter(name, documentation, labelnames)
+
+
+SMS_QUOTA_USAGE_TOTAL = _get_or_create_counter(
+    "sms_quota_usage_total",
+    "Incrementos de cota de SMS por janela",
+    ("tenant_id", "scope"),
+)
+
+SMS_RATE_LIMIT_BLOCKED_TOTAL = _get_or_create_counter(
+    "sms_rate_limit_blocked_total",
+    "SMS bloqueados por rate limit",
+    ("tenant_id", "scope"),
+)
 
 
 def send_customer_pwa_invite(
@@ -528,6 +551,19 @@ class SMSDriver(NotificationDriverBase):
             logger.warning(
                 f"Usuário {user.username} não tem telefone cadastrado",
                 extra={"tenant_id": tenant.id, "user_id": user.id},
+            )
+            return False
+
+        try:
+            counts = sms_rate_limiter.check_and_increment(tenant)
+            for scope, _count in counts.items():
+                SMS_QUOTA_USAGE_TOTAL.labels(tenant_id=str(tenant.id), scope=scope).inc()
+        except BusinessError as e:
+            scope = (e.details or {}).get("scope", "unknown")
+            SMS_RATE_LIMIT_BLOCKED_TOTAL.labels(tenant_id=str(tenant.id), scope=scope).inc()
+            logger.warning(
+                f"SMS bloqueado por rate limit ({scope})",
+                extra={"tenant_id": tenant.id, "user_id": user.id, "scope": scope},
             )
             return False
 
