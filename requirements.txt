@@ -42,6 +42,7 @@ django-filter==25.2
 # Dependências de Staging/Prod
 python-dotenv==1.0.1
 dj-database-url==2.1.0
+psycopg[binary]==3.1.18
 mysqlclient==2.2.4
 gunicorn==22.0.0
 
