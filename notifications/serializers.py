@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import logging
 from enum import Enum
 from .models import Notification, NotificationDevice, NotificationLog
 from core.models import CustomerCommunicationConsent, SalonCustomer
@@ -53,6 +54,8 @@ class NotificationDeviceSerializer(serializers.ModelSerializer):
             "device_type",
             "token",
             "is_active",
+            "platform",
+            "app_version",
             "created_at",
             "updated_at",
         ]
@@ -63,6 +66,50 @@ class NotificationDeviceSerializer(serializers.ModelSerializer):
         if not value or not value.strip():
             raise serializers.ValidationError("Token do dispositivo é obrigatório.")
         return value.strip()
+
+    def create(self, validated_data):
+        logger = logging.getLogger("notifications.device")
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        raw_tenant = getattr(request, "tenant", None) if request else None
+        user_tenant = getattr(user, "tenant", None) if user else None
+        tenant = raw_tenant or user_tenant
+
+        if (
+            tenant is None
+            or user is None
+            or not getattr(user, "is_authenticated", False)
+        ):
+            logger.error(
+                "NotificationDeviceSerializer.create tenant_or_user_missing",
+                extra={
+                    "serializer_version": "v2",
+                    "has_request": bool(request),
+                    "user_repr": repr(user),
+                    "raw_tenant_repr": repr(raw_tenant),
+                    "user_tenant_repr": repr(user_tenant),
+                    "user_is_authenticated": getattr(user, "is_authenticated", None),
+                },
+            )
+            raise serializers.ValidationError("tenant_or_user_missing")
+
+        device = NotificationDevice.objects.create(
+            tenant=tenant,
+            user=user,
+            **validated_data,
+        )
+        logger.info(
+            "NotificationDeviceSerializer.create success",
+            extra={
+                "serializer_version": "v2",
+                "tenant_id": tenant.id if tenant else None,
+                "user_id": user.id if user else None,
+                "device_id": device.id,
+                "device_type": device.device_type,
+                "platform": device.platform,
+            },
+        )
+        return device
 
 
 class NotificationSerializer(serializers.ModelSerializer):
