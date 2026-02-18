@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 from django.db import transaction, models
 from django.utils import timezone
+from django.core.cache import cache
 
 from .models import Tenant, CommLedger
 
@@ -359,3 +360,83 @@ class FounderService:
 
         # Sem tenant: apenas validação de limite global
         return True
+
+
+class SMSRateLimiter:
+
+    PLAN_LIMITS = {
+        "founder": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
+        "basic": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
+        "standard": {"minute": 5, "hour": 60, "day": 300, "month": 9000},
+        "pro": {"minute": 10, "hour": 120, "day": 800, "month": 24000},
+    }
+
+    WINDOW_TTLS = {
+        "minute": 60,
+        "hour": 60 * 60,
+        "day": 60 * 60 * 24,
+        "month": 60 * 60 * 24 * 31,  # aprox.
+    }
+
+    def _keys_for_tenant(self, tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, str]:
+        now = now or timezone.now()
+        ym = now.strftime("%Y-%m")
+        ymd = now.strftime("%Y-%m-%d")
+        hm = now.strftime("%Y-%m-%dT%H:%M")
+        hh = now.strftime("%Y-%m-%dT%H")
+        base = f"sms:{tenant.id}"
+        return {
+            "minute": f"{base}:min:{hm}",
+            "hour": f"{base}:hour:{hh}",
+            "day": f"{base}:day:{ymd}",
+            "month": f"{base}:month:{ym}",
+        }
+
+    def _get_limits(self, tenant: Tenant) -> Dict[str, int]:
+        plan = tenant.plan_tier or "basic"
+        limits = self.PLAN_LIMITS.get(plan, self.PLAN_LIMITS["basic"])
+        return limits
+
+    def check_and_increment(self, tenant: Tenant) -> Dict[str, int]:
+        from salonix_backend.error_handling import BusinessError, ErrorCodes
+
+        limits = self._get_limits(tenant)
+        keys = self._keys_for_tenant(tenant)
+
+        counts_after: Dict[str, int] = {}
+
+        for scope in ("minute", "hour", "day", "month"):
+            key = keys[scope]
+            ttl = self.WINDOW_TTLS[scope]
+            limit = limits[scope]
+
+            try:
+                cache.add(key, 0, timeout=ttl)
+            except Exception:
+                continue
+
+            try:
+                current = cache.get(key) or 0
+            except Exception:
+                current = 0
+
+            if current >= limit:
+                raise BusinessError(
+                    message=f"Limite de SMS atingido para janela: {scope}",
+                    code=ErrorCodes.SYSTEM_RATE_LIMIT_EXCEEDED,
+                    details={"scope": scope, "limit": limit, "count": current, "tenant_id": tenant.id},
+                )
+
+            try:
+                counts_after[scope] = cache.incr(key)
+            except Exception:
+                try:
+                    cache.set(key, current + 1, timeout=ttl)
+                    counts_after[scope] = current + 1
+                except Exception:
+                    counts_after[scope] = current + 1
+
+        return counts_after
+
+
+sms_rate_limiter = SMSRateLimiter()
