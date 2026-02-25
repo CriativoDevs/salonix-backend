@@ -39,7 +39,7 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 **Características**:
 
 - ✅ Isolamento completo de dados por tenant
-- ✅ Planos: Basic, Standard, Pro, Enterprise
+- ✅ Planos: Basic, Pro, Founder (Standard e Enterprise removidos na migração BE-PLANS-01)
 - ✅ Feature flags granulares por tenant
 - ✅ Middleware automático de detecção de tenant
 
@@ -69,18 +69,18 @@ Este documento detalha todas as implementações realizadas no backend do Saloni
 **Arquivos**:
 
 - `payments/views.py` – `CreateCheckoutSession`, webhook Stripe e atualização das feature flags
-- `payments/stripe_utils.py` – mapeamento `plan_code → price_id` (Basic/Standard/Pro/Enterprise) e helpers de detecção
+- `payments/stripe_utils.py` – mapeamento `plan_code → price_id` (Basic/Pro) e helpers de detecção
 - `payments/serializers.py` – validação dos planos suportados
-- `users/models.py` / `users/feature_flags.py` – inclusão do plano Enterprise, hierarquia de planos e choices atualizados
-- `salonix_backend/settings.py` / `.env.example` – novas variáveis `STRIPE_PRICE_*_MONTHLY_ID` e `STRIPE_TRIAL_DAYS`
+- `users/models.py` / `users/feature_flags.py` – hierarquia de planos simplificada (Basic/Pro) e choices atualizados
+- `salonix_backend/settings.py` / `.env.example` – novas variáveis `STRIPE_PRICE_BASIC_MONTHLY_ID`, `STRIPE_PRICE_PRO_MONTHLY_ID` e `STRIPE_TRIAL_DAYS`
 - `payments/tests/test_payments_stripe.py` – cobertura do fluxo end-to-end com mocks Stripe
 
 **Características**:
 
 - ✅ Checkout gera sessão Stripe com metadata (`plan_code`, `user_id`, `client_reference_id`) e trial configurável (`STRIPE_TRIAL_DAYS`, default 14)
 - ✅ Webhook processa `checkout.session.completed`/`customer.subscription.*`, sincronizando `Subscription`, `UserFeatureFlags` e `Tenant.plan_tier`
-- ✅ Mapeamento bidirecional dos preços via env (`STRIPE_PRICE_BASIC/STANDARD/PRO/ENTERPRISE_MONTHLY_ID`) com fallback legado (`monthly`/`yearly`)
-- ✅ Planos Enterprise herdam capacidades do Pro (white-label, notificações avançadas, apps nativos)
+- ✅ Mapeamento bidirecional dos preços via env (`STRIPE_PRICE_BASIC/PRO_MONTHLY_ID`) com fallback legado (`monthly`/`yearly`)
+- ✅ Plano Founder herda capacidades do Basic; Enterprise removido
 - ✅ Logs com `logger.exception` para diagnóstico sem interromper o webhook
 - ✅ Testes garantem que o plano selecionado ativa corretamente flags/tenant
 

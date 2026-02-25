@@ -27,7 +27,7 @@ class DummyStripeSub:
 
 @pytest.mark.django_db
 def test_reconcile_updates_tenant_plan(monkeypatch, settings):
-    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro"
 
     User = get_user_model()
     tenant = Tenant.objects.create(name="T1", slug="t1")
@@ -45,7 +45,7 @@ def test_reconcile_updates_tenant_plan(monkeypatch, settings):
         @staticmethod
         def retrieve(sub_id):
             assert sub_id == sub.stripe_subscription_id
-            return DummyStripeSub("price_standard")
+            return DummyStripeSub("price_pro")
 
     monkeypatch.setattr(
         services, "stripe", types.SimpleNamespace(Subscription=DummySubscriptionAPI)
@@ -56,4 +56,4 @@ def test_reconcile_updates_tenant_plan(monkeypatch, settings):
     call_command("reconcile_stripe_plans", "--only", tenant.slug)
 
     tenant.refresh_from_db()
-    assert tenant.plan_tier == Tenant.PLAN_STANDARD
+    assert tenant.plan_tier == Tenant.PLAN_PRO

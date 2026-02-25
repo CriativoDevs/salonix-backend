@@ -16,7 +16,6 @@ def assign_initial_credits(sender, instance, created, **kwargs):
     # Define créditos por plano
     credits_map = {
         Tenant.PLAN_BASIC: Decimal("5.00"),
-        Tenant.PLAN_STANDARD: Decimal("10.00"),
         Tenant.PLAN_PRO: Decimal("15.00"),
     }
 

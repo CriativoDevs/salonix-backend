@@ -27,7 +27,7 @@ class TestTenantFeatureFlags:
             plan_tier=Tenant.PLAN_BASIC,
         )
 
-        # Basic: PWA Admin habilitado e Relatórios Básicos
+        # Basic: PWA Admin/Client habilitado e Relatórios Básicos
         assert tenant.can_use_reports()  # Basic reports
         assert tenant.can_use_basic_reports()
         assert not tenant.can_use_standard_reports()
@@ -41,30 +41,6 @@ class TestTenantFeatureFlags:
         # PWA Admin sempre habilitado
         assert tenant.pwa_admin_enabled
 
-    def test_standard_plan_features(self):
-        """Teste features do plano Standard."""
-        tenant = Tenant.objects.create(
-            name="Standard Salon",
-            slug="standard-salon",
-            plan_tier=Tenant.PLAN_STANDARD,
-        )
-
-        # Standard: reports + PWA client + Native Admin
-        assert tenant.can_use_reports()
-        assert tenant.can_use_basic_reports()
-        assert tenant.can_use_standard_reports()
-        assert not tenant.can_use_advanced_reports()
-
-        assert tenant.can_use_pwa_client()
-        assert not tenant.can_use_white_label()
-
-        # Native Apps (Standard has Admin, not Client)
-        assert tenant.can_use_native_admin()
-        assert not tenant.can_use_native_client()
-        assert tenant.can_use_native_apps()  # Has at least one
-
-        assert not tenant.can_use_advanced_notifications()
-
     def test_pro_plan_features(self):
         """Teste features do plano Pro."""
         tenant = Tenant.objects.create(
@@ -75,7 +51,7 @@ class TestTenantFeatureFlags:
             sms_enabled=True,
         )
 
-        # Pro: todas as features básicas
+        # Pro: todas as features básicas + avançadas
         assert tenant.can_use_reports()
         assert tenant.can_use_basic_reports()
         assert tenant.can_use_standard_reports()
@@ -122,11 +98,11 @@ class TestTenantFeatureFlags:
         tenant = Tenant.objects.create(
             name="Custom Salon",
             slug="custom-salon",
-            plan_tier=Tenant.PLAN_BASIC,  # Basic normalmente não tem reports
-            reports_enabled=True,  # Mas habilitado explicitamente
+            plan_tier=Tenant.PLAN_BASIC,  # Basic normalmente não tem reports avançados
+            reports_enabled=True,  # Mas habilitado explicitamente (se reports_enabled controlasse algo além do básico)
         )
 
-        assert tenant.can_use_reports()  # Deve ser True por causa do override
+        assert tenant.can_use_reports()  # Deve ser True
 
     def test_notification_channels(self):
         """Teste canais de notificação habilitados."""
@@ -177,12 +153,12 @@ class TestFeatureFlagUtilities:
 
     def test_check_feature_flag(self, tenant_fixture):
         """Teste função check_feature_flag."""
-        tenant_fixture.plan_tier = Tenant.PLAN_STANDARD
+        tenant_fixture.plan_tier = Tenant.PLAN_PRO
         tenant_fixture.reports_enabled = True
         tenant_fixture.save()
 
         assert check_feature_flag(tenant_fixture, "reports") is True
-        assert check_feature_flag(tenant_fixture, "white_label") is False
+        assert check_feature_flag(tenant_fixture, "white_label") is True
         assert check_feature_flag(None, "reports") is False
 
     def test_get_tenant_feature_summary(self, tenant_fixture):
@@ -210,7 +186,7 @@ class TestRequiresFeatureFlagPermission:
     def test_permission_with_valid_feature(self, tenant_fixture, user_fixture):
         """Teste permission com feature habilitada."""
         # Configurar tenant com reports habilitados
-        tenant_fixture.plan_tier = Tenant.PLAN_STANDARD
+        tenant_fixture.plan_tier = Tenant.PLAN_PRO
         tenant_fixture.reports_enabled = True
         tenant_fixture.save()
 
@@ -282,7 +258,7 @@ class TestTenantMetaEndpoint:
         Tenant.objects.create(
             name="Test Salon",
             slug="test-salon",
-            plan_tier=Tenant.PLAN_STANDARD,
+            plan_tier=Tenant.PLAN_PRO,
             reports_enabled=True,
             push_web_enabled=True,
             app_name="Test Salon App",
@@ -296,7 +272,7 @@ class TestTenantMetaEndpoint:
 
         assert data["name"] == "Test Salon"
         assert data["slug"] == "test-salon"
-        assert data["plan_tier"] == "standard"
+        assert data["plan_tier"] == "pro"
         assert data["app_name"] == "Test Salon App"
         assert data["feature_flags"]["modules"]["reports_enabled"] is True
         assert data["feature_flags"]["notifications"]["push_web"] is True
@@ -358,7 +334,7 @@ class TestTenantMetaEndpoint:
         tenant = Tenant.objects.create(
             name="Invite Salon",
             slug="invite-salon",
-            plan_tier=Tenant.PLAN_STANDARD,
+            plan_tier=Tenant.PLAN_BASIC,
             pwa_client_enabled=True,
         )
 
@@ -416,8 +392,8 @@ class TestTenantMetaEndpoint:
 class TestPlanUpgradeScenarios:
     """Testes para cenários de upgrade de plano."""
 
-    def test_basic_to_standard_upgrade(self):
-        """Teste upgrade de Basic para Standard."""
+    def test_basic_to_pro_upgrade(self):
+        """Teste upgrade de Basic para Pro."""
         tenant = Tenant.objects.create(
             name="Upgrade Salon",
             slug="upgrade-salon",
@@ -431,36 +407,12 @@ class TestPlanUpgradeScenarios:
         assert tenant.can_use_pwa_client()
 
         # Simular upgrade
-        tenant.plan_tier = Tenant.PLAN_STANDARD
+        tenant.plan_tier = Tenant.PLAN_PRO
         tenant.save()
 
         # Depois do upgrade
         assert tenant.can_use_reports()
         assert tenant.can_use_standard_reports()
+        assert tenant.can_use_advanced_reports()
         assert tenant.can_use_pwa_client()
-        assert not tenant.can_use_white_label()  # Ainda não é Pro
-
-    def test_standard_to_pro_upgrade(self):
-        """Teste upgrade de Standard para Pro."""
-        tenant = Tenant.objects.create(
-            name="Pro Upgrade Salon",
-            slug="pro-upgrade-salon",
-            plan_tier=Tenant.PLAN_STANDARD,
-        )
-
-        # Antes do upgrade
-        assert not tenant.can_use_white_label()
-        assert tenant.can_use_native_apps()  # Standard has Admin
-        assert not tenant.can_use_native_client()
-
-        # Simular upgrade para Pro com addons
-        tenant.plan_tier = Tenant.PLAN_PRO
-        # addons_enabled not required for entitlement anymore
-        tenant.sms_enabled = True
-        tenant.save()
-
-        # Depois do upgrade
-        assert tenant.can_use_white_label()
-        assert tenant.can_use_native_apps()
-        assert tenant.can_use_native_client()
-        assert tenant.can_use_advanced_notifications()
+        assert tenant.can_use_white_label()  # Pro tem white-label

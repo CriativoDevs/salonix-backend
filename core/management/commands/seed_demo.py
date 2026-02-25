@@ -33,7 +33,7 @@ class Command(BaseCommand):
                     "name": "Default Salon",
                     "app_name": "Default Salon",
                     # Configurar plano Standard para demo
-                    "plan_tier": "standard",
+                    "plan_tier": "pro",
                     # Habilitar features para demo
                     "reports_enabled": True,
                     "pwa_admin_enabled": True,
@@ -52,7 +52,7 @@ class Command(BaseCommand):
 
             # Se tenant já existia, atualizar feature flags para demo
             if not tenant_created:
-                default_tenant.plan_tier = "standard"
+                default_tenant.plan_tier = "pro"
                 default_tenant.reports_enabled = True
                 default_tenant.pwa_admin_enabled = True
                 default_tenant.pwa_client_enabled = True

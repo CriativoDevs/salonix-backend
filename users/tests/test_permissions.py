@@ -51,28 +51,6 @@ def tenant_basic(db):
 
 
 @pytest.fixture
-def tenant_standard(db):
-    """Cria tenant com plano Standard (€59/mês) - Admin App habilitado"""
-    from users.models import Tenant
-    from django.contrib.auth import get_user_model
-
-    User = get_user_model()
-
-    tenant = Tenant.objects.create(
-        name="Standard Tenant",
-        slug="standard-tenant",
-        plan_tier="standard",
-    )
-    User.objects.create_user(
-        username="standard_owner",
-        email="owner@standardtenant.com",
-        password="Test123!@#",
-        tenant=tenant,
-    )
-    return tenant
-
-
-@pytest.fixture
 def tenant_pro(db):
     """Cria tenant com plano Pro (€99/mês) - Admin + Client Apps habilitados"""
     from users.models import Tenant
@@ -188,15 +166,15 @@ class TestRequiresMobileAccessPermission:
         # Verificar payload da exceção
         error_detail = exc_info.value.detail
         assert error_detail["code"] == "PLAN_UPGRADE_REQUIRED"
-        assert error_detail["plan_required"] == "standard"
+        assert error_detail["plan_required"] == "pro"
         assert error_detail["current_plan"] == "basic"
         assert "/pricing" in error_detail["upgrade_url"]
 
-    def test_standard_tenant_is_allowed(
-        self, api_request_factory, tenant_standard, django_user_model
+    def test_pro_tenant_is_allowed(
+        self, api_request_factory, tenant_pro, django_user_model
     ):
-        """Tenant Standard deve ter acesso permitido"""
-        user = django_user_model.objects.get(email="owner@standardtenant.com")
+        """Tenant Pro deve ter acesso permitido"""
+        user = django_user_model.objects.get(email="owner@protenant.com")
 
         view = MockMobileView()
         request = api_request_factory.get("/mobile-resource/")

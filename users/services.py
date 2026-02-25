@@ -241,7 +241,12 @@ class TenantService:
 
 
 class FounderService:
-    """Serviço para gerenciamento do plano Founder."""
+    """
+    Serviço para gerenciamento do plano Founder.
+    Nota: O plano Founder tecnicamente herda todas as características do plano Basic
+    (Tenant.plan_tier = 'basic'), mas possui a flag is_founder=True para
+    identificação e benefícios futuros/exclusivos.
+    """
 
     FOUNDER_LIMIT = 500
 
@@ -367,7 +372,6 @@ class SMSRateLimiter:
     PLAN_LIMITS = {
         "founder": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
         "basic": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
-        "standard": {"minute": 5, "hour": 60, "day": 300, "month": 9000},
         "pro": {"minute": 10, "hour": 120, "day": 800, "month": 24000},
     }
 

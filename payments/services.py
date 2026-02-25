@@ -232,34 +232,24 @@ class SubscriptionService:
             "name": "Basic",
             "price_monthly": Decimal("29.00"),
             "features": [
-                "PWA Admin/Manager/Staff",
-                "Relatórios básicos",
+                "PWA Admin/Manager/Staff/Client",
+                "Relatórios básicos (Overview)",
                 "Email e web push",
-            ],
-            "credits_included": Decimal("0.00"),
-            "comm_extra_allowed": True,
-            "comm_auto_renew": False,
-        },
-        "standard": {
-            "name": "Standard",
-            "price_monthly": Decimal("55.00"),
-            "features": [
-                "Tudo do Basic",
-                "PWA Cliente",
             ],
             "credits_included": Decimal("5.00"),
             "comm_extra_allowed": True,
-            "comm_auto_renew": True,
+            "comm_auto_renew": False,
         },
         "pro": {
             "name": "Pro",
-            "price_monthly": Decimal("95.00"),
+            "price_monthly": Decimal("55.00"),
             "features": [
-                "Tudo do Standard",
-                "White‑label",
-                "Domínio personalizado",
+                "Tudo do Basic",
+                "Apps Nativos (Admin/Staff/Client)",
+                "Relatórios Avançados (Business + Insights)",
+                "White‑label e Domínio personalizado",
             ],
-            "credits_included": Decimal("25.00"),
+            "credits_included": Decimal("15.00"),
             "comm_extra_allowed": True,
             "comm_auto_renew": True,
         },
@@ -282,7 +272,7 @@ class SubscriptionService:
         from users.services import FounderService
 
         plans = []
-        plan_order = ["basic", "standard", "pro"]
+        plan_order = ["basic", "pro"]
         current_index = (
             plan_order.index(current_plan) if current_plan in plan_order else -1
         )

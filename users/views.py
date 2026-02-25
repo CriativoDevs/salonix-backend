@@ -266,7 +266,7 @@ class EmailTokenObtainPairView(TokenObtainPairView):
                             status=status.HTTP_403_FORBIDDEN,
                         )
 
-                    # Validate Admin App access (Standard+ required)
+                    # Validate Admin App access (Pro+ required)
                     if app_type == "admin" and not tenant.can_use_native_admin():
                         USERS_AUTH_EVENTS_TOTAL.labels(
                             event="login_admin_denied", result="failure"
@@ -277,14 +277,14 @@ class EmailTokenObtainPairView(TokenObtainPairView):
                                 "tenant_id": tenant.id,
                                 "tenant_slug": tenant.slug,
                                 "current_plan": tenant.plan_tier,
-                                "required_plan": "standard",
+                                "required_plan": "pro",
                                 "user_email": user_email,
                             },
                         )
                         return Response(
                             {
-                                "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Standard para desbloquear.",
-                                "plan_required": "standard",
+                                "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Pro para desbloquear.",
+                                "plan_required": "pro",
                                 "current_plan": tenant.plan_tier,
                                 "upgrade_url": "/pricing",
                             },
@@ -954,13 +954,13 @@ class TenantModulesSettingsView(APIView):
         if "pwa_client_enabled" in v:
             desired = bool(v["pwa_client_enabled"])
             if desired and tenant.plan_tier not in (
-                Tenant.PLAN_STANDARD,
+                Tenant.PLAN_BASIC,
                 Tenant.PLAN_PRO,
             ):
                 return Response(
                     {
                         "detail": (
-                            "PWA Cliente disponível a partir do plano Standard. "
+                            "PWA Cliente disponível a partir do plano Basic. "
                             "Atualize seu plano para ativar."
                         )
                     },

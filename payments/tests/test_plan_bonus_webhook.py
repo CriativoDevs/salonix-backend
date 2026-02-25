@@ -47,7 +47,7 @@ class PlanBonusWebhookTestCase(TestCase):
     ):
         """
         Testa se créditos são concedidos quando checkout.session.completed
-        indica uma assinatura de plano com créditos (ex: Standard).
+        indica uma assinatura de plano com créditos (ex: Basic).
         """
         # Mock do Subscription.retrieve para quando for chamado
         mock_sub_instance = MagicMock()
@@ -56,8 +56,8 @@ class PlanBonusWebhookTestCase(TestCase):
             "status": "active",
             "trial_end": None,
             "start_date": 1700000000,
-            "metadata": {"plan_code": "standard"},
-            "items": {"data": [{"price": {"id": "price_standard"}}]},
+            "metadata": {"plan_code": "basic"},
+            "items": {"data": [{"price": {"id": "price_basic"}}]},
         }
         # Caso o código acesse atributos direto sem to_dict
         mock_sub_instance.get.side_effect = mock_sub_instance.to_dict.return_value.get
@@ -73,7 +73,7 @@ class PlanBonusWebhookTestCase(TestCase):
                     "customer": "cus_test_bonus",
                     "subscription": "sub_test_123",
                     "mode": "subscription",
-                    "metadata": {"plan_code": "standard"},
+                    "metadata": {"plan_code": "basic"},
                 }
             },
         }
@@ -90,7 +90,7 @@ class PlanBonusWebhookTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
 
         # Verificar se créditos foram adicionados
-        # Standard tem 5.00 de créditos incluídos
+        # Basic tem 5.00 de créditos incluídos
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.comm_credit_eur, Decimal("5.00"))
 
@@ -146,9 +146,9 @@ class PlanBonusWebhookTestCase(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        # Pro tem 25.00 de créditos incluídos
+        # Pro tem 15.00 de créditos incluídos
         self.tenant.refresh_from_db()
-        self.assertEqual(self.tenant.comm_credit_eur, Decimal("25.00"))
+        self.assertEqual(self.tenant.comm_credit_eur, Decimal("15.00"))
 
     @patch("stripe.Webhook.construct_event")
     @patch("stripe.Subscription.retrieve")
@@ -163,8 +163,8 @@ class PlanBonusWebhookTestCase(TestCase):
             "status": "active",
             "trial_end": None,
             "start_date": 1700000000,
-            "metadata": {"plan_code": "standard"},
-            "items": {"data": [{"price": {"id": "price_standard"}}]},
+            "metadata": {"plan_code": "basic"},
+            "items": {"data": [{"price": {"id": "price_basic"}}]},
         }
         mock_sub_instance.to_dict.return_value = data_dict
         mock_sub_instance.get.side_effect = data_dict.get
@@ -179,7 +179,7 @@ class PlanBonusWebhookTestCase(TestCase):
                     "customer": "cus_test_bonus",
                     "subscription": "sub_test_double",
                     "mode": "subscription",
-                    "metadata": {"plan_code": "standard"},
+                    "metadata": {"plan_code": "basic"},
                 }
             },
         }

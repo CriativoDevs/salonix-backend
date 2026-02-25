@@ -13,7 +13,7 @@ def test_resend_invite_success():
     tenant = Tenant.objects.create(
         name="Invite Salon",
         slug="invite-salon",
-        plan_tier=Tenant.PLAN_STANDARD,
+        plan_tier=Tenant.PLAN_BASIC,
         pwa_client_enabled=True,
     )
     user = CustomUser.objects.create_user(
@@ -74,7 +74,7 @@ def test_resend_invite_requires_email():
     tenant = Tenant.objects.create(
         name="Invite",
         slug="invite",
-        plan_tier=Tenant.PLAN_STANDARD,
+        plan_tier=Tenant.PLAN_BASIC,
         pwa_client_enabled=True,
     )
     user = CustomUser.objects.create_user(
@@ -103,7 +103,7 @@ def test_auto_invite_triggered_on_create():
     tenant = Tenant.objects.create(
         name="Auto",
         slug="auto",
-        plan_tier=Tenant.PLAN_STANDARD,
+        plan_tier=Tenant.PLAN_BASIC,
         pwa_client_enabled=True,
         auto_invite_enabled=True,
     )
@@ -136,7 +136,7 @@ def test_auto_invite_not_triggered_without_email():
     tenant = Tenant.objects.create(
         name="Auto",
         slug="auto-no-email",
-        plan_tier=Tenant.PLAN_STANDARD,
+        plan_tier=Tenant.PLAN_BASIC,
         pwa_client_enabled=True,
         auto_invite_enabled=True,
     )

@@ -81,7 +81,7 @@ class HasProFeature(BasePermission):
 class RequiresMobileAccess(BasePermission):
     """
     Permite acesso somente se o tenant do usuário tiver permissão para usar
-    o aplicativo nativo (Plano Standard ou superior).
+    o aplicativo nativo (Plano Pro).
     Retorna 403 com payload específico de upgrade se o plano for insuficiente.
     """
 
@@ -118,8 +118,8 @@ class RequiresMobileAccess(BasePermission):
         # ou simplesmente raising PermissionDenied com dict (DRF suporta dict no detail).
 
         detail = {
-            "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Standard para desbloquear.",
-            "plan_required": "standard",
+            "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Pro para desbloquear.",
+            "plan_required": "pro",
             "current_plan": tenant.plan_tier,
             "upgrade_url": "/pricing",
             "code": "PLAN_UPGRADE_REQUIRED",
