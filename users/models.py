@@ -152,13 +152,13 @@ class Tenant(models.Model):
 
     # Feature Flags - Módulos
     reports_enabled = models.BooleanField(
-        default=cast(Any, False), help_text="Habilita módulo de relatórios"
+        default=cast(Any, True), help_text="Habilita módulo de relatórios"
     )
     pwa_admin_enabled = models.BooleanField(
         default=cast(Any, True), help_text="Habilita PWA Admin"
     )
     pwa_client_enabled = models.BooleanField(
-        default=cast(Any, False), help_text="Habilita PWA Cliente"
+        default=cast(Any, True), help_text="Habilita PWA Cliente"
     )
     rn_admin_enabled = models.BooleanField(
         default=cast(Any, False), help_text="Habilita app nativo Admin (React Native)"
@@ -175,7 +175,7 @@ class Tenant(models.Model):
         default=cast(Any, False), help_text="Habilita notificações mobile push"
     )
     sms_enabled = models.BooleanField(
-        default=cast(Any, False), help_text="Habilita notificações SMS"
+        default=cast(Any, True), help_text="Habilita notificações SMS"
     )
     whatsapp_enabled = models.BooleanField(
         default=cast(Any, False), help_text="Habilita notificações WhatsApp"
