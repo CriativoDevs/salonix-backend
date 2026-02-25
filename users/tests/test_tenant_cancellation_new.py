@@ -22,7 +22,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         self.tenant = Tenant.objects.create(
             name="Test Salon",
             slug="test-salon",
-            plan_tier="standard",
+            plan_tier="pro",
             status=Tenant.STATUS_ACTIVE,
         )
 
@@ -205,7 +205,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         """Testa que não pode reativar após período de retenção."""
         # Setup cancelled tenant beyond retention
         self.tenant.status = Tenant.STATUS_CANCELLED
-        self.tenant.cancelled_at = timezone.now() - timedelta(days=61)
+        self.tenant.cancelled_at = timezone.now() - timedelta(days=91)
         self.tenant.scheduled_deletion_at = timezone.now() - timedelta(days=1)
         self.tenant.reactivation_token = "valid-token-123"
         self.tenant.save()
@@ -246,8 +246,8 @@ class TenantCancellationNewFlowTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.tenant.refresh_from_db()
-        expected_min = before + timedelta(days=60)
-        expected_max = after + timedelta(days=60)
+        expected_min = before + timedelta(days=90)
+        expected_max = after + timedelta(days=90)
 
         self.assertGreaterEqual(self.tenant.scheduled_deletion_at, expected_min)
         self.assertLessEqual(self.tenant.scheduled_deletion_at, expected_max)

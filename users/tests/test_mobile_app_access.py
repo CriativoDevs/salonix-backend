@@ -46,25 +46,6 @@ def tenant_basic(db):
 
 
 @pytest.fixture
-def tenant_standard(db):
-    """Cria tenant com plano Standard (€59/mês) - Admin App habilitado"""
-    from users.models import Tenant
-
-    tenant = Tenant.objects.create(
-        name="Standard Tenant",
-        slug="standard-tenant",
-        plan_tier="standard",
-    )
-    user = User.objects.create_user(
-        username="standard_owner",
-        email="owner@standardtenant.com",
-        password="Test123!@#",
-        tenant=tenant,
-    )
-    return tenant
-
-
-@pytest.fixture
 def tenant_pro(db):
     """Cria tenant com plano Pro (€99/mês) - Admin + Client Apps habilitados"""
     from users.models import Tenant
@@ -136,37 +117,16 @@ class TestMobileAppAccessControl:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "detail" in response.data
-        assert "Standard" in response.data["detail"]  # Mention required plan
-        assert response.data["plan_required"] == "standard"
+        assert "Pro" in response.data["detail"]  # Mention required plan
+        assert response.data["plan_required"] == "pro"
         assert response.data["current_plan"] == "basic"
         assert "upgrade_url" in response.data
-
-    def test_standard_tenant_can_access_admin_app(self, tenant_standard):
-        """
-        Standard tenant (€59) loga no Admin App → HTTP 200 + tokens
-
-        Expectativa: Login bem-sucedido com tokens JWT
-        """
-        response = self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@standardtenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="admin",
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        assert "access" in response.data
-        assert "refresh" in response.data
-        assert response.data["user"]["email"] == "owner@standardtenant.com"
-        assert response.data["tenant"]["slug"] == "standard-tenant"
 
     def test_pro_tenant_can_access_admin_app(self, tenant_pro):
         """
         Pro tenant (€99) loga no Admin App → HTTP 200 + tokens
 
-        Expectativa: Login bem-sucedido (Pro inclui Standard features)
+        Expectativa: Login bem-sucedido (Pro inclui Admin features)
         """
         response = self.client.post(
             self.token_url,
@@ -225,25 +185,6 @@ class TestMobileAppAccessControl:
         assert response.data["plan_required"] == "pro"
         assert response.data["current_plan"] == "basic"
 
-    def test_standard_tenant_cannot_access_client_app(self, tenant_standard):
-        """
-        Standard tenant (€59) tenta logar no Client App → HTTP 403
-
-        Expectativa: Standard não inclui Client App (requer Pro)
-        """
-        response = self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@standardtenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="client",
-        )
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.data["plan_required"] == "pro"
-        assert response.data["current_plan"] == "standard"
-
     def test_pro_tenant_can_access_client_app(self, tenant_pro):
         """
         Pro tenant (€99) loga no Client App → HTTP 200 + tokens
@@ -285,16 +226,16 @@ class TestMobileAppAccessControl:
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.data
 
-    def test_web_login_works_for_standard_tenant(self, tenant_standard):
+    def test_web_login_works_for_pro_tenant(self, tenant_pro):
         """
-        Standard tenant faz login web → HTTP 200
+        Pro tenant faz login web → HTTP 200
 
         Expectativa: Web login sempre funciona
         """
         response = self.client.post(
             self.token_url,
             data={
-                "email": "owner@standardtenant.com",
+                "email": "owner@protenant.com",
                 "password": "Test123!@#",
             },
         )
@@ -350,8 +291,8 @@ class TestMobileAppAccessControl:
         # Values validation
         assert isinstance(response.data["detail"], str)
         assert len(response.data["detail"]) > 0
-        assert response.data["plan_required"] in ["standard", "pro"]
-        assert response.data["current_plan"] in ["basic", "standard", "pro"]
+        assert response.data["plan_required"] in ["pro"]
+        assert response.data["current_plan"] in ["basic", "pro"]
         assert response.data["upgrade_url"].startswith("/")
 
     # ========================================================================
@@ -392,7 +333,7 @@ class TestMobileAppAccessControl:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.data["plan_required"] == "standard"
+        assert response.data["plan_required"] == "pro"
 
     def test_unknown_app_type_defaults_to_web(self, tenant_basic):
         """

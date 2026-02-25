@@ -138,7 +138,7 @@ def test_checkout_trial_suppressed_for_existing_subscription(
     monkeypatch, settings, auth_client
 ):
     settings.STRIPE_API_KEY = "sk_test_xxx"
-    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -167,11 +167,11 @@ def test_checkout_trial_suppressed_for_existing_subscription(
     )
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "standard"}, format="json")
+    resp = c.post(url, {"plan": "pro"}, format="json")
     assert resp.status_code == 200
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
-    assert created_kwargs["line_items"][0]["price"] == "price_standard_123"
+    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
     assert "trial_period_days" not in created_kwargs["subscription_data"]
 
 
@@ -180,7 +180,7 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
     monkeypatch, settings, auth_client
 ):
     settings.STRIPE_API_KEY = "sk_test_xxx"
-    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -216,11 +216,11 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
     )
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "standard"}, format="json")
+    resp = c.post(url, {"plan": "pro"}, format="json")
     assert resp.status_code == 200
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
-    assert created_kwargs["line_items"][0]["price"] == "price_standard_123"
+    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
     assert "trial_period_days" not in created_kwargs["subscription_data"]
     assert created_kwargs["subscription_data"].get("trial_from_plan") is False
 
@@ -369,7 +369,7 @@ def test_webhook_checkout_session_completed_creates_subscription(
 @pytest.mark.django_db
 def test_checkout_requires_owner_role(monkeypatch, settings):
     settings.STRIPE_API_KEY = "sk_test_xxx"
-    settings.STRIPE_PRICE_STANDARD_MONTHLY_ID = "price_standard_123"
+    settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -399,7 +399,7 @@ def test_checkout_requires_owner_role(monkeypatch, settings):
     c.force_authenticate(user=user)
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "standard"}, format="json")
+    resp = c.post(url, {"plan": "pro"}, format="json")
     assert resp.status_code == 403
     assert "Somente OWNER" in resp.data.get("detail", "")
 
@@ -458,10 +458,10 @@ def test_webhook_invoice_payment_succeeded_applies_included_credits(
         tenant=tenant, transaction_type=CommLedger.TransactionType.BONUS
     )
     assert bonus_tx.count() == 1
-    assert str(bonus_tx.first().amount_eur) == "25.00"
+    assert str(bonus_tx.first().amount_eur) == "15.00"
 
     tenant.refresh_from_db()
-    assert str(tenant.comm_credit_eur) == "25.00"
+    assert str(tenant.comm_credit_eur) == "15.00"
 
     payload2 = json.dumps(
         {
@@ -488,4 +488,4 @@ def test_webhook_invoice_payment_succeeded_applies_included_credits(
     )
     assert bonus_tx.count() == 1
     tenant.refresh_from_db()
-    assert str(tenant.comm_credit_eur) == "25.00"
+    assert str(tenant.comm_credit_eur) == "15.00"

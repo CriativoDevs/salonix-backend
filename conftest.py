@@ -20,7 +20,7 @@ def setup_default_tenant(db):
         name="Test Default Salon",
         app_name="Test Default App",
         # Habilitar features para testes
-        plan_tier="standard",
+        plan_tier="pro",
         reports_enabled=True,
         pwa_admin_enabled=True,
         pwa_client_enabled=True,

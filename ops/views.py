@@ -71,8 +71,7 @@ logger = logging.getLogger(__name__)
 
 PLAN_PRICING_EUR: Dict[str, Decimal] = {
     Tenant.PLAN_BASIC: Decimal("29.00"),
-    Tenant.PLAN_STANDARD: Decimal("55.00"),
-    Tenant.PLAN_PRO: Decimal("95.00"),
+    Tenant.PLAN_PRO: Decimal("55.00"),
 }
 
 
@@ -543,8 +542,7 @@ class OpsMetricsOverviewView(APIView):
         # MRR Estimation
         plan_pricing = {
             Tenant.PLAN_BASIC: Decimal("29.00"),
-            Tenant.PLAN_STANDARD: Decimal("55.00"),
-            Tenant.PLAN_PRO: Decimal("95.00"),
+            Tenant.PLAN_PRO: Decimal("55.00"),
         }
         expected_mrr = Decimal("0.00")
         for tenant in Tenant.objects.filter(is_active=True):

@@ -166,7 +166,7 @@ class TestOpsTenantsEndpoints:
 
         response = api_client.post(
             url,
-            {"plan_tier": Tenant.PLAN_STANDARD},
+            {"plan_tier": Tenant.PLAN_BASIC},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
@@ -176,13 +176,13 @@ class TestOpsTenantsEndpoints:
 
         response = api_client.post(
             url,
-            {"plan_tier": Tenant.PLAN_STANDARD, "force": True},
+            {"plan_tier": Tenant.PLAN_BASIC, "force": True},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
         assert response.status_code == status.HTTP_200_OK
         tenant.refresh_from_db()
-        assert tenant.plan_tier == Tenant.PLAN_STANDARD
+        assert tenant.plan_tier == Tenant.PLAN_BASIC
         assert tenant.sms_enabled is False
         assert tenant.whatsapp_enabled is False
         assert "rn_admin" not in (tenant.addons_enabled or [])

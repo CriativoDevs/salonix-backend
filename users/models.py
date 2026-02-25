@@ -128,14 +128,12 @@ class Tenant(models.Model):
 
     # Planos e Feature Flags
     PLAN_BASIC = "basic"
-    PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
     PLAN_FOUNDER = "founder"
     PLAN_CHOICES = [
         (PLAN_BASIC, "Basic"),
-        (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
-        (PLAN_FOUNDER, "Founder"),
+        (PLAN_FOUNDER, "Founder"),  # DEPRECATED: Use PLAN_BASIC + is_founder=True
     ]
 
     plan_tier = models.CharField(
@@ -223,7 +221,7 @@ class Tenant(models.Model):
     )
     comm_auto_renew = models.BooleanField(
         default=cast(Any, False),
-        help_text="Renovação automática de crédito mensal (Standard+)",
+        help_text="Renovação automática de crédito mensal (Pro+)",
     )
 
     # Plano Founder (Promoção Limitada)
@@ -321,16 +319,12 @@ class Tenant(models.Model):
         return self.reports_enabled or self.plan_tier in [
             self.PLAN_FOUNDER,  # Conforme Decision Brief: todos têm acesso
             self.PLAN_BASIC,
-            self.PLAN_STANDARD,
             self.PLAN_PRO,
         ]
 
     def can_use_standard_reports(self):
-        """Verifica se pode usar relatórios de análise (Standard+)"""
-        return self.plan_tier in [
-            self.PLAN_STANDARD,
-            self.PLAN_PRO,
-        ]
+        """Verifica se pode usar relatórios de análise (Pro+)"""
+        return self.plan_tier == self.PLAN_PRO
 
     def can_use_advanced_reports(self):
         """Verifica se pode usar relatórios avançados/insights (Pro+)"""
@@ -340,7 +334,6 @@ class Tenant(models.Model):
         """Verifica se pode usar PWA Cliente (Todos os planos)"""
         return self.pwa_client_enabled or self.plan_tier in [
             self.PLAN_BASIC,
-            self.PLAN_STANDARD,
             self.PLAN_PRO,
         ]
 
@@ -361,11 +354,8 @@ class Tenant(models.Model):
         return self.comm_auto_renew
 
     def can_use_native_admin(self):
-        """Verifica se pode usar app nativo Admin (Standard+ ou flag explícita)"""
-        return self.rn_admin_enabled or self.plan_tier in [
-            self.PLAN_STANDARD,
-            self.PLAN_PRO,
-        ]
+        """Verifica se pode usar app nativo Admin (Pro+ ou flag explícita)"""
+        return self.rn_admin_enabled or self.plan_tier == self.PLAN_PRO
 
     def can_use_native_client(self):
         """Verifica se pode usar app nativo Cliente (Pro+ ou flag explícita)"""
@@ -406,7 +396,6 @@ class Tenant(models.Model):
         """Retorna dias de retenção baseado no plano."""
         RETENTION_DAYS = {
             self.PLAN_BASIC: 30,
-            self.PLAN_STANDARD: 60,
             self.PLAN_PRO: 90,
             self.PLAN_FOUNDER: 90,
         }
@@ -772,11 +761,9 @@ class TenantStaffMember(models.Model):
 
 class UserFeatureFlags(models.Model):
     PLAN_BASIC = "basic"
-    PLAN_STANDARD = "standard"
     PLAN_PRO = "pro"
     PLAN_CHOICES = (
         (PLAN_BASIC, "Basic"),
-        (PLAN_STANDARD, "Standard"),
         (PLAN_PRO, "Pro"),
     )
 

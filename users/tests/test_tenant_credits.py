@@ -29,22 +29,6 @@ class TestTenantInitialCredits:
         assert ledger_entry.balance_before == Decimal("0.00")
         assert ledger_entry.balance_after == Decimal("5.00")
 
-    def test_standard_plan_initial_credits(self):
-        """Testa se o plano Standard recebe 10€ de crédito inicial."""
-        tenant = Tenant.objects.create(
-            name="Tenant Standard",
-            slug="tenant-standard-credits",
-            plan_tier=Tenant.PLAN_STANDARD
-        )
-        
-        tenant.refresh_from_db()
-        
-        assert tenant.comm_credit_eur == Decimal("10.00")
-        
-        ledger_entry = CommLedger.objects.get(tenant=tenant)
-        assert ledger_entry.amount_eur == Decimal("10.00")
-        assert ledger_entry.balance_after == Decimal("10.00")
-
     def test_pro_plan_initial_credits(self):
         """Testa se o plano Pro recebe 15€ de crédito inicial."""
         tenant = Tenant.objects.create(

@@ -19,7 +19,7 @@ class TestClientAccessFlow:
         self.tenant = Tenant.objects.create(
             name="Test Salon",
             slug="test-salon",
-            plan_tier=Tenant.PLAN_STANDARD,
+            plan_tier=Tenant.PLAN_BASIC,
             pwa_client_enabled=True,
         )
         self.customer = SalonCustomer.objects.create(

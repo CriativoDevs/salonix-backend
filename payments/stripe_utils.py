@@ -8,10 +8,6 @@ PLAN_PRICE_SETTING_KEYS = {
         "monthly": "STRIPE_PRICE_BASIC_MONTHLY_ID",
         "yearly": "STRIPE_PRICE_BASIC_YEARLY_ID",
     },
-    "standard": {
-        "monthly": "STRIPE_PRICE_STANDARD_MONTHLY_ID",
-        "yearly": "STRIPE_PRICE_STANDARD_YEARLY_ID",
-    },
     "pro": {
         "monthly": "STRIPE_PRICE_PRO_MONTHLY_ID",
         "yearly": "STRIPE_PRICE_PRO_YEARLY_ID",

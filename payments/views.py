@@ -61,7 +61,6 @@ class CreateCheckoutSession(APIView):
 
         allowed_plans = {
             "basic",
-            "standard",
             "pro",
             "founder",
         }
@@ -343,7 +342,7 @@ class StripeWebhookView(APIView):
                 f"detected_plan={detected_plan}, price_id={price_id}"
             )
 
-            if detected_plan not in {"basic", "standard", "pro"}:
+            if detected_plan not in {"basic", "pro"}:
                 # Se não for um plano conhecido, assumimos basic apenas se não conseguirmos identificar
                 # Mas se o detected_plan veio como None, mantemos None para logica abaixo
                 if not detected_plan:
@@ -393,12 +392,21 @@ class StripeWebhookView(APIView):
                 # Se estiver incomplete, permitimos que o tenant reflita o plano escolhido (UX),
                 # embora as feature flags (is_pro) permaneçam restritas até 'active'.
                 use_detected = is_pro or (status == "incomplete" and detected_plan)
-                # Fallback seguro para basic se não houver detected_plan ou se não for 'pro' elegível
-                desired_plan = (
-                    detected_plan
-                    if use_detected
-                    else getattr(tenant, "PLAN_BASIC", "basic")
-                )
+
+                # Tratamento especial para Founder: herda Basic + flag is_founder
+                if detected_plan == "founder":
+                    desired_plan = "basic"
+                    if not tenant.is_founder:
+                        tenant.is_founder = True
+                        tenant.save(update_fields=["is_founder"])
+                        logger.info(f"Tenant {tenant.slug} marked as Founder")
+                else:
+                    # Fallback seguro para basic se não houver detected_plan ou se não for 'pro' elegível
+                    desired_plan = (
+                        detected_plan
+                        if use_detected
+                        else getattr(tenant, "PLAN_BASIC", "basic")
+                    )
 
                 if desired_plan and tenant.plan_tier != desired_plan:
                     old_plan = tenant.plan_tier
@@ -1487,16 +1495,11 @@ class StripeSettingsView(APIView):
         auto_renewal = serializer.validated_data["auto_renewal"]
         old_value = bool(getattr(tenant, "comm_auto_renew", False))
 
-        # Validar plano para habilitar auto-renovação (Standard+)
-        if auto_renewal and tenant.plan_tier not in (
-            Tenant.PLAN_STANDARD,
-            Tenant.PLAN_PRO,
-        ):
+        # Validar plano para habilitar auto-renovação (Pro+)
+        if auto_renewal and tenant.plan_tier != Tenant.PLAN_PRO:
             PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
             return Response(
-                {
-                    "detail": "Renovação automática disponível apenas em planos Standard+"
-                },
+                {"detail": "Renovação automática disponível apenas em planos Pro"},
                 status=403,
             )
 

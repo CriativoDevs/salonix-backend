@@ -18,8 +18,8 @@ class CreditServiceTestCase(TestCase):
         self.tenant = Tenant.objects.create(
             name="Test Tenant",
             slug="test-tenant",
-            plan_tier="standard",
-            comm_credit_eur=Decimal("10.00"),
+            plan_tier="pro",
+            comm_credit_eur=Decimal("15.00"),
             comm_extra_allowed=True,
             comm_auto_renew=True,
         )
@@ -34,7 +34,7 @@ class CreditServiceTestCase(TestCase):
     def test_get_credit_balance(self):
         """Testa obtenção do saldo de créditos."""
         balance = self.credit_service.get_credit_balance()
-        self.assertEqual(balance, Decimal("10.00"))
+        self.assertEqual(balance, Decimal("15.00"))
 
     def test_consume_credits_success(self):
         """Testa consumo de créditos com sucesso."""
@@ -44,19 +44,19 @@ class CreditServiceTestCase(TestCase):
 
         self.assertEqual(transaction.transaction_type, "consumption")
         self.assertEqual(transaction.amount_eur, Decimal("5.00"))
-        self.assertEqual(transaction.balance_before, Decimal("10.00"))
-        self.assertEqual(transaction.balance_after, Decimal("5.00"))
+        self.assertEqual(transaction.balance_before, Decimal("15.00"))
+        self.assertEqual(transaction.balance_after, Decimal("10.00"))
         self.assertEqual(transaction.status, "completed")
 
         # Verifica se o saldo foi atualizado
         self.tenant.refresh_from_db()
-        self.assertEqual(self.tenant.comm_credit_eur, Decimal("5.00"))
+        self.assertEqual(self.tenant.comm_credit_eur, Decimal("10.00"))
 
     def test_consume_credits_insufficient_balance(self):
         """Testa consumo de créditos com saldo insuficiente."""
         with self.assertRaises(ValueError) as context:
             self.credit_service.consume_credits(
-                amount=Decimal("15.00"),
+                amount=Decimal("20.00"),
                 description="Test consumption",
                 created_by=self.user,
             )
@@ -74,17 +74,17 @@ class CreditServiceTestCase(TestCase):
 
         self.assertEqual(transaction.transaction_type, "purchase")
         self.assertEqual(transaction.amount_eur, Decimal("5.00"))
-        self.assertEqual(transaction.balance_before, Decimal("10.00"))
-        self.assertEqual(transaction.balance_after, Decimal("15.00"))
+        self.assertEqual(transaction.balance_before, Decimal("15.00"))
+        self.assertEqual(transaction.balance_after, Decimal("20.00"))
 
         # Verifica se o saldo foi atualizado
         self.tenant.refresh_from_db()
-        self.assertEqual(self.tenant.comm_credit_eur, Decimal("15.00"))
+        self.assertEqual(self.tenant.comm_credit_eur, Decimal("20.00"))
 
     def test_can_consume_credits(self):
         """Testa verificação de possibilidade de consumo."""
         self.assertTrue(self.credit_service.can_consume_credits(Decimal("5.00")))
-        self.assertFalse(self.credit_service.can_consume_credits(Decimal("15.00")))
+        self.assertFalse(self.credit_service.can_consume_credits(Decimal("20.00")))
 
     def test_get_credit_history(self):
         """Testa obtenção do histórico de créditos."""
@@ -130,8 +130,8 @@ class CreditServiceTestCase(TestCase):
 
         self.assertEqual(stats["total_purchased"], Decimal("10.00"))
         self.assertEqual(stats["total_consumed"], Decimal("3.00"))
-        # 5.00 (bonus test) + 10.00 (initial credit standard plan) = 15.00
-        self.assertEqual(stats["total_bonus"], Decimal("15.00"))
+        # 5.00 (bonus test) + 15.00 (initial credit pro plan) = 20.00
+        self.assertEqual(stats["total_bonus"], Decimal("20.00"))
 
 
 class CreditEndpointsTestCase(APITestCase):
@@ -141,8 +141,8 @@ class CreditEndpointsTestCase(APITestCase):
         self.tenant = Tenant.objects.create(
             name="Test Tenant",
             slug="test-tenant-endpoints",
-            plan_tier="standard",
-            comm_credit_eur=Decimal("10.00"),
+            plan_tier="pro",
+            comm_credit_eur=Decimal("15.00"),
             comm_extra_allowed=True,
             comm_auto_renew=True,
         )
@@ -162,7 +162,7 @@ class CreditEndpointsTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        self.assertEqual(data["current_balance"], "10.00")
+        self.assertEqual(data["current_balance"], "15.00")
         self.assertTrue(data["can_purchase_extra"])
         self.assertTrue(data["has_auto_renewal"])
         self.assertIn("total_purchased", data)
@@ -200,13 +200,13 @@ class CreditEndpointsTestCase(APITestCase):
         response_data = response.json()
 
         self.assertEqual(response_data["status"], "success")
-        self.assertEqual(response_data["new_balance"], 5.0)
+        self.assertEqual(response_data["new_balance"], 10.0)
         self.assertIn("transaction_id", response_data)
 
     def test_consume_credits_view_insufficient_balance(self):
         """Testa endpoint de consumo com saldo insuficiente."""
         url = reverse("consume_credits")
-        data = {"amount": "15.00", "description": "Test consumption"}
+        data = {"amount": "20.00", "description": "Test consumption"}
 
         response = self.client.post(url, data, format="json")
 
@@ -224,7 +224,7 @@ class CreditEndpointsTestCase(APITestCase):
         response_data = response.json()
 
         self.assertEqual(response_data["status"], "success")
-        self.assertEqual(response_data["new_balance"], 20.0)
+        self.assertEqual(response_data["new_balance"], 25.0)
         self.assertIn("transaction_id", response_data)
 
     def test_purchase_credits_view_not_allowed(self):

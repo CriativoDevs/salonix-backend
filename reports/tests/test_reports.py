@@ -290,6 +290,11 @@ def test_reports_overview_ok():
 @pytest.mark.django_db
 def test_reports_top_services_ok():
     user = User.objects.create_user(username="pro2", password="x", email="p2@e.com")
+    # Ensure tenant is PRO for access to Top Services
+    if user.tenant:
+        user.tenant.plan_tier = "pro"
+        user.tenant.save()
+
     UserFeatureFlags.objects.update_or_create(
         user=user, defaults={"is_pro": True, "reports_enabled": True}
     )
@@ -310,6 +315,11 @@ def test_reports_top_services_ok():
 @pytest.mark.django_db
 def test_reports_revenue_series_day_ok():
     user = User.objects.create_user(username="pro3", password="x", email="p3@e.com")
+    # Ensure tenant is PRO for access to Revenue Series
+    if user.tenant:
+        user.tenant.plan_tier = "pro"
+        user.tenant.save()
+
     UserFeatureFlags.objects.update_or_create(
         user=user, defaults={"is_pro": True, "reports_enabled": True}
     )
@@ -367,41 +377,9 @@ def test_reports_permissions_by_plan():
     r = c.get("/api/reports/top-services/")
     assert r.status_code == 403
 
-    # Revenue -> 403 (Requer Standard)
+    # Revenue -> 403 (Requer Pro)
     r = c.get("/api/reports/revenue/")
     assert r.status_code == 403
-
-    # 2. Tenant Standard: Deve ter acesso a tudo (Overview + Analysis)
-    tenant_std = Tenant.objects.create(
-        slug=f"std-tenant-reports-{suffix}",
-        name="Std Salon Reports",
-        plan_tier=Tenant.PLAN_STANDARD,
-        reports_enabled=True,
-    )
-    user_std = User.objects.create_user(
-        username=f"std_rep_{suffix}",
-        password="x",
-        email=f"std_{suffix}@rep.com",
-        tenant=tenant_std,
-    )
-    UserFeatureFlags.objects.update_or_create(
-        user=user_std, defaults={"is_pro": False, "reports_enabled": True}
-    )
-    _seed_data(user_std)
-
-    c.force_authenticate(user_std)
-
-    # Overview -> OK
-    r = c.get("/api/reports/overview/")
-    assert r.status_code == 200
-
-    # Top Services -> OK
-    r = c.get("/api/reports/top-services/?limit=5")
-    assert r.status_code == 200
-
-    # Revenue -> OK
-    r = c.get("/api/reports/revenue/")
-    assert r.status_code == 200
 
 
 @pytest.mark.django_db
@@ -418,20 +396,20 @@ def test_retention_report_permissions_and_data():
 
     # --- 1. Test Permissions ---
 
-    # Standard User -> Deve levar 403 no retention e advanced
-    tenant_std = Tenant.objects.create(
-        slug=f"std-tenant-retention-{suffix}",
-        name="Std Salon Retention",
-        plan_tier=Tenant.PLAN_STANDARD,
+    # Basic User -> Deve levar 403 no retention e advanced
+    tenant_basic = Tenant.objects.create(
+        slug=f"basic-tenant-retention-{suffix}",
+        name="Basic Salon Retention",
+        plan_tier=Tenant.PLAN_BASIC,
     )
-    user_std = User.objects.create_user(
-        username=f"std_ret_{suffix}",
+    user_basic = User.objects.create_user(
+        username=f"basic_ret_{suffix}",
         password="x",
-        email=f"std_ret_{suffix}@test.com",
-        tenant=tenant_std,
+        email=f"basic_ret_{suffix}@test.com",
+        tenant=tenant_basic,
     )
     c = APIClient()
-    c.force_authenticate(user_std)
+    c.force_authenticate(user_basic)
 
     r = c.get("/api/reports/retention/")
     assert r.status_code == 403
