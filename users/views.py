@@ -931,7 +931,7 @@ class TenantModulesSettingsView(APIView):
     @extend_schema(
         description=(
             "Atualiza módulos do tenant (ex.: PWA Cliente). Só permitido para owner/manager "
-            "e plano Standard+."
+            "e plano Basic+."
         ),
         request=TenantModulesUpdateSerializer,
         responses={200: OpenApiResponse(description="ok")},
@@ -956,6 +956,7 @@ class TenantModulesSettingsView(APIView):
             if desired and tenant.plan_tier not in (
                 Tenant.PLAN_BASIC,
                 Tenant.PLAN_PRO,
+                Tenant.PLAN_FOUNDER,
             ):
                 return Response(
                     {

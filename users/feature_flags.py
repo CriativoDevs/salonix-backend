@@ -90,7 +90,7 @@ def requires_plan(min_plan, error_message=None):
     Decorator que requer um plano mínimo.
 
     Usage:
-        @requires_plan('standard')
+        @requires_plan('pro')
         def my_view(request):
             ...
     """

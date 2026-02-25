@@ -373,7 +373,7 @@ def test_reports_permissions_by_plan():
     r = c.get("/api/reports/overview/")
     assert r.status_code == 200
 
-    # Top Services -> 403 (Requer Standard)
+    # Top Services -> 403 (Requer Pro)
     r = c.get("/api/reports/top-services/")
     assert r.status_code == 403
 
