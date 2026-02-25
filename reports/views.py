@@ -905,7 +905,7 @@ class RequiresBasicReports(BasePermission):
 class RequiresStandardReports(BasePermission):
     """
     Permission que permite acesso a relatórios de análise (Business Analysis).
-    Standard e Pro têm acesso.
+    Agora parte do pacote Pro (antigo Standard).
     """
 
     def has_permission(self, request, view):
@@ -916,7 +916,7 @@ class RequiresStandardReports(BasePermission):
             return False
 
         tenant = request.user.tenant
-        return tenant.can_use_standard_reports()
+        return tenant.can_use_advanced_reports()  # Unificado no Pro
 
 
 class RequiresAdvancedReports(BasePermission):

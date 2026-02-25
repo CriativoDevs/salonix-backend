@@ -323,11 +323,15 @@ class Tenant(models.Model):
         ]
 
     def can_use_standard_reports(self):
-        """Verifica se pode usar relatórios de análise (Pro+)"""
-        return self.plan_tier == self.PLAN_PRO
+        """
+        DEPRECATED: Use can_use_advanced_reports.
+        No modelo de 2 tiers (Basic/Pro), 'Standard' e 'Advanced' reports são ambos features Pro.
+        Mantido apenas para retrocompatibilidade temporária.
+        """
+        return self.can_use_advanced_reports()
 
     def can_use_advanced_reports(self):
-        """Verifica se pode usar relatórios avançados/insights (Pro+)"""
+        """Verifica se pode usar relatórios avançados (Business Analysis + Insights) - Pro+"""
         return self.plan_tier == self.PLAN_PRO
 
     def can_use_pwa_client(self):
