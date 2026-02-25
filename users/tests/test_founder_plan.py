@@ -27,7 +27,7 @@ class TestFounderPlan:
         ledger_entry = CommLedger.objects.filter(tenant=tenant).first()
         assert ledger_entry is not None
         assert ledger_entry.amount_eur == Decimal("5.00")
-        assert ledger_entry.description == "Crédito inicial Plano Founder"
+        assert ledger_entry.description == "Crédito inicial do plano Founder"
 
     def test_founder_cancellation_resets_status(self):
         """Testa se o cancelamento remove o status de Founder."""

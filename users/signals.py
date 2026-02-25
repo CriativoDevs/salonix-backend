@@ -2,35 +2,40 @@ from decimal import Decimal
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.db import transaction
+
+from payments.services import SubscriptionService
 from .models import Tenant, CommLedger
+
 
 @receiver(post_save, sender=Tenant)
 def assign_initial_credits(sender, instance, created, **kwargs):
     """
     Atribui créditos iniciais de comunicação ao criar um novo tenant,
-    baseado no plano escolhido.
+    baseado no plano escolhido. A fonte da verdade para os valores é
+    SubscriptionService.get_available_plans().
     """
     if not created:
         return
 
-    # Define créditos por plano
-    credits_map = {
-        Tenant.PLAN_BASIC: Decimal("5.00"),
-        Tenant.PLAN_PRO: Decimal("15.00"),
-    }
+    plan_code_to_find = "founder" if instance.is_founder else instance.plan_tier
 
-    amount = credits_map.get(instance.plan_tier)
-    description = f"Crédito inicial do plano {instance.get_plan_tier_display()}"
+    # Utiliza o método que já consolida a lógica de planos, incluindo o Founder
+    available_plans = SubscriptionService.get_available_plans(tenant=instance)
 
-    # Founder tem garantia de 5.00 EUR (equivalente ao Basic)
-    if instance.is_founder:
-        founder_amount = Decimal("5.00")
-        # Se o plano atual der menos que o Founder (ex: None ou futuro plano menor), garante 5.00
-        # Se o plano der mais (ex: Pro), mantém o do plano.
-        if not amount or amount < founder_amount:
-            amount = founder_amount
-        description = "Crédito inicial Plano Founder"
-    
+    plan_info = next(
+        (p for p in available_plans if p["plan_code"] == plan_code_to_find), None
+    )
+
+    if plan_info:
+        # O valor em get_available_plans já é um int, convertemos para Decimal
+        amount = Decimal(str(plan_info.get("credits_included", 0)))
+        description = (
+            f"Crédito inicial do plano {plan_info.get('name', plan_code_to_find)}"
+        )
+    else:
+        amount = Decimal("0.00")
+        description = "Nenhum crédito inicial para o plano."
+
     if amount and amount > 0:
         # Usa transação atômica para garantir consistência entre Ledger e Tenant
         with transaction.atomic():
@@ -39,12 +44,12 @@ def assign_initial_credits(sender, instance, created, **kwargs):
                 tenant=instance,
                 transaction_type=CommLedger.TransactionType.BONUS,
                 amount_eur=amount,
-                balance_before=Decimal("0.00"), # Tenant novo começa com 0
+                balance_before=Decimal("0.00"),  # Tenant novo começa com 0
                 balance_after=amount,
                 status=CommLedger.Status.COMPLETED,
-                description=description
+                description=description,
             )
-            
+
             # Atualiza saldo do Tenant
             # Usa update() para evitar recursão de signals e race conditions
             Tenant.objects.filter(pk=instance.pk).update(comm_credit_eur=amount)

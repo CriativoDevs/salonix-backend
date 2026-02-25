@@ -489,3 +489,45 @@ def test_webhook_invoice_payment_succeeded_applies_included_credits(
     assert bonus_tx.count() == 1
     tenant.refresh_from_db()
     assert str(tenant.comm_credit_eur) == "15.00"
+
+
+@pytest.mark.django_db
+def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch):
+    """
+    Testa se a SubscriptionService.get_available_plans retorna os valores corretos
+    para comm_auto_renew e credits_included para cada plano.
+    """
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    # Mock para o FounderService para controlar a disponibilidade do plano Founder
+    class MockFounderService:
+        @staticmethod
+        def can_assign_founder(tenant=None):
+            return True
+
+    monkeypatch.setattr(
+        "users.services.FounderService", MockFounderService
+    )
+
+    tenant = Tenant.objects.create(name="Test Tenant", slug="test-tenant-plans")
+    
+    available_plans = SubscriptionService.get_available_plans(tenant=tenant)
+
+    # Procura pelos planos específicos
+    basic_plan = next((p for p in available_plans if p['plan_code'] == 'basic'), None)
+    pro_plan = next((p for p in available_plans if p['plan_code'] == 'pro'), None)
+    founder_plan = next((p for p in available_plans if p['plan_code'] == 'founder'), None)
+
+    # Validações
+    assert basic_plan is not None
+    assert basic_plan['comm_auto_renew'] is False
+    assert basic_plan['credits_included'] == 5
+
+    assert pro_plan is not None
+    assert pro_plan['comm_auto_renew'] is True
+    assert pro_plan['credits_included'] == 15
+
+    assert founder_plan is not None
+    assert founder_plan['comm_auto_renew'] is False
+    assert founder_plan['credits_included'] == 5
