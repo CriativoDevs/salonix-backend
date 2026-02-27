@@ -1,5 +1,5 @@
 from django.db import models
-from typing import Any, cast
+from typing import Any, cast, Optional
 from django.contrib.auth import get_user_model
 from users.models import Tenant
 
@@ -102,6 +102,8 @@ class Notification(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="notifications",
+        null=True,
+        blank=True,
         help_text="Usuário que recebe a notificação",
     )
     notification_type = models.CharField(
@@ -120,6 +122,22 @@ class Notification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     read_at = models.DateTimeField(
         null=True, blank=True, help_text="Quando a notificação foi lida"
+    )
+    customer = models.ForeignKey(
+        "core.SalonCustomer",
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+        help_text="Cliente que recebe a notificação (se não for usuário do sistema)",
+    )
+    appointment = models.ForeignKey(
+        "core.Appointment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+        help_text="Agendamento relacionado (se houver)",
     )
 
     class Meta:
@@ -168,7 +186,17 @@ class NotificationLog(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="notification_logs",
+        null=True,
+        blank=True,
         help_text="Usuário destinatário",
+    )
+    customer = models.ForeignKey(
+        "core.SalonCustomer",
+        on_delete=models.CASCADE,
+        related_name="notification_logs",
+        null=True,
+        blank=True,
+        help_text="Cliente destinatário",
     )
     channel = models.CharField(
         max_length=15, choices=CHANNELS, help_text="Canal de envio da notificação"
@@ -198,6 +226,15 @@ class NotificationLog(models.Model):
     delivered_at = models.DateTimeField(
         null=True, blank=True, help_text="Quando foi entregue (se disponível)"
     )
+    appointment = models.ForeignKey(
+        "core.Appointment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_logs",
+        help_text="Agendamento relacionado (se houver)",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

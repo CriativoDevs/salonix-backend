@@ -529,6 +529,16 @@ CELERY_TIMEZONE = "America/Sao_Paulo"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos max por task
 
+# Celery Beat Schedule (Agendamento de Tasks Periódicas)
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    "send-appointment-reminders-hourly": {
+        "task": "notifications.tasks.send_appointment_reminders",
+        "schedule": crontab(minute=0),  # Executar a cada hora cheia
+    },
+}
+
 # Diretório para backups locais de tenants (BE-ACCOUNT-CANCEL #396)
 # Production (Railway): /data (montado como Volume)
 # Staging (PythonAnywhere): /home/username/backups
@@ -814,3 +824,10 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos max por task
 
 # django-celery-beat: scheduler no banco de dados
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+
+# Twilio (SMS)
+TWILIO_ACCOUNT_SID = env_get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = env_get("TWILIO_AUTH_TOKEN", "")
+TWILIO_MESSAGING_SERVICE_SID = env_get("TWILIO_MESSAGING_SERVICE_SID", "")
+SMS_ENABLED = str(env_get("SMS_ENABLED", "false")).lower() == "true"

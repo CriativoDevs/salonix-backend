@@ -3,12 +3,80 @@ Signals para envio automático de notificações baseado em eventos de agendamen
 """
 
 import logging
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
 from core.models import Appointment
 from .services import notification_service
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(post_delete, sender=Appointment)
+def send_appointment_deleted_notification(sender, instance, **kwargs):
+    """
+    Enviar notificações quando um agendamento é removido do sistema.
+    """
+    if not instance.tenant or not instance.client:
+        return
+
+    # Determinar destinatário
+    recipient_customer = getattr(instance, "customer", None)
+    recipient_client = getattr(instance, "client", None)
+    recipient_name = (
+        getattr(recipient_customer, "name", None)
+        if recipient_customer
+        else getattr(recipient_client, "username", "Cliente")
+    )
+    recipient_phone = (
+        getattr(recipient_customer, "phone_number", None)
+        if recipient_customer
+        else getattr(recipient_client, "phone_number", None)
+    )
+
+    # Preparar mensagem
+    tenant_name = instance.tenant.name
+    title = "Agendamento Cancelado"
+    start_time = instance.slot.start_time if instance.slot else None
+    if start_time and hasattr(start_time, "strftime"):
+        formatted_time = start_time.strftime("%d/%m/%Y às %H:%M")
+    else:
+        formatted_time = "data agendada"
+
+    message = f"[{tenant_name}] Seu agendamento de {instance.service.name} para {formatted_time} foi cancelado."
+
+    # Preparar metadata
+    metadata = {
+        "appointment_id": instance.id,
+        "customer_id": recipient_customer.id if recipient_customer else None,
+        "service_name": instance.service.name,
+        "professional_name": (
+            instance.professional.name if instance.professional else None
+        ),
+        "status": "deleted",
+        "recipient_name": recipient_name,
+        "recipient_phone": recipient_phone,
+    }
+
+    try:
+        notification_service.send_notification(
+            tenant=instance.tenant,
+            user=instance.client,
+            channels=["push_mobile", "in_app"],
+            notification_type="appointment_cancelled",
+            title=title,
+            message=message,
+            metadata=metadata,
+        )
+        logger.info(
+            f"Notificação de exclusão de agendamento enviada: {instance.id}",
+            extra={
+                "tenant_id": instance.tenant.id,
+                "user_id": instance.client.id,
+                "appointment_id": instance.id,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Erro ao enviar notificação de exclusão: {e}")
 
 
 @receiver(post_save, sender=Appointment)
@@ -32,6 +100,20 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
     title = None
     message = None
     channels = ["in_app"]  # Sempre enviar in-app
+    recipient_customer = getattr(instance, "customer", None)
+    recipient_client = getattr(instance, "client", None)
+    recipient_name = (
+        getattr(recipient_customer, "name", None)
+        if recipient_customer
+        else getattr(recipient_client, "username", None)
+    )
+    recipient_phone = (
+        getattr(recipient_customer, "phone_number", None)
+        if recipient_customer
+        else getattr(recipient_client, "phone_number", None)
+    )
+
+    tenant_name = instance.tenant.name
 
     if created:
         # Novo agendamento criado
@@ -43,10 +125,10 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
             formatted_time = start_time.strftime("%d/%m/%Y às %H:%M")
         else:
             formatted_time = str(start_time)  # Fallback para testes
-        message = f"Seu agendamento de {instance.service.name} foi confirmado para {formatted_time}"
+        message = f"[{tenant_name}] Seu agendamento de {instance.service.name} foi confirmado para {formatted_time}"
 
-        # Para novos agendamentos, enviar também push
-        channels.extend(["push_web", "push_mobile"])
+        # Para novos agendamentos, enviar também push e SMS
+        channels.extend(["push_web", "push_mobile", "sms"])
 
     else:
         # Agendamento atualizado - verificar mudanças de status
@@ -57,20 +139,18 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
             if instance.status == "cancelled":
                 notification_type = "appointment_cancelled"
                 title = "Agendamento Cancelado"
-                message = f"Seu agendamento de {instance.service.name} foi cancelado"
+                message = f"[{tenant_name}] Seu agendamento de {instance.service.name} foi cancelado"
                 channels.extend(["push_web", "push_mobile", "sms", "email"])
 
             elif instance.status == "completed":
                 notification_type = "appointment_completed"
                 title = "Serviço Concluído"
-                message = (
-                    f"Seu serviço de {instance.service.name} foi concluído. Obrigado!"
-                )
+                message = f"[{tenant_name}] Seu serviço de {instance.service.name} foi concluído. Obrigado!"
 
             elif instance.status == "paid":
                 notification_type = "payment_received"
                 title = "Pagamento Confirmado"
-                message = f"Pagamento do serviço {instance.service.name} confirmado. Obrigado!"
+                message = f"[{tenant_name}] Pagamento do serviço {instance.service.name} confirmado. Obrigado!"
 
     # Se não há tipo de notificação, não enviar
     if not notification_type:
@@ -79,6 +159,7 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
     # Preparar metadata
     metadata = {
         "appointment_id": instance.id,
+        "customer_id": recipient_customer.id if recipient_customer else None,
         "service_name": instance.service.name,
         "professional_name": (
             instance.professional.name if instance.professional else None
@@ -89,6 +170,8 @@ def send_appointment_notifications(sender, instance, created, **kwargs):
             else str(instance.slot.start_time) if instance.slot else None
         ),
         "status": instance.status,
+        "recipient_name": recipient_name,
+        "recipient_phone": recipient_phone,
     }
 
     try:

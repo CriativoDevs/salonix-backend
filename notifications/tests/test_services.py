@@ -1,4 +1,5 @@
 import pytest
+from decimal import Decimal
 from unittest.mock import patch, Mock
 from django.contrib.auth import get_user_model
 from notifications.models import Notification, NotificationDevice, NotificationLog
@@ -18,8 +19,26 @@ User = get_user_model()
 class TestNotificationService:
     """Testes para o serviço de notificações"""
 
-    def test_send_in_app_notification(self, tenant_fixture, user_fixture):
+    def test_send_in_app_notification(
+        self,
+        tenant_fixture,
+        user_fixture,
+        service_fixture,
+        professional_fixture,
+        slot_fixture,
+    ):
         """Teste envio de notificação in-app"""
+        from core.models import Appointment
+
+        appointment = Appointment.objects.create(
+            tenant=tenant_fixture,
+            client=user_fixture,
+            service=service_fixture,
+            professional=professional_fixture,
+            slot=slot_fixture,
+            status="scheduled",
+        )
+
         results = notification_service.send_notification(
             tenant=tenant_fixture,
             user=user_fixture,
@@ -27,26 +46,31 @@ class TestNotificationService:
             notification_type="appointment_created",
             title="Novo Agendamento",
             message="Você tem um agendamento para amanhã",
-            metadata={"appointment_id": 123},
+            metadata={"appointment_id": appointment.id},
         )
 
         # Verificar resultado
         assert results["in_app"] is True
 
         # Verificar que notificação foi criada
-        notification = Notification.objects.get(
+        notifications = Notification.objects.filter(
             tenant=tenant_fixture,
             user=user_fixture,
             notification_type="appointment_created",
         )
-        assert notification.title == "Novo Agendamento"
+        # Pode haver mais de uma se o signal disparou na criação do appointment
+        notification = notifications.filter(title="Novo Agendamento").first()
+        assert notification is not None
         assert notification.message == "Você tem um agendamento para amanhã"
-        assert notification.metadata == {"appointment_id": 123}
+        assert notification.metadata["appointment_id"] == appointment.id
 
         # Verificar que log foi criado
-        log = NotificationLog.objects.get(
+        logs = NotificationLog.objects.filter(
             tenant=tenant_fixture, user=user_fixture, channel="in_app"
         )
+        # Pode haver mais de um pelo signal
+        log = logs.filter(title="Novo Agendamento").first()
+        assert log is not None
         assert log.status == "sent"
 
     def test_send_multiple_channels(self, tenant_fixture, user_fixture):
@@ -231,11 +255,38 @@ class TestNotificationDrivers:
         # Deve falhar pois não há telefone
         assert result is False
 
-    def test_sms_driver_with_phone(self, tenant_fixture, user_fixture):
+    @patch("notifications.services.sms_rate_limiter.check_and_increment")
+    @patch("notifications.services.credit_service.charge_for_message")
+    @patch("notifications.services.TwilioClient")
+    def test_sms_driver_with_phone(
+        self,
+        mock_twilio,
+        mock_charge,
+        mock_rate,
+        tenant_fixture,
+        user_fixture,
+        settings,
+    ):
         """Teste driver SMS com telefone"""
-        # Adicionar telefone ao usuário
+        settings.SMS_ENABLED = True
+        settings.TWILIO_ACCOUNT_SID = "test_sid"
+        settings.TWILIO_AUTH_TOKEN = "test_token"
+        settings.TWILIO_MESSAGING_SERVICE_SID = "mg_test"
+
         user_fixture.phone_number = "+351912345678"
         user_fixture.save()
+
+        mock_rate.return_value = {"minute": 1}
+        ledger = Mock(id=1)
+        mock_charge.return_value = {
+            "success": True,
+            "cost": Decimal("0.09"),
+            "new_balance": Decimal("1.00"),
+            "ledger_entry": ledger,
+        }
+
+        twilio_message = Mock(sid="SM123", status="queued")
+        mock_twilio.return_value.messages.create.return_value = twilio_message
 
         driver = SMSDriver()
 
@@ -248,8 +299,12 @@ class TestNotificationDrivers:
             metadata={},
         )
 
-        # Deve simular sucesso
         assert result is True
+        mock_twilio.return_value.messages.create.assert_called_once_with(
+            body="Teste SMS",
+            messaging_service_sid="mg_test",
+            to="+351912345678",
+        )
 
     def test_whatsapp_driver_with_phone(self, tenant_fixture, user_fixture):
         """Teste driver WhatsApp com telefone"""

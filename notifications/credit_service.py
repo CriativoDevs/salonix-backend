@@ -13,45 +13,39 @@ class CommunicationCreditService:
     Implementa cobrança, validação de saldo e registro de consumo.
     """
 
-    # Custos por tipo de comunicação (em EUR)
-    COSTS = {
-        "sms": Decimal("0.045"),  # SMS em Portugal
-        "whatsapp_utility": Decimal("0.0384"),  # WhatsApp Business - Utility
-        "whatsapp_service": Decimal("0.0384"),  # WhatsApp Business - Service
-        "whatsapp_marketing": Decimal("0.0576"),  # WhatsApp Business - Marketing
-    }
-
     def __init__(self):
         pass
 
     def get_cost(
-        self, communication_type: str, message_category: str = None
+        self, tenant: Tenant, communication_type: str, message_category: str = None
     ) -> Decimal:
         """
-        Retorna o custo de uma comunicação baseado no tipo e categoria
+        Retorna o custo de uma comunicação baseado no tipo, plano do tenant e categoria
 
         Args:
+            tenant: Instância do Tenant
             communication_type: 'sms' ou 'whatsapp'
             message_category: Para WhatsApp: 'utility', 'marketing', 'service'
 
         Returns:
             Decimal: Custo em euros
         """
-        costs = {
-            "sms": Decimal("0.05"),  # Ajustado para 2 casas decimais
-            "whatsapp": {
+        if communication_type == "sms":
+            # Founder/Basic: 0,09€ | Pro: 0,08€
+            if tenant.plan_tier == Tenant.PLAN_PRO:
+                return Decimal("0.08")
+            return Decimal("0.09")
+
+        elif communication_type == "whatsapp":
+            # Custos WhatsApp (atualmente fixos por categoria, independente do plano)
+            whatsapp_costs = {
                 "utility": Decimal("0.03"),
                 "marketing": Decimal("0.04"),
                 "service": Decimal("0.02"),
-            },
-        }
+            }
+            return whatsapp_costs.get(message_category, whatsapp_costs["utility"])
 
-        if communication_type == "sms":
-            return costs["sms"]
-        elif communication_type == "whatsapp":
-            return costs["whatsapp"].get(message_category, costs["whatsapp"]["utility"])
-        else:
-            return Decimal("0.00")
+        return Decimal("0.00")
 
     def can_send_message(
         self, tenant: Tenant, communication_type: str, message_category: str = "utility"
@@ -67,7 +61,7 @@ class CommunicationCreditService:
         Returns:
             Dict com 'can_send' (bool), 'cost' (Decimal), 'balance' (Decimal), 'reason' (str)
         """
-        cost = self.get_cost(communication_type, message_category)
+        cost = self.get_cost(tenant, communication_type, message_category)
         current_balance = tenant.comm_credit_eur
 
         result = {

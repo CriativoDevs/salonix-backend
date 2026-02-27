@@ -11,9 +11,12 @@ from django.utils import timezone
 from django.core import signing
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+from twilio.rest import Client as TwilioClient
+from twilio.base.exceptions import TwilioRestException
 from users.models import Tenant
 from core.models import CustomerCommunicationConsent, Feedback
 from core.utils.client_access import create_client_access_data
+from salonix_backend.validators import sanitize_phone_number
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
 from users.services import sms_rate_limiter
@@ -24,7 +27,9 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_counter(name: str, documentation: str, labelnames: tuple[str, ...]) -> Counter:
+def _get_or_create_counter(
+    name: str, documentation: str, labelnames: tuple[str, ...]
+) -> Counter:
     existing = REGISTRY._names_to_collectors.get(name)  # type: ignore[attr-defined]
     if existing is not None:
         return existing  # type: ignore[return-value]
@@ -302,18 +307,43 @@ class NotificationService:
         metadata: Optional[Dict[str, Any]] = None,
     ):
         """Criar log da notificação para métricas"""
-        NotificationLog.objects.create(
-            tenant=tenant,
-            user=user,
-            channel=channel,
-            notification_type=notification_type,
-            title=title,
-            message=message,
-            status=status,
-            error_message=error_message,
-            metadata=metadata or {},
-            sent_at=timezone.now() if status == "sent" else None,
-        )
+        from users.models import CustomUser
+
+        # Extrair IDs de agendamento e cliente do metadata se existirem
+        appointment_id = (metadata or {}).get("appointment_id")
+        customer_id = (metadata or {}).get("customer_id")
+
+        # Preparar dados para criação
+        log_data = {
+            "tenant": tenant,
+            "channel": channel,
+            "notification_type": notification_type,
+            "title": title,
+            "message": message,
+            "status": status,
+            "error_message": error_message,
+            "metadata": metadata or {},
+            "sent_at": timezone.now() if status == "sent" else None,
+        }
+
+        # Lógica para user vs customer
+        if isinstance(user, CustomUser):
+            log_data["user"] = user
+        elif user and hasattr(user, "pk") and not customer_id:
+            # Se não é CustomUser mas tem pk, assumimos que é SalonCustomer via duck typing se o ID bater
+            # Mas o ideal é usar o metadata explícito injetado nos signals
+            from core.models import SalonCustomer
+
+            if isinstance(user, SalonCustomer):
+                log_data["customer"] = user
+
+        # Priorizar IDs do metadata
+        if customer_id:
+            log_data["customer_id"] = customer_id
+        if appointment_id:
+            log_data["appointment_id"] = appointment_id
+
+        NotificationLog.objects.create(**log_data)
 
 
 class NotificationDriverBase:
@@ -345,15 +375,34 @@ class InAppNotificationDriver(NotificationDriverBase):
         metadata: Dict[str, Any],
     ) -> bool:
         """Criar notificação in-app no banco de dados"""
+        from users.models import CustomUser
+        from core.models import SalonCustomer
+
         try:
-            Notification.objects.create(
-                tenant=tenant,
-                user=user,
-                notification_type=notification_type,
-                title=title,
-                message=message,
-                metadata=metadata,
-            )
+            # Extrair IDs do metadata
+            appointment_id = metadata.get("appointment_id")
+            customer_id = metadata.get("customer_id")
+
+            notif_data = {
+                "tenant": tenant,
+                "notification_type": notification_type,
+                "title": title,
+                "message": message,
+                "metadata": metadata,
+            }
+
+            if isinstance(user, CustomUser):
+                notif_data["user"] = user
+            elif isinstance(user, SalonCustomer):
+                notif_data["customer"] = user
+
+            # Priorizar IDs do metadata
+            if customer_id:
+                notif_data["customer_id"] = customer_id
+            if appointment_id:
+                notif_data["appointment_id"] = appointment_id
+
+            Notification.objects.create(**notif_data)
             logger.info(
                 f"Notificação in-app criada para {user.username}",
                 extra={
@@ -534,7 +583,7 @@ class MobilePushDriver(NotificationDriverBase):
 
 
 class SMSDriver(NotificationDriverBase):
-    """Driver para SMS (stub na fase 1)"""
+    """Driver para SMS via Twilio"""
 
     def send(
         self,
@@ -545,63 +594,131 @@ class SMSDriver(NotificationDriverBase):
         message: str,
         metadata: Dict[str, Any],
     ) -> bool:
-        """Enviar SMS com cobrança de créditos"""
-        # Verificar se usuário tem telefone
-        if not user.phone_number:
-            logger.warning(
-                f"Usuário {user.username} não tem telefone cadastrado",
-                extra={"tenant_id": tenant.id, "user_id": user.id},
+        """Enviar SMS via Twilio com cobrança de créditos"""
+        if not getattr(settings, "SMS_ENABLED", False):
+            logger.info("SMS desativado globalmente (SMS_ENABLED=False)")
+            return False
+
+        if getattr(tenant, "sms_enabled", True) is False:
+            logger.info(
+                f"SMS desativado para o tenant {tenant.name}",
+                extra={"tenant_id": tenant.id},
             )
             return False
+
+        account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
+        auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "")
+        messaging_service_sid = getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", "")
+        if not account_sid or not auth_token or not messaging_service_sid:
+            logger.error(
+                "Credenciais Twilio ausentes ou incompletas",
+                extra={"tenant_id": tenant.id},
+            )
+            return False
+
+        phone_raw = (
+            (metadata or {}).get("recipient_phone")
+            or getattr(user, "phone_number", None)
+            or ""
+        ).strip()
+        if not phone_raw:
+            logger.warning(
+                f"Usuário {getattr(user, 'username', 'cliente')} não tem telefone cadastrado",
+                extra={"tenant_id": tenant.id, "user_id": getattr(user, "id", None)},
+            )
+            return False
+
+        phone = sanitize_phone_number(phone_raw)
+        if not phone.startswith("+"):
+            logger.warning(
+                f"Telefone inválido para SMS: {phone_raw}",
+                extra={"tenant_id": tenant.id, "user_id": getattr(user, "id", None)},
+            )
+            return False
+
+        recipient_name = (metadata or {}).get("recipient_name") or getattr(
+            user, "username", getattr(user, "name", "cliente")
+        )
 
         try:
             counts = sms_rate_limiter.check_and_increment(tenant)
             for scope, _count in counts.items():
-                SMS_QUOTA_USAGE_TOTAL.labels(tenant_id=str(tenant.id), scope=scope).inc()
+                SMS_QUOTA_USAGE_TOTAL.labels(
+                    tenant_id=str(tenant.id), scope=scope
+                ).inc()
         except BusinessError as e:
             scope = (e.details or {}).get("scope", "unknown")
-            SMS_RATE_LIMIT_BLOCKED_TOTAL.labels(tenant_id=str(tenant.id), scope=scope).inc()
+            SMS_RATE_LIMIT_BLOCKED_TOTAL.labels(
+                tenant_id=str(tenant.id), scope=scope
+            ).inc()
             logger.warning(
                 f"SMS bloqueado por rate limit ({scope})",
-                extra={"tenant_id": tenant.id, "user_id": user.id, "scope": scope},
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": getattr(user, "id", None),
+                    "scope": scope,
+                },
             )
             return False
 
-        # Verificar e cobrar créditos
         charge_result = credit_service.charge_for_message(
             tenant=tenant,
             communication_type="sms",
-            description=f"SMS para {user.username} - {notification_type}",
+            description=f"SMS para {recipient_name} - {notification_type}",
             user=user,
         )
 
         if not charge_result["success"]:
             logger.warning(
-                f"SMS não enviado - {charge_result['error']}",
+                f"Falha ao cobrar crédito de SMS para tenant {tenant.id}: {charge_result['error']}",
                 extra={
                     "tenant_id": tenant.id,
-                    "user_id": user.id,
-                    "error": charge_result["error"],
-                    "cost": str(charge_result.get("cost", 0)),
-                    "balance": str(charge_result.get("balance", 0)),
-                },
+                    "reason": charge_result["error"]
+                }
             )
             return False
 
-        # FASE 1: Apenas simular e logar (com cobrança real de créditos)
-        logger.info(
-            f"[SIMULADO] SMS enviado para {user.username} - Crédito cobrado: €{charge_result['cost']}",
-            extra={
-                "tenant_id": tenant.id,
-                "user_id": user.id,
-                "phone": user.phone_number,
-                "notification_message": message,
-                "cost_charged": str(charge_result["cost"]),
-                "new_balance": str(charge_result["new_balance"]),
-                "ledger_id": charge_result["ledger_entry"].id,
-            },
-        )
-        return True
+        cost_charged = charge_result["cost"]
+
+        try:
+            client = TwilioClient(account_sid, auth_token)
+            twilio_message = client.messages.create(
+                body=message,
+                messaging_service_sid=messaging_service_sid,
+                to=phone,
+            )
+
+            logger.info(
+                f"SMS enviado via Twilio: {twilio_message.sid}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "recipient": phone,
+                    "cost_eur": float(cost_charged),
+                    "twilio_sid": twilio_message.sid,
+                    "notification_type": notification_type
+                }
+            )
+            return True
+        except TwilioRestException as e:
+            logger.error(
+                f"Erro Twilio ao enviar SMS para {recipient_name}: {str(e)}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": getattr(user, "id", None),
+                    "phone": phone,
+                    "error_code": e.code,
+                },
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"Erro inesperado ao enviar SMS via Twilio: {str(e)}",
+                extra={
+                    "tenant_id": tenant.id,
+                    "user_id": getattr(user, "id", None),
+                },
+            )
+            return False
 
 
 class WhatsAppDriver(NotificationDriverBase):

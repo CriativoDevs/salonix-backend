@@ -33,50 +33,58 @@ class CommunicationCreditServiceTest(TestCase):
 
         self.credit_service = CommunicationCreditService()
 
-    def test_get_cost_sms(self):
-        """Testar cálculo de custo para SMS"""
-        cost = self.credit_service.get_cost("sms")
-        self.assertEqual(cost, Decimal("0.05"))  # Ajustado para 2 casas decimais
+    def test_get_cost_sms_basic(self):
+        """Testar cálculo de custo para SMS no plano Basic/Founder"""
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.save()
+        cost = self.credit_service.get_cost(self.tenant, "sms")
+        self.assertEqual(cost, Decimal("0.09"))
+
+    def test_get_cost_sms_pro(self):
+        """Testar cálculo de custo para SMS no plano Pro"""
+        self.tenant.plan_tier = Tenant.PLAN_PRO
+        self.tenant.save()
+        cost = self.credit_service.get_cost(self.tenant, "sms")
+        self.assertEqual(cost, Decimal("0.08"))
 
     def test_get_cost_whatsapp_utility(self):
         """Testar cálculo de custo para WhatsApp utility"""
-        cost = self.credit_service.get_cost("whatsapp", "utility")
+        cost = self.credit_service.get_cost(self.tenant, "whatsapp", "utility")
         self.assertEqual(cost, Decimal("0.03"))
 
     def test_get_cost_whatsapp_marketing(self):
         """Testar cálculo de custo para WhatsApp marketing"""
-        cost = self.credit_service.get_cost("whatsapp", "marketing")
+        cost = self.credit_service.get_cost(self.tenant, "whatsapp", "marketing")
         self.assertEqual(cost, Decimal("0.04"))
 
     def test_get_cost_invalid_type(self):
         """Testar retorno para tipo de comunicação inválido"""
-        cost = self.credit_service.get_cost("invalid_type")
+        cost = self.credit_service.get_cost(self.tenant, "invalid_type")
         self.assertEqual(cost, Decimal("0.00"))
 
     def test_can_send_message_sufficient_balance(self):
         """Testar verificação com saldo suficiente"""
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.save()
         result = self.credit_service.can_send_message(self.tenant, "sms")
 
         self.assertTrue(result["can_send"])
-        self.assertEqual(
-            result["cost"], Decimal("0.05")
-        )  # Ajustado para 2 casas decimais
+        self.assertEqual(result["cost"], Decimal("0.09"))
         self.assertEqual(result["balance"], Decimal("10.00"))
         self.assertEqual(result["reason"], "Saldo suficiente")
 
     def test_can_send_message_insufficient_balance(self):
         """Testar verificação com saldo insuficiente"""
-        # Reduzir saldo para menos que o custo do SMS
-        self.tenant.comm_credit_eur = Decimal("0.01")
+        # Reduzir saldo para menos que o custo do SMS (0.09)
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.comm_credit_eur = Decimal("0.05")
         self.tenant.save()
 
         result = self.credit_service.can_send_message(self.tenant, "sms")
 
         self.assertFalse(result["can_send"])
-        self.assertEqual(
-            result["cost"], Decimal("0.05")
-        )  # Ajustado para 2 casas decimais
-        self.assertEqual(result["balance"], Decimal("0.01"))
+        self.assertEqual(result["cost"], Decimal("0.09"))
+        self.assertEqual(result["balance"], Decimal("0.05"))
         self.assertIn("Saldo insuficiente", result["reason"])
 
     def test_can_send_message_sms_disabled(self):
@@ -101,6 +109,8 @@ class CommunicationCreditServiceTest(TestCase):
 
     def test_charge_for_message_success(self):
         """Testar cobrança bem-sucedida de crédito"""
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.save()
         initial_balance = self.tenant.comm_credit_eur
 
         result = self.credit_service.charge_for_message(
@@ -112,10 +122,8 @@ class CommunicationCreditServiceTest(TestCase):
 
         # Verificar resultado - usar valor com 2 casas decimais
         self.assertTrue(result["success"])
-        self.assertEqual(
-            result["cost"], Decimal("0.05")
-        )  # Ajustado para 2 casas decimais
-        expected_balance = Decimal("9.95")  # 10.00 - 0.05 = 9.95
+        self.assertEqual(result["cost"], Decimal("0.09"))
+        expected_balance = Decimal("9.91")  # 10.00 - 0.09 = 9.91
         self.assertEqual(result["new_balance"], expected_balance)
 
         # Verificar se o tenant foi atualizado
@@ -128,9 +136,7 @@ class CommunicationCreditServiceTest(TestCase):
         self.assertEqual(
             ledger_entry.transaction_type, CommLedger.TransactionType.CONSUMPTION
         )
-        self.assertEqual(
-            ledger_entry.amount_eur, Decimal("0.05")
-        )  # Ajustado para 2 casas decimais
+        self.assertEqual(ledger_entry.amount_eur, Decimal("0.09"))
         self.assertEqual(ledger_entry.balance_before, initial_balance)
         self.assertEqual(ledger_entry.balance_after, expected_balance)
         self.assertEqual(ledger_entry.status, CommLedger.Status.COMPLETED)
