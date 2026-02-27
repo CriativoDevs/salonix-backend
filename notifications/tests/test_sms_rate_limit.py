@@ -1,13 +1,37 @@
+from unittest.mock import patch, MagicMock
+from decimal import Decimal
 import pytest
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from notifications.services import SMSDriver
 
 User = get_user_model()
 
 
 @pytest.mark.django_db
-def test_sms_minute_limit_basic(tenant_fixture):
+@patch("notifications.services.credit_service.charge_for_message")
+@patch("notifications.services.TwilioClient")
+def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settings):
+    # Forçar SMS habilitado e credenciais fakes para o teste
+    settings.SMS_ENABLED = True
+    settings.TWILIO_ACCOUNT_SID = "ACxxx"
+    settings.TWILIO_AUTH_TOKEN = "token"
+    settings.TWILIO_MESSAGING_SERVICE_SID = "MGxxx"
+
+    # Mock de cobrança bem sucedida
+    mock_charge.return_value = {
+        "success": True,
+        "cost": Decimal("0.09"),
+        "new_balance": Decimal("10.00"),
+        "ledger_entry": MagicMock(id=1)
+    }
+    
+    # Mock do cliente Twilio
+    mock_msg = MagicMock()
+    mock_msg.sid = "SMxxx"
+    mock_twilio.return_value.messages.create.return_value = mock_msg
+
     # Limpar cache para janelas limpas
     try:
         cache.clear()
