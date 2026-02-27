@@ -66,6 +66,7 @@ def add_columns_safely(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
     dependencies = [
         ("notifications", "0003_ensure_delivered_at"),
     ]
