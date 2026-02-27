@@ -37,6 +37,25 @@ class MobilePushDriverTestCase(TestCase):
             password="testpass123",
             tenant=self.tenant,
         )
+        self.service = Service.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Test Service",
+            duration_minutes=60,
+            price_eur=50.0,
+        )
+        self.professional = Professional.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Test Professional",
+        )
+        self.slot = ScheduleSlot.objects.create(
+            tenant=self.tenant,
+            professional=self.professional,
+            start_time=timezone.now() + timezone.timedelta(days=1),
+            end_time=timezone.now() + timezone.timedelta(days=1, hours=1),
+            is_available=True,
+        )
         self.driver = MobilePushDriver()
 
     def test_send_push_no_device(self):
@@ -116,21 +135,31 @@ class MobilePushDriverTestCase(TestCase):
         mock_response.raise_for_status = Mock()
         mock_post.return_value = mock_response
 
+        # Criar agendamento real para evitar erro de integridade
+        appointment = Appointment.objects.create(
+            tenant=self.tenant,
+            client=self.user,
+            service=self.service,
+            professional=self.professional,
+            slot=self.slot,
+            status="scheduled",
+        )
+
         result = self.driver.send(
             tenant=self.tenant,
             user=self.user,
             notification_type="appointment_created",
             title="Appointment Created",
             message="Your appointment is confirmed",
-            metadata={"appointment_id": 123},
+            metadata={"appointment_id": appointment.id},
         )
 
         self.assertTrue(result)
 
         # Verificar deep link
         payload = mock_post.call_args[1]["json"]
-        self.assertEqual(payload["data"]["appointment_id"], 123)
-        self.assertEqual(payload["data"]["route"], "appointment/123")
+        self.assertEqual(payload["data"]["appointment_id"], appointment.id)
+        self.assertEqual(payload["data"]["route"], f"appointment/{appointment.id}")
 
     @patch("notifications.services.requests.post")
     def test_send_push_device_not_registered_error(self, mock_post):
@@ -321,6 +350,35 @@ class TestPushEndpointTestCase(TestCase):
             is_active=True,
         )
 
+        # Criar dependências para o appointment
+        service = Service.objects.create(
+            tenant=self.tenant,
+            user=self.regular_user,
+            name="Test Service",
+            duration_minutes=60,
+            price_eur=50.0,
+        )
+        professional = Professional.objects.create(
+            tenant=self.tenant,
+            user=self.regular_user,
+            name="Test Professional",
+        )
+        slot = ScheduleSlot.objects.create(
+            tenant=self.tenant,
+            professional=professional,
+            start_time=timezone.now() + timezone.timedelta(days=1),
+            end_time=timezone.now() + timezone.timedelta(days=1, hours=1),
+            is_available=True,
+        )
+        appointment = Appointment.objects.create(
+            tenant=self.tenant,
+            client=self.regular_user,
+            service=service,
+            professional=professional,
+            slot=slot,
+            status="scheduled",
+        )
+
         mock_response = Mock()
         mock_response.json.return_value = {"data": [{"status": "ok"}]}
         mock_response.raise_for_status = Mock()
@@ -335,7 +393,7 @@ class TestPushEndpointTestCase(TestCase):
                 "user_id": self.regular_user.id,
                 "title": "Test",
                 "message": "Test",
-                "appointment_id": 456,
+                "appointment_id": appointment.id,
             },
             format="json",
             HTTP_X_TENANT_SLUG=self.tenant.slug,
@@ -346,8 +404,8 @@ class TestPushEndpointTestCase(TestCase):
 
         # Verificar que appointment_id foi passado
         payload = mock_post.call_args[1]["json"]
-        self.assertEqual(payload["data"]["appointment_id"], 456)
-        self.assertEqual(payload["data"]["route"], "appointment/456")
+        self.assertEqual(payload["data"]["appointment_id"], appointment.id)
+        self.assertEqual(payload["data"]["route"], f"appointment/{appointment.id}")
 
 
 class AppointmentPushSignalsTestCase(TestCase):
@@ -424,6 +482,14 @@ class AppointmentPushSignalsTestCase(TestCase):
     @patch("notifications.services.requests.post")
     def test_appointment_deleted_sends_push(self, mock_post):
         """Deve enviar push quando appointment é deletado"""
+        # Desativar signals temporariamente para evitar criação de notificações orfãs no delete
+        from django.db.models.signals import post_save, post_delete
+        from core.models import Appointment
+        from notifications.signals import (
+            send_appointment_notifications,
+            send_appointment_deleted_notification,
+        )
+
         # Criar device
         NotificationDevice.objects.create(
             tenant=self.tenant,
@@ -460,6 +526,12 @@ class AppointmentPushSignalsTestCase(TestCase):
         self.assertTrue(mock_post.called)
         payload = mock_post.call_args[1]["json"]
         self.assertIn("Cancelado", payload["title"])
+
+        # Limpar notificações criadas para evitar erro de integridade no teardown
+        from notifications.models import Notification, NotificationLog
+
+        Notification.objects.all().delete()
+        NotificationLog.objects.all().delete()
 
     def test_appointment_no_device_no_error(self):
         """Não deve dar erro se usuário não tem device"""

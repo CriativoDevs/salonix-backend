@@ -113,6 +113,42 @@ def user_fixture(db, tenant_fixture):
     return user
 
 
+@pytest.fixture
+def service_fixture(db, tenant_fixture, user_fixture):
+    """Cria serviço padrão para testes"""
+    return Service.objects.create(
+        tenant=tenant_fixture,
+        user=user_fixture,
+        name="Test Service",
+        duration_minutes=60,
+        price_eur=Decimal("50.00"),
+    )
+
+
+@pytest.fixture
+def professional_fixture(db, tenant_fixture, user_fixture):
+    """Cria profissional padrão para testes"""
+    return Professional.objects.create(
+        tenant=tenant_fixture,
+        user=user_fixture,
+        name="Test Professional",
+    )
+
+
+@pytest.fixture
+def slot_fixture(db, tenant_fixture, professional_fixture):
+    """Cria slot padrão para testes"""
+    from django.utils import timezone
+    from datetime import timedelta
+    return ScheduleSlot.objects.create(
+        tenant=tenant_fixture,
+        professional=professional_fixture,
+        start_time=timezone.now() + timedelta(days=1),
+        end_time=timezone.now() + timedelta(days=1, hours=1),
+        is_available=True,
+    )
+
+
 @pytest.fixture(autouse=True)
 def mock_tenant_in_views(setup_default_tenant):
     """

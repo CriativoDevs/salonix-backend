@@ -378,16 +378,40 @@ def sanitize_text_input(value: str, max_length: Optional[int] = None) -> str:
 
 
 def sanitize_phone_number(value: str) -> str:
-    """Sanitiza número de telefone."""
+    """Sanitiza e formata número de telefone para padrão E.164 (+351 para Portugal)."""
     if not value:
         return ""
 
     # Remover tudo exceto dígitos e +
     sanitized = re.sub(r"[^\d+]", "", str(value))
 
-    # Adicionar +351 se for número nacional português
-    if re.match(r"^[0-9]{9}$", sanitized):
+    # Casos especiais para Portugal (+351)
+    # 1. Começa com 00351 -> substituir por +351
+    if sanitized.startswith("00351"):
+        sanitized = f"+351{sanitized[5:]}"
+    # 2. Começa com 351 (sem +) -> adicionar +
+    elif sanitized.startswith("351") and not sanitized.startswith("+"):
+        sanitized = f"+{sanitized}"
+    # 3. Tem exatamente 9 dígitos e começa com 9 ou 2 -> assumir Portugal nacional
+    elif re.match(r"^[29][0-9]{8}$", sanitized):
         sanitized = f"+351{sanitized}"
+    # 4. Começa com + e tem 9 dígitos após o + (ex: +912345678) -> assumir falta de 351
+    elif sanitized.startswith("+") and len(sanitized) == 10 and sanitized[1] in "29":
+        sanitized = f"+351{sanitized[1:]}"
+
+    # Garantir que se começar com +, tenha pelo menos 8 dígitos (padrão internacional mínimo razoável)
+    if sanitized.startswith("+"):
+        if len(sanitized) < 8:
+            return ""  # Inválido
+    else:
+        # Se não tem +, e não caiu nos casos acima, mas tem 9 dígitos, assume Portugal
+        if len(sanitized) == 9:
+            sanitized = f"+351{sanitized}"
+        else:
+            # Caso contrário, não sabemos o país, mas Twilio exige +
+            # Se for um número longo, podemos tentar adicionar +
+            if len(sanitized) >= 9:
+                sanitized = f"+{sanitized}"
 
     return sanitized
 
