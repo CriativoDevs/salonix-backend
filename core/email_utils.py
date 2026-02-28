@@ -1,6 +1,8 @@
 import logging
 import threading
+import time
 from django.conf import settings
+from django.db import connection
 from django.utils.translation import gettext as _
 from django.core import signing
 from django.core.mail import EmailMultiAlternatives
@@ -22,43 +24,65 @@ def _send_email_safe(
     Evita travar a resposta HTTP enquanto o servidor SMTP processa o envio.
     """
     if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
-        logger.info(
-            f"[email] outbound disabled — would send '{subject}' to {to_emails}"
-        )
-        return True
+        # Permitimos o bypass para testes que precisam validar threads
+        if not subject.startswith("TEST_THREAD_BYPASS"):
+            logger.info(
+                f"[email] outbound disabled — would send '{subject}' to {to_emails}"
+            )
+            return True
 
     if isinstance(to_emails, str):
         to_emails = [to_emails]
 
     def send_action():
-        try:
-            email = EmailMultiAlternatives(
-                subject=subject,
-                body=body_plain,
-                from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
-                to=to_emails,
-                reply_to=reply_to,
-            )
-            if body_html:
-                email.attach_alternative(body_html, "text/html")
+        # Máximo de tentativas para lidar com erros intermitentes de rede (Errno 101)
+        max_retries = 3
+        retry_delay = 2  # segundos
 
-            email.send(fail_silently=False)
-            logger.info(
-                f"E-mail '{subject}' enviado com sucesso via Thread para {to_emails}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Erro ao enviar e-mail '{subject}' via Thread para {to_emails}: {str(e)}",
-                exc_info=True,
-                extra={
-                    "email_config": {
-                        "host": settings.EMAIL_HOST,
-                        "port": settings.EMAIL_PORT,
-                        "backend": settings.EMAIL_BACKEND,
-                        "user": settings.EMAIL_HOST_USER,
-                    }
-                },
-            )
+        for attempt in range(max_retries):
+            try:
+                email = EmailMultiAlternatives(
+                    subject=subject,
+                    body=body_plain,
+                    from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+                    to=to_emails,
+                    reply_to=reply_to,
+                )
+                if body_html:
+                    email.attach_alternative(body_html, "text/html")
+
+                email.send(fail_silently=False)
+                logger.info(
+                    f"E-mail '{subject}' enviado com sucesso via Thread para {to_emails} (Tentativa {attempt + 1})"
+                )
+                break  # Sucesso, sai do loop de retries
+            except Exception as e:
+                is_last_attempt = attempt == max_retries - 1
+                error_msg = f"Erro ao enviar e-mail '{subject}' via Thread (Tentativa {attempt + 1}/{max_retries}): {str(e)}"
+
+                if is_last_attempt:
+                    logger.error(
+                        error_msg,
+                        exc_info=True,
+                        extra={
+                            "email_config": {
+                                "host": settings.EMAIL_HOST,
+                                "port": settings.EMAIL_PORT,
+                                "backend": settings.EMAIL_BACKEND,
+                                "user": settings.EMAIL_HOST_USER,
+                            }
+                        },
+                    )
+                else:
+                    logger.warning(
+                        f"{error_msg}. Tentando novamente em {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+            finally:
+                # Garante que a conexão com o banco de dados desta thread seja fechada
+                # Isso evita vazamento de conexões e erros de 'Network is unreachable'
+                # por threads penduradas segurando recursos do SO.
+                connection.close()
 
     # Dispara o envio em uma thread separada para não bloquear a resposta da API
     thread = threading.Thread(target=send_action)

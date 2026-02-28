@@ -473,6 +473,7 @@ AUTH_USER_MODEL = "users.CustomUser"
 
 # Email
 # Email configuration
+EMAIL_DISABLE_OUTBOUND = env_get("EMAIL_DISABLE_OUTBOUND", "false").lower() == "true"
 EMAIL_BACKEND = env_get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
