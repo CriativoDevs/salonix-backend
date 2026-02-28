@@ -1,3 +1,4 @@
+from unittest.mock import patch, MagicMock
 import pytest
 from django.urls import reverse
 from rest_framework import status
@@ -105,18 +106,18 @@ def test_resend_invite_generates_new_token(monkeypatch):
     )
     staff.set_invite(token="tok-old", expires_at=None, invited_by=owner)
 
-    # Evitar envio real de e-mail
-    monkeypatch.setattr(
-        "users.views.send_staff_invite_email",
-        lambda to_email, accept_url, salon_name, inviter_name: True,
-        raising=True,
-    )
+    # Evitar envio real de e-mail e verificar disparo da task
+    with patch("users.views.send_staff_invite_task.delay") as mock_task:
+        client = APIClient()
+        client.force_authenticate(user=owner)
+        url = reverse("tenant_staff_resend")
+        response = client.post(url, {"id": staff.id}, format="json")
+        assert response.status_code == status.HTTP_200_OK
 
-    client = APIClient()
-    client.force_authenticate(user=owner)
-    url = reverse("tenant_staff_resend")
-    response = client.post(url, {"id": staff.id}, format="json")
-    assert response.status_code == status.HTTP_200_OK
-
-    assert response.data.get("invite_token") != "tok-old"
-    assert response.data.get("status") == TenantStaffMember.Status.INVITED
+        assert response.data.get("invite_token") != "tok-old"
+        assert response.data.get("status") == TenantStaffMember.Status.INVITED
+        
+        # Verificar se a task foi disparada
+        assert mock_task.called
+        _, kwargs = mock_task.call_args
+        assert kwargs["to_email"] == "collab2@salon.local"
