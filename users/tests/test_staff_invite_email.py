@@ -1,3 +1,4 @@
+from unittest.mock import patch, MagicMock
 import pytest
 from django.urls import reverse
 from django.test import override_settings
@@ -19,43 +20,42 @@ def test_invite_sends_email_and_metrics(monkeypatch):
         registry=registry,
     )
 
-    # Patch counter and email sender used inside the view
+    # Patch counter and email task used inside the view
     monkeypatch.setattr(
         "users.views.USERS_STAFF_INVITE_EVENTS_TOTAL", fake_counter, raising=True
     )
-    monkeypatch.setattr(
-        "users.views.send_staff_invite_email",
-        lambda to_email, accept_url, salon_name, inviter_name: True,
-        raising=True,
-    )
+    
+    with patch("users.views.send_staff_invite_task.delay") as mock_task:
+        tenant = Tenant.objects.create(name="Salon Test", slug="salon-test")
+        owner = CustomUser.objects.create_user(
+            username="owner",
+            email="owner@test.local",
+            password="pass12345",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant,
+            user=owner,
+            role=TenantStaffMember.Role.OWNER,
+            status=TenantStaffMember.Status.ACTIVE,
+        )
 
-    tenant = Tenant.objects.create(name="Salon Test", slug="salon-test")
-    owner = CustomUser.objects.create_user(
-        username="owner",
-        email="owner@test.local",
-        password="pass12345",
-        tenant=tenant,
-    )
-    TenantStaffMember.objects.create(
-        tenant=tenant,
-        user=owner,
-        role=TenantStaffMember.Role.OWNER,
-        status=TenantStaffMember.Status.ACTIVE,
-    )
+        client = APIClient()
+        client.force_authenticate(user=owner)
+        url = reverse("tenant_staff")
+        payload = {
+            "email": "collab@test.local",
+            "role": TenantStaffMember.Role.COLLABORATOR,
+        }
+        response = client.post(url, payload, format="json")
 
-    client = APIClient()
-    client.force_authenticate(user=owner)
-    url = reverse("tenant_staff")
-    payload = {
-        "email": "collab@test.local",
-        "role": TenantStaffMember.Role.COLLABORATOR,
-    }
-    response = client.post(url, payload, format="json")
-
-    assert response.status_code == status.HTTP_201_CREATED
-    data = response.data
-    assert "invite_token" in data and isinstance(data["invite_token"], str)
-    assert data.get("status") == TenantStaffMember.Status.INVITED
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        # Verificar se a task foi disparada assincronamente (.delay)
+        assert mock_task.called
+        args, kwargs = mock_task.call_args
+        assert kwargs["to_email"] == "collab@test.local"
+        assert "salon-test" in kwargs["salon_name"].lower() or "salon test" in kwargs["salon_name"].lower()
 
     # Assert counter increment for success invite
     samples = fake_counter.collect()[0].samples

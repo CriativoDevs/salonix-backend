@@ -91,6 +91,7 @@ from .throttling import (
 )
 from django.utils import timezone
 from datetime import timedelta
+from .tasks import send_staff_invite_task
 
 
 bootstrap_logger = logging.getLogger("users.bootstrap")
@@ -1034,14 +1035,17 @@ class TenantStaffView(APIView):
                 or request.user.username
             )
             if to_email:
-                ok = send_staff_invite_email(
+                # Dispara tarefa assíncrona para evitar timeout do worker
+                send_staff_invite_task.delay(
                     to_email=to_email,
                     accept_url=accept_url,
                     salon_name=tenant.name or "TimelyOne",
                     inviter_name=inviter_name,
                 )
+                # O evento agora é considerado "sucesso" no dispatch,
+                # o monitoramento real do envio será via log da task.
                 USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
-                    event="invite", result="success" if ok else "failure"
+                    event="invite", result="success"
                 ).inc()
             else:
                 USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
@@ -1184,14 +1188,15 @@ class TenantStaffResendInviteView(APIView):
         )
 
         try:
-            ok = send_staff_invite_email(
+            # Dispara tarefa assíncrona para evitar timeout do worker
+            send_staff_invite_task.delay(
                 to_email=to_email,
                 accept_url=accept_url,
                 salon_name=tenant.name or "TimelyOne",
                 inviter_name=inviter_name,
             )
             USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
-                event="invite", result="success" if ok else "failure"
+                event="invite", result="success"
             ).inc()
         except Exception:
             USERS_STAFF_INVITE_EVENTS_TOTAL.labels(
