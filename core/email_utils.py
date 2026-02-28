@@ -1,4 +1,5 @@
 import logging
+import threading
 from django.conf import settings
 from django.utils.translation import gettext as _
 from django.core import signing
@@ -17,8 +18,8 @@ def _send_email_safe(
     reply_to: list[str] | None = None,
 ) -> bool:
     """
-    Helper interno para enviar e-mails usando o backend configurado no Django.
-    Captura exceções e loga erros em vez de quebrar o fluxo.
+    Helper interno para enviar e-mails de forma assíncrona usando Threads.
+    Evita travar a resposta HTTP enquanto o servidor SMTP processa o envio.
     """
     if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
         logger.info(
@@ -29,34 +30,42 @@ def _send_email_safe(
     if isinstance(to_emails, str):
         to_emails = [to_emails]
 
-    try:
-        email = EmailMultiAlternatives(
-            subject=subject,
-            body=body_plain,
-            from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
-            to=to_emails,
-            reply_to=reply_to,
-        )
-        if body_html:
-            email.attach_alternative(body_html, "text/html")
+    def send_action():
+        try:
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body=body_plain,
+                from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+                to=to_emails,
+                reply_to=reply_to,
+            )
+            if body_html:
+                email.attach_alternative(body_html, "text/html")
 
-        email.send(fail_silently=False)
-        logger.info(f"E-mail '{subject}' enviado com sucesso para {to_emails}")
-        return True
-    except Exception as e:
-        logger.error(
-            f"Erro ao enviar e-mail '{subject}' para {to_emails}: {str(e)}",
-            exc_info=True,
-            extra={
-                "email_config": {
-                    "host": settings.EMAIL_HOST,
-                    "port": settings.EMAIL_PORT,
-                    "backend": settings.EMAIL_BACKEND,
-                    "user": settings.EMAIL_HOST_USER,  # Cuidado com PII/Secrets, mas user ok
-                }
-            },
-        )
-        return False
+            email.send(fail_silently=False)
+            logger.info(
+                f"E-mail '{subject}' enviado com sucesso via Thread para {to_emails}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Erro ao enviar e-mail '{subject}' via Thread para {to_emails}: {str(e)}",
+                exc_info=True,
+                extra={
+                    "email_config": {
+                        "host": settings.EMAIL_HOST,
+                        "port": settings.EMAIL_PORT,
+                        "backend": settings.EMAIL_BACKEND,
+                        "user": settings.EMAIL_HOST_USER,
+                    }
+                },
+            )
+
+    # Dispara o envio em uma thread separada para não bloquear a resposta da API
+    thread = threading.Thread(target=send_action)
+    thread.start()
+
+    # Retornamos True imediatamente para liberar a requisição HTTP
+    return True
 
 
 def send_appointment_confirmation_email(
