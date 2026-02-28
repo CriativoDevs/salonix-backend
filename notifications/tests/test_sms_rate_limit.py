@@ -1,6 +1,6 @@
-from unittest.mock import patch, MagicMock
 from decimal import Decimal
 import pytest
+from unittest.mock import patch, MagicMock
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.conf import settings
@@ -12,8 +12,11 @@ User = get_user_model()
 @pytest.mark.django_db
 @patch("notifications.services.credit_service.charge_for_message")
 @patch("notifications.services.TwilioClient")
-def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settings):
-    # Forçar SMS habilitado e credenciais fakes para o teste
+def test_sms_rate_limit_enforced(mock_twilio, mock_charge, tenant_fixture, settings):
+    """
+    Testa se o limite de SMS por plano é respeitado.
+    """
+    # Configurações de teste
     settings.SMS_ENABLED = True
     settings.TWILIO_ACCOUNT_SID = "ACxxx"
     settings.TWILIO_AUTH_TOKEN = "token"
@@ -24,9 +27,9 @@ def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settin
         "success": True,
         "cost": Decimal("0.09"),
         "new_balance": Decimal("10.00"),
-        "ledger_entry": MagicMock(id=1)
+        "ledger_entry": MagicMock(id=1),
     }
-    
+
     # Mock do cliente Twilio
     mock_msg = MagicMock()
     mock_msg.sid = "SMxxx"
@@ -44,7 +47,9 @@ def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settin
     tenant_fixture.save(update_fields=["plan_tier", "sms_enabled"])
 
     # Usuário com telefone
-    user = User.objects.create_user(username="smsuser", email="sms@example.com", password="pass")
+    user = User.objects.create_user(
+        username="smsuser", email="sms@example.com", password="pass"
+    )
     user.phone_number = "+351911111111"
     user.tenant = tenant_fixture
     user.save(update_fields=["phone_number", "tenant"])
@@ -52,30 +57,39 @@ def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settin
     driver = SMSDriver()
 
     # 1..3 devem passar
-    assert driver.send(
-        tenant=tenant_fixture,
-        user=user,
-        notification_type="test",
-        title="t",
-        message="m",
-        metadata={},
-    ) is True
-    assert driver.send(
-        tenant=tenant_fixture,
-        user=user,
-        notification_type="test",
-        title="t",
-        message="m",
-        metadata={},
-    ) is True
-    assert driver.send(
-        tenant=tenant_fixture,
-        user=user,
-        notification_type="test",
-        title="t",
-        message="m",
-        metadata={},
-    ) is True
+    assert (
+        driver.send(
+            tenant=tenant_fixture,
+            user=user,
+            notification_type="test",
+            title="t",
+            message="m",
+            metadata={},
+        )
+        is True
+    )
+    assert (
+        driver.send(
+            tenant=tenant_fixture,
+            user=user,
+            notification_type="test",
+            title="t",
+            message="m",
+            metadata={},
+        )
+        is True
+    )
+    assert (
+        driver.send(
+            tenant=tenant_fixture,
+            user=user,
+            notification_type="test",
+            title="t",
+            message="m",
+            metadata={},
+        )
+        is True
+    )
 
     # 4º no mesmo minuto deve ser bloqueado
     assert (
@@ -89,3 +103,4 @@ def test_sms_minute_limit_basic(mock_twilio, mock_charge, tenant_fixture, settin
         )
         is False
     )
+    assert mock_twilio.return_value.messages.create.call_count == 3
