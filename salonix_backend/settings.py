@@ -477,6 +477,14 @@ EMAIL_DISABLE_OUTBOUND = env_get("EMAIL_DISABLE_OUTBOUND", "false").lower() == "
 EMAIL_BACKEND = env_get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
+
+# Mailgun / Anymail configuration
+ANYMAIL = {
+    "MAILGUN_API_KEY": env_get("MAILGUN_API_KEY", ""),
+    "MAILGUN_SENDER_DOMAIN": env_get("MAILGUN_SENDER_DOMAIN", ""),
+    "MAILGUN_API_URL": env_get("MAILGUN_API_URL", "https://api.mailgun.net/v3"),
+}
+
 EMAIL_HOST = env_get("EMAIL_HOST", "")
 EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_USE_TLS = str(env_get("EMAIL_USE_TLS", "false")).lower() in {
