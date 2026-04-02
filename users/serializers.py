@@ -27,6 +27,14 @@ from salonix_backend.validators import (
 audit_logger = logging.getLogger("users.audit")
 
 
+def _validate_optional_birthday(value):
+    if value and value > timezone.localdate():
+        raise serializers.ValidationError(
+            "A data de aniversário não pode estar no futuro."
+        )
+    return value
+
+
 class TenantStaffMemberRole(str, Enum):
     owner = "owner"
     manager = "manager"
@@ -358,6 +366,8 @@ class TenantStaffMemberSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     first_name = serializers.CharField(source="user.first_name", read_only=True)
     last_name = serializers.CharField(source="user.last_name", read_only=True)
+    photo = serializers.ImageField(source="user.photo", read_only=True)
+    birthday = serializers.DateField(source="user.birthday", read_only=True)
     role = serializers.ChoiceField(choices=TenantStaffMemberRole, read_only=True)
     status = serializers.ChoiceField(choices=TenantStaffMemberStatus, read_only=True)
 
@@ -371,6 +381,8 @@ class TenantStaffMemberSerializer(serializers.ModelSerializer):
             "username",
             "first_name",
             "last_name",
+            "photo",
+            "birthday",
             "invited_at",
             "activated_at",
             "deactivated_at",
@@ -386,12 +398,24 @@ class StaffInviteSerializer(serializers.Serializer):
     )
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
+    photo = serializers.ImageField(required=False, allow_null=True)
+    birthday = serializers.DateField(required=False, allow_null=True)
 
     def validate_email(self, value):
         normalized = CustomUser.objects.normalize_email(value.strip())
         if not normalized:
             raise ValidationError("E-mail inválido.")
         return normalized
+
+    def validate_photo(self, value):
+        if value:
+            from .validators import validate_profile_image
+
+            validate_profile_image(value)
+        return value
+
+    def validate_birthday(self, value):
+        return _validate_optional_birthday(value)
 
     def create(self, validated_data):
         request = self.context["request"]
@@ -414,18 +438,31 @@ class StaffInviteSerializer(serializers.Serializer):
         email = validated_data["email"]
         first_name = validated_data.get("first_name", "")
         last_name = validated_data.get("last_name", "")
+        photo = validated_data.get("photo", serializers.empty)
+        birthday = validated_data.get("birthday", serializers.empty)
 
         user = CustomUser.objects.filter(email__iexact=email).first()
         if user:
+            update_fields = []
             if user.tenant_id and user.tenant_id != tenant.id:
                 raise ValidationError("Usuário já pertence a outro tenant.")
             if not user.tenant_id:
                 user.tenant = tenant
-                if first_name:
-                    user.first_name = first_name
-                if last_name:
-                    user.last_name = last_name
-                user.save(update_fields=["tenant", "first_name", "last_name"])
+                update_fields.append("tenant")
+            if first_name:
+                user.first_name = first_name
+                update_fields.append("first_name")
+            if last_name:
+                user.last_name = last_name
+                update_fields.append("last_name")
+            if photo is not serializers.empty:
+                user.photo = photo
+                update_fields.append("photo")
+            if birthday is not serializers.empty:
+                user.birthday = birthday
+                update_fields.append("birthday")
+            if update_fields:
+                user.save(update_fields=list(dict.fromkeys(update_fields)))
         else:
             username_base = slugify(email.split("@")[0]) or "user"
             username = username_base
@@ -442,8 +479,16 @@ class StaffInviteSerializer(serializers.Serializer):
                 first_name=first_name,
                 last_name=last_name,
             )
+            extra_fields = []
+            if photo is not serializers.empty:
+                user.photo = photo
+                extra_fields.append("photo")
+            if birthday is not serializers.empty:
+                user.birthday = birthday
+                extra_fields.append("birthday")
             user.set_unusable_password()
-            user.save(update_fields=["password"])
+            extra_fields.append("password")
+            user.save(update_fields=extra_fields)
 
         # Mapear role (Enum) para TextChoices do modelo
         model_role = (
@@ -580,55 +625,76 @@ class StaffUpdateSerializer(serializers.Serializer):
 
 
 class StaffContactUpdateSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = serializers.EmailField(required=False)
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
+    photo = serializers.ImageField(required=False, allow_null=True)
+    birthday = serializers.DateField(required=False, allow_null=True)
 
     def validate(self, attrs):
         instance: TenantStaffMember = self.instance
-        if instance and instance.role == TenantStaffMember.Role.OWNER:
-            raise ValidationError(
-                "Owner não pode ter e-mail alterado por este endpoint."
-            )
+        if not attrs:
+            raise ValidationError("Nenhuma alteração informada.")
 
-        email = (attrs.get("email") or "").strip().lower()
-        if not email:
-            raise ValidationError({"email": "Informe um e-mail válido."})
+        email = attrs.get("email")
+        if email is not None:
+            email = email.strip().lower()
+            attrs["email"] = email
 
-        user = instance.user if instance else None
-        conflict = CustomUser.objects.filter(email__iexact=email)
-        if user:
-            conflict = conflict.exclude(id=user.id)
-        if conflict.exists():
-            raise ValidationError({"email": "E-mail já está em uso por outro usuário."})
+            if (
+                instance
+                and instance.role == TenantStaffMember.Role.OWNER
+                and email != (instance.user.email or "").strip().lower()
+            ):
+                raise ValidationError(
+                    "Owner não pode ter e-mail alterado por este endpoint."
+                )
+
+            user = instance.user if instance else None
+            conflict = CustomUser.objects.filter(email__iexact=email)
+            if user:
+                conflict = conflict.exclude(id=user.id)
+            if conflict.exists():
+                raise ValidationError(
+                    {"email": "E-mail já está em uso por outro usuário."}
+                )
 
         return attrs
 
+    def validate_photo(self, value):
+        if value:
+            from .validators import validate_profile_image
+
+            validate_profile_image(value)
+        return value
+
+    def validate_birthday(self, value):
+        return _validate_optional_birthday(value)
+
     def update(self, instance: TenantStaffMember, validated_data):
-        # regra já validada em validate()
-
         user = instance.user
-        email = validated_data.get("email", "").strip().lower()
-        first_name = validated_data.get("first_name")
-        last_name = validated_data.get("last_name")
-
-        # E-mail deve ser único (case-insensitive) no sistema
-        conflict = (
-            CustomUser.objects.filter(email__iexact=email).exclude(id=user.id).exists()
-        )
-        if conflict:
-            raise ValidationError("E-mail já está em uso por outro usuário.")
+        email = validated_data.get("email")
+        first_name = validated_data.get("first_name", serializers.empty)
+        last_name = validated_data.get("last_name", serializers.empty)
+        photo = validated_data.get("photo", serializers.empty)
+        birthday = validated_data.get("birthday", serializers.empty)
 
         updates = []
-        if email and email != (user.email or "").lower():
+        if email is not None and email != (user.email or "").strip().lower():
             user.email = email
             updates.append("email")
-        if first_name is not None:
+        if first_name is not serializers.empty:
             user.first_name = first_name
             updates.append("first_name")
-        if last_name is not None:
+        if last_name is not serializers.empty:
             user.last_name = last_name
             updates.append("last_name")
+        if photo is not serializers.empty:
+            user.photo = photo
+            updates.append("photo")
+        if birthday is not serializers.empty:
+            user.birthday = birthday
+            updates.append("birthday")
 
         if updates:
             user.save(update_fields=list(dict.fromkeys(updates)))
@@ -642,6 +708,8 @@ class UserSelfSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
+    photo = serializers.ImageField(read_only=True)
+    birthday = serializers.DateField(read_only=True)
     theme_preference = serializers.CharField(read_only=True)
     language_preference = serializers.CharField(read_only=True)
     onboarding_status = serializers.JSONField(read_only=True)
@@ -663,12 +731,69 @@ class UserSelfSerializer(serializers.Serializer):
             "email": instance.email or "",
             "first_name": instance.first_name or "",
             "last_name": instance.last_name or "",
+            "photo": instance.photo.url if instance.photo else None,
+            "birthday": instance.birthday.isoformat() if instance.birthday else None,
             "theme_preference": instance.theme_preference,
             "language_preference": getattr(instance, "language_preference", "system"),
             "onboarding_status": instance.onboarding_status,
             "is_owner": self.get_is_owner(instance),
             "staff_role": self.get_staff_role(instance),
         }
+
+
+class UserSelfUpdateSerializer(serializers.Serializer):
+    theme_preference = serializers.ChoiceField(
+        choices=CustomUser.ThemePreference.choices, required=False
+    )
+    onboarding_status = serializers.JSONField(required=False)
+    photo = serializers.ImageField(required=False, allow_null=True)
+    birthday = serializers.DateField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise ValidationError("Nenhum campo para atualização informado")
+        return attrs
+
+    def validate_photo(self, value):
+        if value:
+            from .validators import validate_profile_image
+
+            validate_profile_image(value)
+        return value
+
+    def validate_birthday(self, value):
+        return _validate_optional_birthday(value)
+
+    def update(self, instance: CustomUser, validated_data):
+        updated_fields = []
+
+        if "theme_preference" in validated_data:
+            instance.theme_preference = validated_data["theme_preference"]
+            updated_fields.append("theme_preference")
+
+        if "onboarding_status" in validated_data:
+            onboarding_status = validated_data["onboarding_status"]
+            if not isinstance(onboarding_status, dict):
+                raise ValidationError(
+                    {"onboarding_status": "onboarding_status deve ser um objeto JSON"}
+                )
+            current_status = instance.onboarding_status or {}
+            current_status.update(onboarding_status)
+            instance.onboarding_status = current_status
+            updated_fields.append("onboarding_status")
+
+        if "photo" in validated_data:
+            instance.photo = validated_data["photo"]
+            updated_fields.append("photo")
+
+        if "birthday" in validated_data:
+            instance.birthday = validated_data["birthday"]
+            updated_fields.append("birthday")
+
+        if updated_fields:
+            instance.save(update_fields=list(dict.fromkeys(updated_fields)))
+
+        return instance
 
 
 class EmailTokenObtainPairSerializer(serializers.Serializer):
@@ -725,6 +850,8 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "email": user.email,
                 "first_name": user.first_name or "",
                 "last_name": user.last_name or "",
+                "photo": user.photo.url if user.photo else None,
+                "birthday": user.birthday.isoformat() if user.birthday else None,
                 "theme_preference": user.theme_preference,
                 "language_preference": getattr(user, "language_preference", "system"),
                 "staff_role": user.staff_role,

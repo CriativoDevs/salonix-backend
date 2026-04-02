@@ -86,3 +86,11 @@ def validate_logo_image(file):
         max_size_mb=2, allowed_formats=["JPEG", "PNG", "GIF", "WEBP"]
     )
     validator(file)
+
+
+def validate_profile_image(file):
+    """Função wrapper para validação de imagem de perfil."""
+    validator = ImageFileValidator(
+        max_size_mb=2, allowed_formats=["JPEG", "PNG", "GIF", "WEBP"]
+    )
+    validator(file)

@@ -21,12 +21,12 @@ jobs:
 
       - name: Instalar dependências
         run: |
-          python -m venv venv
-          source venv/bin/activate
+          python -m venv .venv
+          source .venv/bin/activate
           pip install --upgrade pip
-          pip install -r requirements.txt
+          make install
 
       - name: Rodar testes (pytest via make)
         run: |
-          source venv/bin/activate
+          source .venv/bin/activate
           make test

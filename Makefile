@@ -6,8 +6,8 @@
 .DEFAULT_GOAL := help
 
 # Variáveis
-PY ?= python
-PIP ?= pip
+PY ?= $(shell if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
+PIP ?= $(shell if [ -x .venv/bin/pip ]; then echo .venv/bin/pip; elif command -v pip3 >/dev/null 2>&1; then command -v pip3; else command -v pip; fi)
 MANAGE = $(PY) manage.py
 DJANGO_ENV ?= dev
 ROLE ?= ops_admin
@@ -18,7 +18,8 @@ PORT ?= 8010
 help:
 > echo "Comandos mais úteis:"
 > echo "  make venv           - cria o virtualenv .venv (se não existir)"
-> echo "  make install        - instala dependências do requirements.txt"
+> echo "  make install        - instala dependências de desenvolvimento (requirements-dev.txt)"
+> echo "  make install-runtime - instala dependências de runtime (requirements.txt)"
 > echo "  make check          - django system check"
 > echo "  make migrate        - aplica migrações"
 > echo "  make makemigrations - aplica makemigrations"
@@ -87,8 +88,11 @@ venv:
 > if [ ! -d ".venv" ]; then $(PY) -m venv .venv; fi
 > echo "Ative com: source .venv/bin/activate"
 
-.PHONY: install
+.PHONY: install install-runtime
 install:
+> $(PIP) install -r requirements-dev.txt
+
+install-runtime:
 > $(PIP) install -r requirements.txt
 
 # ---- Django ----
@@ -145,11 +149,11 @@ seed-sh:
 # ---- Testes ----
 .PHONY: test
 test:
-> DJANGO_ENV=$(DJANGO_ENV) pytest
+> DJANGO_ENV=$(DJANGO_ENV) $(PY) -m pytest
 
 .PHONY: test-reports
 test-reports:
-> DJANGO_ENV=$(DJANGO_ENV) pytest reports/tests/
+> DJANGO_ENV=$(DJANGO_ENV) $(PY) -m pytest reports/tests/
 
 # ---- OpenAPI ----
 .PHONY: openapi

@@ -3,6 +3,7 @@ from django.db import models
 from typing import Any, cast
 
 from users.models import CustomUser, Tenant, TenantStaffMember
+from users.validators import validate_profile_image
 from django.conf import settings as dj_settings
 
 
@@ -15,6 +16,13 @@ class SalonCustomer(models.Model):
     name = models.CharField(max_length=120)
     email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=32, blank=True, null=True)
+    photo = models.ImageField(
+        upload_to="customer_photos/",
+        blank=True,
+        null=True,
+        validators=[validate_profile_image],
+    )
+    birthday = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True)
     marketing_opt_in = models.BooleanField(default=cast(Any, False))
     is_active = models.BooleanField(default=cast(Any, True))
@@ -30,6 +38,7 @@ class SalonCustomer(models.Model):
         from django.contrib.auth.hashers import check_password
 
         return check_password(raw_password, self.password)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

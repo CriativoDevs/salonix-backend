@@ -2999,7 +2999,14 @@ class ClientsMeProfileView(APIView):
     )
     def patch(self, request):
         tenant, customer = _get_client_from_jwt(request)
-        allowed = {"name", "phone_number", "notes", "marketing_opt_in"}
+        allowed = {
+            "name",
+            "phone_number",
+            "photo",
+            "birthday",
+            "notes",
+            "marketing_opt_in",
+        }
         data = {k: v for k, v in request.data.items() if k in allowed}
         ser = SalonCustomerSerializer(customer, data=data, partial=True)
         ser.is_valid(raise_exception=True)
