@@ -12,7 +12,7 @@ from django.utils import timezone
 from datetime import time
 
 from .managers import CustomUserManager
-from .validators import validate_logo_image
+from .validators import validate_logo_image, validate_profile_image
 
 
 class Tenant(models.Model):
@@ -489,6 +489,18 @@ class CustomUser(AbstractUser):
     )
     salon_name = models.CharField(max_length=255, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
+    photo = models.ImageField(
+        upload_to="staff_photos/",
+        blank=True,
+        null=True,
+        validators=[validate_profile_image],
+        help_text="Foto opcional do membro da equipa",
+    )
+    birthday = models.DateField(
+        blank=True,
+        null=True,
+        help_text="Data de aniversário opcional do membro da equipa",
+    )
     ops_role = models.CharField(
         max_length=20,
         choices=OpsRoles.choices,

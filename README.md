@@ -55,7 +55,7 @@ salonix-backend/
    ```
 3. Install deps:
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    ```
 4. Environment variables (`.env` or `settings.ini`):
    ```bash
@@ -306,7 +306,7 @@ salonix-backend/
    ```
 3. Instale dependências:
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    ```
 4. Variáveis de ambiente (`.env` ou `settings.ini`):
    ```bash

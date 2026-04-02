@@ -55,6 +55,7 @@ from .serializers import (
     UserFeatureFlagsUpdateSerializer,
     TenantSelfServiceSerializer,
     UserSelfSerializer,
+    UserSelfUpdateSerializer,
     TenantStaffMemberSerializer,
     StaffInviteSerializer,
     StaffAcceptInviteSerializer,
@@ -857,7 +858,7 @@ class MeProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        description="Atualiza preferência de tema do usuário ou status de onboarding",
+        description="Atualiza preferência de tema, status de onboarding, foto ou aniversário do usuário",
         request={
             "application/json": {
                 "type": "object",
@@ -871,6 +872,12 @@ class MeProfileView(APIView):
                         "type": "object",
                         "description": "Status do onboarding do usuário (JSON)",
                     },
+                    "birthday": {
+                        "type": "string",
+                        "format": "date",
+                        "nullable": True,
+                        "description": "Data de aniversário opcional do usuário",
+                    },
                 },
                 "required": [],
             }
@@ -879,50 +886,42 @@ class MeProfileView(APIView):
     )
     def patch(self, request):
         user = request.user
-        theme_preference = request.data.get("theme_preference")
-        onboarding_status = request.data.get("onboarding_status")
 
-        if not theme_preference and onboarding_status is None:
+        if not request.data:
             return Response(
                 {"detail": "Nenhum campo para atualização informado"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        updated_fields = []
-
-        if theme_preference:
-            # Validar se o valor é válido
-            from .models import CustomUser
-
+        theme_preference = request.data.get("theme_preference")
+        if theme_preference is not None:
             valid_choices = [choice[0] for choice in CustomUser.ThemePreference.choices]
             if theme_preference not in valid_choices:
                 return Response(
                     {
-                        "detail": f"theme_preference deve ser um dos valores: {', '.join(valid_choices)}"
+                        "detail": (
+                            "theme_preference deve ser um dos valores: "
+                            f"{', '.join(valid_choices)}"
+                        )
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            user.theme_preference = theme_preference
-            updated_fields.append("theme_preference")
 
-        if onboarding_status is not None:
-            if not isinstance(onboarding_status, dict):
-                return Response(
-                    {"detail": "onboarding_status deve ser um objeto JSON"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        onboarding_status = request.data.get("onboarding_status")
+        if onboarding_status is not None and not isinstance(onboarding_status, dict):
+            return Response(
+                {"detail": "onboarding_status deve ser um objeto JSON"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            # Merge com o status atual para preservar outros dados de onboarding
-            current_status = user.onboarding_status or {}
-            current_status.update(onboarding_status)
-            user.onboarding_status = current_status
-            updated_fields.append("onboarding_status")
+        serializer = UserSelfUpdateSerializer(
+            instance=user, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
 
-        if updated_fields:
-            user.save(update_fields=updated_fields)
-
-        serializer = UserSelfSerializer(user)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        response_serializer = UserSelfSerializer(user)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class TenantModulesSettingsView(APIView):

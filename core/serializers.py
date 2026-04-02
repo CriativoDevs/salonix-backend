@@ -23,6 +23,14 @@ from salonix_backend.validators import (
 )
 
 
+def _validate_optional_birthday(value):
+    if value and value > timezone.localdate():
+        raise serializers.ValidationError(
+            "A data de aniversário não pode estar no futuro."
+        )
+    return value
+
+
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
@@ -222,6 +230,8 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
             "name",
             "email",
             "phone_number",
+            "photo",
+            "birthday",
             "notes",
             "marketing_opt_in",
             "is_active",
@@ -252,6 +262,9 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
         if value:
             return sanitize_text_input(value, max_length=1000)
         return value
+
+    def validate_birthday(self, value):
+        return _validate_optional_birthday(value)
 
     def validate_email(self, value):
         if value:

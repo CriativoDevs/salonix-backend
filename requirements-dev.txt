@@ -1,0 +1,9 @@
+-r requirements.txt
+
+Faker==33.1.0
+pytest==9.0.2
+pytest-django==4.11.1
+pyright
+django-stubs
+django-stubs-ext==5.2.9
+djangorestframework-stubs

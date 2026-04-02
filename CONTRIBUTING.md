@@ -6,7 +6,7 @@ Obrigado por contribuir! Este guia resume o fluxo de trabalho para manter o proj
 
 - Python 3.11+
 - Virtualenv ativo (`.venv`)
-- Dependências instaladas: `pip install -r requirements.txt`
+- Dependências instaladas: `pip install -r requirements-dev.txt`
 
 ## Setup rápido
 
