@@ -159,6 +159,31 @@ class TestAuthEndpoints:
         response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_me_profile_admin_app_denied_for_basic_tenant(
+        self, user_fixture, tenant_fixture
+    ):
+        tenant_fixture.plan_tier = "basic"
+        tenant_fixture.rn_admin_enabled = False
+        tenant_fixture.save(
+            update_fields=["plan_tier", "rn_admin_enabled", "updated_at"]
+        )
+
+        self.client.force_authenticate(user=user_fixture)
+        response = self.client.get(self.me_profile_url, HTTP_X_APP_TYPE="admin")
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.data["error"]["code"] == "E004"
+        assert response.data["error"]["details"]["code"] == "PLAN_UPGRADE_REQUIRED"
+        assert response.data["error"]["details"]["current_plan"] == "basic"
+        assert response.data["error"]["details"]["plan_required"] == "pro"
+
+    def test_me_profile_admin_app_allowed_for_pro_tenant(self, user_fixture):
+        self.client.force_authenticate(user=user_fixture)
+        response = self.client.get(self.me_profile_url, HTTP_X_APP_TYPE="admin")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["email"] == user_fixture.email
+
     def test_me_tenant_returns_payload(self, tenant_fixture):
         user = User.objects.create_user(
             username="owner",

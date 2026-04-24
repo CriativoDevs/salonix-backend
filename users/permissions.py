@@ -1,3 +1,4 @@
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from .models import TenantStaffMember
@@ -80,10 +81,20 @@ class HasProFeature(BasePermission):
 
 class RequiresMobileAccess(BasePermission):
     """
-    Permite acesso somente se o tenant do usuário tiver permissão para usar
-    o aplicativo nativo (Plano Pro).
-    Retorna 403 com payload específico de upgrade se o plano for insuficiente.
+    Verifica entitlement mobile com base no header X-App-Type:
+
+    - "admin"       → tenant.can_use_native_admin() obrigatório
+    - "client"      → tenant.can_use_native_client() obrigatório
+    - "web"/ausente → sem verificação de entitlement mobile (passa direto)
+
+    Retorna 403 com payload estruturado quando o plano é insuficiente,
+    para que o app nativo possa exibir a tela de upgrade correta.
     """
+
+    _APP_TYPE_MESSAGES = {
+        "admin": "Seu plano não permite acesso ao Admin App. Upgrade para Pro para desbloquear.",
+        "client": "Seu plano não permite acesso ao Client App. Upgrade para Pro para desbloquear.",
+    }
 
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
@@ -93,32 +104,28 @@ class RequiresMobileAccess(BasePermission):
         if request.user.is_superuser:
             return True
 
+        app_type = request.headers.get("X-App-Type", "web").lower()
+
+        # Web ou header ausente: sem restrição de entitlement mobile,
+        # preservando o comportamento atual de endpoints web.
+        if app_type not in ("admin", "client"):
+            return True
+
         tenant = getattr(request.user, "tenant", None)
 
         if not tenant:
-            # Se não tem tenant, teoricamente não deveria acessar endpoints de tenant,
-            # mas deixamos passar aqui para outras permissions barrarem se necessário,
-            # ou bloqueamos se for estritamente endpoint de tenant.
-            # Como é uma verificação de "Mobile Access" que depende do plano do tenant,
-            # se não tem tenant, não tem plano => bloqueia.
+            # Sem tenant não há entitlement mobile — bloqueia
             return False
 
-        if tenant.can_use_native_admin():
+        # Verificar entitlement de acordo com o app_type
+        if app_type == "admin" and tenant.can_use_native_admin():
+            return True
+        if app_type == "client" and tenant.can_use_native_client():
             return True
 
-        # Se chegou aqui, não tem permissão.
-        # Construir exceção com payload rico para o frontend/mobile
-        from rest_framework.exceptions import PermissionDenied
-
-        # Hack para passar dados extras no erro 403
-        # O DRF padrão não suporta payload JSON arbitrário na PermissionDenied simples sem subclassing
-        # Mas podemos injetar atributos na exceção se o exception handler suportar,
-        # ou usar uma exceção customizada.
-        # Vamos usar uma exceção customizada que o exception handler (se existir) possa tratar,
-        # ou simplesmente raising PermissionDenied com dict (DRF suporta dict no detail).
-
+        # Plano insuficiente — payload rico para o app exibir upgrade
         detail = {
-            "detail": "Seu plano não permite acesso ao Admin App. Upgrade para Pro para desbloquear.",
+            "detail": self._APP_TYPE_MESSAGES[app_type],
             "plan_required": "pro",
             "current_plan": tenant.plan_tier,
             "upgrade_url": "/pricing",

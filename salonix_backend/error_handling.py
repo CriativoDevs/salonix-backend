@@ -365,6 +365,13 @@ def custom_exception_handler(exc, context):
         elif isinstance(exc.detail, list):
             error_message = "; ".join(map(str, exc.detail))
 
+    # Preservar payload estruturado de API exceptions como PermissionDenied
+    elif hasattr(exc, "detail") and isinstance(exc.detail, dict):
+        error_details = exc.detail
+        primary_detail = exc.detail.get("detail")
+        if primary_detail is not None:
+            error_message = str(primary_detail)
+
     # Tratamento especial para Throttled
     if isinstance(exc, Throttled):
         # Adicionar tempo de espera aos detalhes

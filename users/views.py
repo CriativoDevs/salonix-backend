@@ -42,7 +42,7 @@ import secrets
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser
 from .services import CreditService, TenantService, FounderService
-from .permissions import IsActiveTenant
+from .permissions import IsActiveTenant, RequiresMobileAccess
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -179,7 +179,7 @@ class UserRegistrationView(generics.CreateAPIView):
 
 
 class MeFeatureFlagsView(RetrieveUpdateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     serializer_class = UserFeatureFlagsSerializer  # default para GET
 
     def get_object(self):
@@ -740,7 +740,7 @@ class TenantProfileView(APIView):
 
 
 class MeTenantView(APIView):
-    permission_classes = [IsAuthenticated, IsActiveTenant]
+    permission_classes = [IsAuthenticated, IsActiveTenant, RequiresMobileAccess]
     CACHE_TTL = 30
 
     @extend_schema(
@@ -835,7 +835,7 @@ class MeTenantView(APIView):
 
 
 class MeProfileView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         responses=OpenApiResponse(
@@ -925,7 +925,7 @@ class MeProfileView(APIView):
 
 
 class TenantModulesSettingsView(APIView):
-    permission_classes = [IsAuthenticated, IsActiveTenant]
+    permission_classes = [IsAuthenticated, IsActiveTenant, RequiresMobileAccess]
 
     @extend_schema(
         description=(
@@ -975,7 +975,7 @@ class TenantModulesSettingsView(APIView):
 
 
 class TenantStaffView(APIView):
-    permission_classes = [IsAuthenticated, IsActiveTenant]
+    permission_classes = [IsAuthenticated, IsActiveTenant, RequiresMobileAccess]
     # Listar staff não deve ser afetado pelo throttle de convites
     serializer_class = TenantStaffMemberSerializer
 
@@ -1121,7 +1121,7 @@ class TenantStaffView(APIView):
 
 
 class TenantStaffResendInviteView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     throttle_classes = [UsersStaffResendInviteThrottle]
     throttle_scope = "users_staff_resend"
 
@@ -1233,7 +1233,7 @@ class UsersPasswordResetThrottle(_UsersPasswordResetThrottle):
 
 
 class TenantStaffAccessLinkView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     throttle_classes = [UsersPasswordResetThrottle]
     throttle_scope = "users_password_reset"
 
@@ -1372,7 +1372,7 @@ class TenantStaffAccessLinkView(APIView):
 
 
 class TenantStaffContactUpdateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         request=StaffContactUpdateSerializer,
@@ -1631,7 +1631,7 @@ class PasswordResetConfirmView(APIView):
 class CreditBalanceView(APIView):
     """Visualiza saldo e estatísticas de créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         description="Obtém saldo atual e estatísticas de créditos de comunicação",
@@ -1658,7 +1658,7 @@ class CreditBalanceView(APIView):
 class CreditHistoryView(APIView):
     """Lista histórico de transações de créditos."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["transaction_type", "status"]
@@ -1704,7 +1704,7 @@ class CreditHistoryView(APIView):
 class ConsumeCreditsView(APIView):
     """Consome créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         description="Consome créditos de comunicação",
@@ -1746,7 +1746,7 @@ class ConsumeCreditsView(APIView):
 class PurchaseCreditsView(APIView):
     """Compra créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         description="Compra créditos de comunicação",
@@ -1795,13 +1795,13 @@ class PurchaseCreditsView(APIView):
 class RealtimeCreditsSSEView(APIView):
     """Stream de eventos de créditos via SSE (text/event-stream) por tenant.
 
-    - Autenticação obrigatória
+    - Autenticação + entitlement mobile obrigatórios
     - Isolamento por tenant
     - Heartbeat periódico
     - Emite eventos quando há novas transações no ledger ou mudança de saldo
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         description=(
