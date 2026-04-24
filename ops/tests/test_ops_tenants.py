@@ -4,9 +4,11 @@ import io
 import pytest
 from django.urls import reverse
 from rest_framework import status
+from rest_framework.test import APIClient
 
 from notifications.models import NotificationLog
-from users.models import CustomUser, Tenant
+from ops.models import OpsSupportAuditLog
+from users.models import CustomUser, Tenant, TenantStaffMember
 
 
 @pytest.mark.django_db
@@ -186,6 +188,162 @@ class TestOpsTenantsEndpoints:
         assert tenant.sms_enabled is False
         assert tenant.whatsapp_enabled is False
         assert "rn_admin" not in (tenant.addons_enabled or [])
+
+    def test_plan_downgrade_invalidates_tenant_sessions_only(
+        self,
+        api_client,
+        ops_user_factory,
+        ops_authenticate,
+        tenant_with_owner_factory,
+    ):
+        admin = ops_user_factory(
+            CustomUser.OpsRoles.OPS_ADMIN, "downgrade_ops@example.com"
+        )
+        tenant, owner = tenant_with_owner_factory(
+            "Salon Downgrade", plan_tier=Tenant.PLAN_PRO
+        )
+        _, other_owner = tenant_with_owner_factory(
+            "Salon Other", plan_tier=Tenant.PLAN_PRO
+        )
+
+        collaborator = CustomUser.objects.create_user(
+            username="downgrade_collab",
+            email="downgrade-collab@example.com",
+            password="OwnerPass123!",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant,
+            user=collaborator,
+            role=TenantStaffMember.Role.COLLABORATOR,
+            status=TenantStaffMember.Status.ACTIVE,
+        )
+
+        owner.jwt_version = 5
+        owner.save(update_fields=["jwt_version"])
+        collaborator.jwt_version = 3
+        collaborator.save(update_fields=["jwt_version"])
+        other_owner.jwt_version = 7
+        other_owner.save(update_fields=["jwt_version"])
+
+        access = ops_authenticate(admin.email)
+        url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
+        response = api_client.post(
+            url,
+            {"plan_tier": Tenant.PLAN_BASIC},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {access}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_downgrade"] is True
+        assert response.data["invalidated_sessions"] == 2
+
+        owner.refresh_from_db()
+        collaborator.refresh_from_db()
+        other_owner.refresh_from_db()
+        assert owner.jwt_version == 6
+        assert collaborator.jwt_version == 4
+        assert other_owner.jwt_version == 7
+
+        audit = OpsSupportAuditLog.objects.filter(
+            action=OpsSupportAuditLog.Actions.UPDATE_PLAN,
+            target_tenant=tenant,
+        ).first()
+        assert audit is not None
+        assert audit.actor_id == admin.id
+        assert audit.payload["old_plan"] == Tenant.PLAN_PRO
+        assert audit.payload["new_plan"] == Tenant.PLAN_BASIC
+        assert audit.payload["is_downgrade"] is True
+        assert audit.payload["invalidated_sessions"] == 2
+        assert audit.result["status"] == "success"
+        assert audit.result["revocation_applied"] is True
+        assert audit.result["invalidated_sessions"] == 2
+
+    def test_plan_upgrade_does_not_invalidate_sessions_by_default(
+        self,
+        api_client,
+        ops_user_factory,
+        ops_authenticate,
+        tenant_with_owner_factory,
+    ):
+        admin = ops_user_factory(
+            CustomUser.OpsRoles.OPS_ADMIN, "upgrade_ops@example.com"
+        )
+        tenant, owner = tenant_with_owner_factory(
+            "Salon Upgrade", plan_tier=Tenant.PLAN_BASIC
+        )
+
+        owner.jwt_version = 4
+        owner.save(update_fields=["jwt_version"])
+
+        access = ops_authenticate(admin.email)
+        url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
+        response = api_client.post(
+            url,
+            {"plan_tier": Tenant.PLAN_PRO},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {access}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_downgrade"] is False
+        assert response.data["invalidated_sessions"] == 0
+
+        owner.refresh_from_db()
+        assert owner.jwt_version == 4
+
+    def test_plan_downgrade_revokes_old_access_and_refresh_tokens_immediately(
+        self,
+        api_client,
+        ops_user_factory,
+        ops_authenticate,
+        tenant_with_owner_factory,
+    ):
+        admin = ops_user_factory(
+            CustomUser.OpsRoles.OPS_ADMIN, "downgrade_revoke_ops@example.com"
+        )
+        tenant, owner = tenant_with_owner_factory(
+            "Salon Revoke", plan_tier=Tenant.PLAN_PRO
+        )
+
+        tenant_client = APIClient()
+        login_response = tenant_client.post(
+            reverse("token_obtain_pair"),
+            {"email": owner.email, "password": "OwnerPass123!"},
+            format="json",
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+        old_access = login_response.data["access"]
+        old_refresh = login_response.data["refresh"]
+
+        # Token antigo funciona antes do downgrade
+        tenant_client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_access}")
+        before_response = tenant_client.get(reverse("me_profile"))
+        assert before_response.status_code == status.HTTP_200_OK
+
+        access = ops_authenticate(admin.email)
+        downgrade_url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
+        downgrade_response = api_client.post(
+            downgrade_url,
+            {"plan_tier": Tenant.PLAN_BASIC},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {access}",
+        )
+        assert downgrade_response.status_code == status.HTTP_200_OK
+        assert downgrade_response.data["is_downgrade"] is True
+
+        # Access token antigo deve falhar imediatamente
+        after_access_response = tenant_client.get(reverse("me_profile"))
+        assert after_access_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        # Refresh token antigo também deve ser rejeitado
+        refresh_response = tenant_client.post(
+            reverse("token_refresh"),
+            {"refresh": old_refresh},
+            format="json",
+        )
+        assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_block_and_unblock(
         self,

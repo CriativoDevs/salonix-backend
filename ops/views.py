@@ -9,7 +9,7 @@ import secrets
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, F
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
@@ -68,6 +68,19 @@ from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import ErrorCodes, TenantError
 
 logger = logging.getLogger(__name__)
+
+PLAN_RANK: Dict[str, int] = {
+    Tenant.PLAN_BASIC: 1,
+    Tenant.PLAN_FOUNDER: 2,
+    Tenant.PLAN_PRO: 3,
+}
+
+
+def _is_plan_downgrade(old_plan: str, new_plan: str) -> bool:
+    old_rank = PLAN_RANK.get(old_plan, 0)
+    new_rank = PLAN_RANK.get(new_plan, 0)
+    return new_rank < old_rank
+
 
 PLAN_PRICING_EUR: Dict[str, Decimal] = {
     Tenant.PLAN_BASIC: Decimal("29.00"),
@@ -419,17 +432,45 @@ class OpsTenantViewSet(viewsets.ReadOnlyModelViewSet):
                 ]
 
         old_plan = tenant.plan_tier
-        tenant.plan_tier = new_plan
-        tenant.save()
+        is_downgrade = _is_plan_downgrade(old_plan, new_plan)
+        invalidated_sessions = 0
 
-        OpsSupportAuditLog.objects.create(
-            actor=request.user,
-            action="update_plan",
-            target_tenant=tenant,
-            payload={"old_plan": old_plan, "new_plan": new_plan, "force": force},
+        with transaction.atomic():
+            tenant.plan_tier = new_plan
+            tenant.save()
+
+            # BE-SEC-02: downgrade deve invalidar sessões/tokens do tenant imediatamente.
+            # Nesta etapa usamos jwt_version para revogar tokens ativos por usuário do tenant.
+            if is_downgrade:
+                invalidated_sessions = tenant.users.update(
+                    jwt_version=F("jwt_version") + 1
+                )
+
+            OpsSupportAuditLog.objects.create(
+                actor=request.user,
+                action=OpsSupportAuditLog.Actions.UPDATE_PLAN,
+                target_tenant=tenant,
+                payload={
+                    "old_plan": old_plan,
+                    "new_plan": new_plan,
+                    "force": force,
+                    "is_downgrade": is_downgrade,
+                    "invalidated_sessions": invalidated_sessions,
+                },
+                result={
+                    "status": "success",
+                    "revocation_applied": is_downgrade,
+                    "invalidated_sessions": invalidated_sessions,
+                },
+            )
+
+        return Response(
+            {
+                "message": f"Plano atualizado para {new_plan}.",
+                "is_downgrade": is_downgrade,
+                "invalidated_sessions": invalidated_sessions,
+            }
         )
-
-        return Response({"message": f"Plano atualizado para {new_plan}."})
 
 
 class OpsLockoutViewSet(viewsets.ViewSet):

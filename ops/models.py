@@ -118,6 +118,7 @@ class OpsSupportAuditLog(models.Model):
         RESEND_NOTIFICATION = "resend_notification", "Resend Notification"
         CLEAR_LOCKOUT = "clear_lockout", "Clear Lockout"
         RESOLVE_ALERT = "resolve_alert", "Resolve Alert"
+        UPDATE_PLAN = "update_plan", "Update Plan"
         UPDATE_SETTING = "update_setting", "Update Setting"
         UPDATE_TEMPLATE = "update_template", "Update Template"
         CREATE_OPS_USER = "create_ops_user", "Create Ops User"

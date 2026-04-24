@@ -15,6 +15,7 @@ class TestAuthEndpoints:
         self.client = APIClient()
         self.register_url = reverse("register")
         self.token_url = reverse("token_obtain_pair")
+        self.token_refresh_url = reverse("token_refresh")
         self.me_tenant_url = reverse("me_tenant")
         self.me_profile_url = reverse("me_profile")
         # Evita interferência de throttling entre testes consecutivos
@@ -158,6 +159,52 @@ class TestAuthEndpoints:
         payload = {"email": "doesnotexist@example.com", "password": "irrelevant"}
         response = self.client.post(self.token_url, data=payload)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_token_refresh_with_current_version_succeeds(self):
+        user = User.objects.create_user(
+            username="refresh_ok",
+            email="refresh_ok@example.com",
+            password="StrongPass123",
+        )
+
+        login_resp = self.client.post(
+            self.token_url,
+            {"email": user.email, "password": "StrongPass123"},
+            format="json",
+        )
+        assert login_resp.status_code == status.HTTP_200_OK
+
+        refresh_resp = self.client.post(
+            self.token_refresh_url,
+            {"refresh": login_resp.data["refresh"]},
+            format="json",
+        )
+        assert refresh_resp.status_code == status.HTTP_200_OK
+        assert "access" in refresh_resp.data
+
+    def test_token_refresh_with_old_version_is_denied(self):
+        user = User.objects.create_user(
+            username="refresh_old",
+            email="refresh_old@example.com",
+            password="StrongPass123",
+        )
+
+        login_resp = self.client.post(
+            self.token_url,
+            {"email": user.email, "password": "StrongPass123"},
+            format="json",
+        )
+        assert login_resp.status_code == status.HTTP_200_OK
+
+        user.jwt_version += 1
+        user.save(update_fields=["jwt_version"])
+
+        refresh_resp = self.client.post(
+            self.token_refresh_url,
+            {"refresh": login_resp.data["refresh"]},
+            format="json",
+        )
+        assert refresh_resp.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_me_profile_admin_app_denied_for_basic_tenant(
         self, user_fixture, tenant_fixture
