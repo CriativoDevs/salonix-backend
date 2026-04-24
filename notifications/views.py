@@ -9,6 +9,7 @@ from typing import Any, Dict, cast
 from rest_framework.views import APIView
 from core.mixins import TenantIsolatedMixin
 from drf_spectacular.utils import extend_schema
+from users.permissions import RequiresMobileAccess
 from .models import Notification, NotificationDevice, NotificationLog
 from core.models import CustomerCommunicationConsent, SalonCustomer
 from .serializers import (
@@ -40,7 +41,7 @@ class NotificationListView(TenantIsolatedMixin, generics.ListAPIView):
     """
 
     serializer_class = NotificationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     queryset = Notification.objects.all()
 
     def get_queryset(self):
@@ -71,7 +72,7 @@ class NotificationMarkReadView(TenantIsolatedMixin, generics.UpdateAPIView):
     """
 
     serializer_class = NotificationMarkReadSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     queryset = Notification.objects.all()
 
     def get_queryset(self):
@@ -106,7 +107,7 @@ class NotificationMarkAllReadView(TenantIsolatedMixin, APIView):
     Marca todas as notificações não lidas do usuário como lidas.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(request=None, responses=NotificationMarkAllReadResponseSerializer)
     def post(self, request):
@@ -143,7 +144,7 @@ class NotificationDeviceRegisterView(TenantIsolatedMixin, generics.CreateAPIView
     """
 
     serializer_class = NotificationDeviceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     def perform_create(self, serializer):
         # Verificar se já existe device com mesmo token
@@ -204,7 +205,7 @@ class NotificationTestView(TenantIsolatedMixin, APIView):
     Testa um canal específico de notificação.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         request=NotificationTestSerializer,
@@ -254,7 +255,7 @@ class TestPushNotificationView(TenantIsolatedMixin, APIView):
     Apenas para admins/staff.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         request=TestPushNotificationSerializer,
@@ -358,7 +359,7 @@ class NotificationStatsView(TenantIsolatedMixin, APIView):
     Estatísticas de notificações do usuário.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(responses=NotificationStatsResponseSerializer)
     def get(self, request):
@@ -395,7 +396,7 @@ class NotificationLogListView(TenantIsolatedMixin, generics.ListAPIView):
     """
 
     serializer_class = NotificationLogSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     queryset = NotificationLog.objects.all()
 
     def get_queryset(self):
@@ -427,7 +428,7 @@ class CommunicationConsentListView(TenantIsolatedMixin, generics.ListAPIView):
     """
 
     serializer_class = CommunicationConsentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
     queryset = CustomerCommunicationConsent.objects.all()
 
     @extend_schema(parameters=[])
@@ -460,7 +461,7 @@ class CommunicationConsentCreateView(TenantIsolatedMixin, APIView):
     Erros: 400 (validação de campos), 404 (cliente não encontrado).
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         request=CommunicationConsentCreateSerializer,
@@ -526,7 +527,7 @@ class CommunicationConsentWithdrawView(TenantIsolatedMixin, APIView):
     Erros: 400 (validação de campos), 404 (cliente não encontrado).
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess]
 
     @extend_schema(
         request=CommunicationConsentWithdrawSerializer,
