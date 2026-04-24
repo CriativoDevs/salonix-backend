@@ -66,6 +66,7 @@ from ops.serializers import (
 )
 from users.models import CustomUser, Tenant, UserFeatureFlags
 from salonix_backend.error_handling import ErrorCodes, TenantError
+from salonix_backend.pii_utils import mask_email
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,10 @@ class OpsAuthLoginView(APIView):
                 request,
                 event="login",
                 result="failure",
-                extra={"email": request.data.get("email", ""), "reason": str(exc)},
+                extra={
+                    "email": mask_email(request.data.get("email", "")),
+                    "reason": str(exc),
+                },
             )
             OPS_AUTH_EVENTS_TOTAL.labels(
                 event="login", result="failure", role="unknown"
@@ -127,7 +131,7 @@ class OpsAuthLoginView(APIView):
                 event="login",
                 result="failure",
                 extra={
-                    "email": request.data.get("email", ""),
+                    "email": mask_email(request.data.get("email", "")),
                     "reason": "validation_error",
                 },
             )
@@ -363,7 +367,7 @@ class OpsTenantViewSet(viewsets.ReadOnlyModelViewSet):
             action="reset_owner",
             target_tenant=tenant,
             target_user=user,
-            payload={"new_owner_email": email},
+            payload={"new_owner_email": mask_email(email)},
         )
 
         return Response(

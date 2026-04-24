@@ -43,6 +43,7 @@ from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser
 from .services import CreditService, TenantService, FounderService
 from .permissions import IsActiveTenant, RequiresMobileAccess
+from salonix_backend.pii_utils import mask_email, mask_user_repr
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -156,7 +157,7 @@ class UserRegistrationView(generics.CreateAPIView):
             logger.info(
                 "User registered successfully",
                 extra={
-                    "email": request.data.get("email"),
+                    "email": mask_email(request.data.get("email")),
                     "status_code": resp.status_code,
                 },
             )
@@ -165,7 +166,7 @@ class UserRegistrationView(generics.CreateAPIView):
             logger.warning(
                 "User registration failed",
                 extra={
-                    "email": request.data.get("email"),
+                    "email": mask_email(request.data.get("email")),
                     "status_code": resp.status_code,
                     "errors": resp.data,
                 },
@@ -246,7 +247,7 @@ class EmailTokenObtainPairView(TokenObtainPairView):
             logger.info(
                 "User logged in successfully",
                 extra={
-                    "email": request.data.get("email"),
+                    "email": mask_email(request.data.get("email")),
                     "status_code": resp.status_code,
                     "app_type": app_type,
                 },
