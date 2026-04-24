@@ -5579,9 +5579,14 @@ class FeedbackListCreateView(APIView):
         try:
             serializer.is_valid(raise_exception=True)
         except ValidationError as e:
+            from salonix_backend.pii_utils import sanitize_log_data
+
             logger.warning(
                 "feedback_create_validation_error",
-                extra={"errors": e.detail, "data": request.data},
+                extra={
+                    "errors": e.detail,
+                    "data": sanitize_log_data(dict(request.data)),
+                },
             )
             raise e
 
@@ -5992,7 +5997,10 @@ class TenantCancelView(APIView):
             # Construir URL de reativação (ajustar conforme frontend)
             reactivation_url = f"{settings.FRONTEND_URL}/reativar/{tenant.id}/{tenant.reactivation_token}/"
             send_account_cancellation_email(tenant, request.user, reactivation_url)
-            logger.info(f"Email de cancelamento enviado para {request.user.email}")
+            logger.info(
+                "Email de cancelamento enviado",
+                extra={"user_email": mask_email(request.user.email)},
+            )
         except Exception as e:
             logger.error(f"Erro ao enviar email para tenant {tenant.id}: {e}")
 
@@ -6107,7 +6115,10 @@ class TenantReactivateView(APIView):
             from core.email_utils import send_account_reactivation_email
 
             send_account_reactivation_email(tenant, request.user)
-            logger.info(f"Email de reativação enviado para {request.user.email}")
+            logger.info(
+                "Email de reativação enviado",
+                extra={"user_email": mask_email(request.user.email)},
+            )
         except Exception as e:
             logger.error(
                 f"Erro ao enviar email de reativação para tenant {tenant.id}: {e}"

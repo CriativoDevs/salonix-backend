@@ -13,6 +13,7 @@ from datetime import timedelta
 from unittest.mock import patch
 from django.test import override_settings
 import logging
+from salonix_backend.pii_utils import mask_email
 
 
 @pytest.mark.django_db
@@ -173,7 +174,7 @@ class TestBusinessLogging:
         ]
         assert len(log_records) > 0
         record = log_records[0]
-        assert getattr(record, "email", None) == "newuser@example.com"
+        assert getattr(record, "email", None) == mask_email("newuser@example.com")
 
     def test_user_login_logs(self, user_fixture, caplog):
         """Verifica logs de login"""
@@ -197,7 +198,7 @@ class TestBusinessLogging:
         record = log_records[0]
         # user_id might be missing if RequestContextFilter doesn't see auth user
         # and extra params behavior is complex with filters. Check email instead.
-        assert getattr(record, "email", None) == user_fixture.email
+        assert getattr(record, "email", None) == mask_email(user_fixture.email)
 
     def test_salon_appointment_reschedule_logs(self, user_fixture, caplog):
         """Verifica logs de reagendamento pelo salão"""
