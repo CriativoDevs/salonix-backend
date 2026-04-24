@@ -16,7 +16,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     max_page_size = 100
 
 
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.exceptions import (
     ValidationError,
     AuthenticationFailed,
@@ -46,6 +46,7 @@ from .permissions import IsActiveTenant, RequiresMobileAccess
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
+    EmailTokenRefreshSerializer,
     TenantMetaSerializer,
     TenantBrandingUpdateSerializer,
     TenantModulesUpdateSerializer,
@@ -349,6 +350,11 @@ class EmailTokenObtainPairView(TokenObtainPairView):
             USERS_THROTTLED_TOTAL.labels(scope="auth_login").inc()
         finally:
             return super().throttled(request, wait)
+
+
+class EmailTokenRefreshView(TokenRefreshView):
+    serializer_class = EmailTokenRefreshSerializer
+    permission_classes = [AllowAny]
 
 
 class FounderAvailabilityView(APIView):

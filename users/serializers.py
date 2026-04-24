@@ -13,6 +13,7 @@ from rest_framework import serializers
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema_field
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
@@ -857,6 +858,49 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
                 "staff_role": user.staff_role,
             },
         }
+
+
+class EmailTokenRefreshSerializer(TokenRefreshSerializer):
+    """Refresh de token com validação de jwt_version para tenant users."""
+
+    def validate(self, attrs):
+        raw_refresh = attrs.get("refresh")
+        if not raw_refresh:
+            raise AuthenticationFailed("Token de refresh é obrigatório.")
+
+        try:
+            refresh = RefreshToken(raw_refresh)
+        except Exception:
+            raise AuthenticationFailed("Token inválido ou expirado.")
+
+        user_id = refresh.payload.get("user_id")
+        try:
+            user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            raise AuthenticationFailed("Usuário não encontrado.")
+
+        if not user.is_active:
+            raise AuthenticationFailed("Conta inativa.")
+
+        if getattr(user, "is_ops_user", False):
+            raise AuthenticationFailed(
+                "Acesso restrito ao console Ops. Utilize o endpoint ops/auth/refresh."
+            )
+
+        token_version = refresh.payload.get("jwt_version")
+        user_version = getattr(user, "jwt_version", 1)
+
+        if token_version is None:
+            if user_version > 1:
+                raise AuthenticationFailed(
+                    "Sessão invalidada (token sem versão). Faça login novamente."
+                )
+        elif token_version < user_version:
+            raise AuthenticationFailed(
+                "Sessão invalidada (versão do token antiga). Faça login novamente."
+            )
+
+        return super().validate(attrs)
 
 
 class TenantMetaSerializer(serializers.ModelSerializer):
