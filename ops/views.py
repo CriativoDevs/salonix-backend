@@ -97,6 +97,12 @@ class OpsAuthRefreshThrottle(ScopedRateThrottle):
     scope = "ops_auth_refresh"
 
 
+class OpsActionThrottle(ScopedRateThrottle):
+    """Throttle para mutations privilegiadas do console Ops."""
+
+    scope = "ops_action"
+
+
 class OpsAuthLoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [OpsAuthLoginThrottle]
@@ -221,6 +227,13 @@ class OpsTenantViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [OrderingFilter]
     # filterset_fields = ["plan_tier", "is_active"] # Manual implementation below
     ordering_fields = ["created_at", "users_total", "plan_tier"]
+
+    _MUTATION_ACTIONS = {"block_tenant", "unblock_tenant", "reset_owner", "update_plan"}
+
+    def get_throttles(self):
+        if getattr(self, "action", None) in self._MUTATION_ACTIONS:
+            return [OpsActionThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         queryset = super().get_queryset().annotate(users_total=Count("users"))

@@ -158,26 +158,36 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
     Middleware para adicionar headers de segurança.
     """
 
+    # CSP estrita para endpoints de API (sem recursos de browser necessários)
+    _API_CSP = "default-src 'none'; frame-ancestors 'none';"
+    # CSP para rotas não-API (admin Django requer inline styles)
+    _DEFAULT_CSP = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+
     def process_response(
         self, request: HttpRequest, response: HttpResponse
     ) -> HttpResponse:
         """Adicionar headers de segurança."""
-        # Headers de segurança básicos
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
-        response["X-XSS-Protection"] = "1; mode=block"
         response["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response["Permissions-Policy"] = (
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+            "magnetometer=(), microphone=(), payment=(), usb=()"
+        )
 
-        # Content Security Policy básico (ajuste conforme necessário)
         if not response.get("Content-Security-Policy"):
-            response["Content-Security-Policy"] = (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: https:; "
-                "font-src 'self' data:; "
-                "connect-src 'self';"
-            )
+            if request.path.startswith("/api/"):
+                response["Content-Security-Policy"] = self._API_CSP
+            else:
+                response["Content-Security-Policy"] = self._DEFAULT_CSP
 
         return response
 

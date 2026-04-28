@@ -426,3 +426,29 @@ class TestOpsTenantsEndpoints:
             format="json",
         )
         assert token_response.status_code == status.HTTP_200_OK
+
+
+# ---------- throttle wire tests ----------
+
+
+def test_ops_tenant_mutation_actions_have_throttle():
+    """Verifica que ações de mutação do OpsTenantViewSet retornam OpsActionThrottle."""
+    from ops.views import OpsTenantViewSet, OpsActionThrottle
+
+    viewset = OpsTenantViewSet()
+    for action in ("block_tenant", "unblock_tenant", "reset_owner", "update_plan"):
+        viewset.action = action
+        throttles = viewset.get_throttles()
+        assert any(
+            isinstance(t, OpsActionThrottle) for t in throttles
+        ), f"Action '{action}' is missing OpsActionThrottle"
+
+
+def test_ops_tenant_read_actions_do_not_have_ops_action_throttle():
+    """Verifica que ações de leitura do OpsTenantViewSet não retornam OpsActionThrottle."""
+    from ops.views import OpsTenantViewSet, OpsActionThrottle
+
+    viewset = OpsTenantViewSet()
+    viewset.action = "list"
+    throttles = viewset.get_throttles()
+    assert not any(isinstance(t, OpsActionThrottle) for t in throttles)
