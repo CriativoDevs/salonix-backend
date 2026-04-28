@@ -9,7 +9,7 @@ This directory centralizes backend documentation for both technical and non‑te
 - API & Schema: `API_OPENAPI.md`.
 - Tenancy: `TENANT_LIFECYCLE.md`, `TENANT_REGISTRATION_FLOW.md`.
 - Validation & Errors: `VALIDATION_SYSTEM.md`, `../ERROR_HANDLING.md`.
-- Security: `CAPTCHA_SYSTEM.md`.
+- Security: `CAPTCHA_SYSTEM.md`, `SENSITIVE_ENDPOINTS_INVENTORY.md`.
 - Observability & Notifications: `OBSERVABILITY.md`, `NOTIFICATIONS_OVERVIEW.md`.
 - Reports: `REPORTS_OVERVIEW.md`.
 - Tutorials & Operations: `TUTORIAL_DJANGO_ADMIN.md`, `OPS_RUNBOOK.md`.
@@ -71,6 +71,7 @@ Esta pasta centraliza toda a documentação do backend para públicos técnicos 
 - Multi‑tenancy: `TENANT_LIFECYCLE.md`, `TENANT_REGISTRATION_FLOW.md`.
 - Validação & Erros: `VALIDATION_SYSTEM.md`, `../ERROR_HANDLING.md`.
 - Observabilidade & Notificações: `OBSERVABILITY.md`, `NOTIFICATIONS_OVERVIEW.md`.
+- Segurança: `CAPTCHA_SYSTEM.md`, `SENSITIVE_ENDPOINTS_INVENTORY.md`.
 - Relatórios: `REPORTS_OVERVIEW.md`.
 - Tutoriais & Operações: `TUTORIAL_DJANGO_ADMIN.md`, `OPS_RUNBOOK.md`.
 - Pagamentos (Stripe): `PAGAMENTOS_STRIPE.md`.

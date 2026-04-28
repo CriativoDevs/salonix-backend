@@ -5,6 +5,7 @@ from decimal import Decimal
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
@@ -17,6 +18,12 @@ import json
 
 from . import stripe_utils
 from .models import Subscription, PaymentCustomer, CreditPayment, StripeWebhookEvent
+from .throttling import (
+    PaymentsCheckoutThrottle,
+    PaymentsPortalThrottle,
+    PaymentsCreditPurchaseThrottle,
+    PaymentsSubscriptionActionThrottle,
+)
 from users.services import CreditService, FounderService
 from .services import (
     CreditPurchaseService,
@@ -45,8 +52,33 @@ from users.models import Tenant, TenantStaffMember
 logger = logging.getLogger(__name__)
 
 
+def _require_active_billing_owner(user):
+    tenant = getattr(user, "tenant", None)
+    if tenant is None:
+        raise PermissionDenied("Usuário sem tenant.")
+
+    if not tenant.is_active:
+        raise PermissionDenied("A conta do tenant está inativa.")
+
+    staff_member = getattr(user, "staff_member", None)
+    if staff_member is None or getattr(staff_member, "tenant_id", None) != tenant.id:
+        staff_member = TenantStaffMember.objects.filter(
+            user=user, tenant=tenant
+        ).first()
+
+    if (
+        staff_member is None
+        or staff_member.role != TenantStaffMember.Role.OWNER
+        or staff_member.status != TenantStaffMember.Status.ACTIVE
+    ):
+        raise PermissionDenied("Apenas OWNER ativo do tenant pode gerenciar billing.")
+
+    return tenant
+
+
 class CreateCheckoutSession(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsCheckoutThrottle]
 
     @extend_schema(
         request=CheckoutSessionRequestSerializer,
@@ -69,10 +101,7 @@ class CreateCheckoutSession(APIView):
             return Response({"detail": "Plano inválido."}, status=400)
 
         # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
-        staff = getattr(request.user, "staff_member", None)
-        tenant = getattr(request.user, "tenant", None)
-        if not tenant:
-            return Response({"detail": "Tenant não associado."}, status=403)
+        tenant = _require_active_billing_owner(request.user)
 
         # Validar elegibilidade do Founder para este tenant específico
 
@@ -99,16 +128,6 @@ class CreateCheckoutSession(APIView):
             )
 
         canonical_plan = requested_plan
-
-        if (
-            not staff
-            or staff.role != TenantStaffMember.Role.OWNER
-            or staff.status != TenantStaffMember.Status.ACTIVE
-        ):
-            return Response(
-                {"detail": "Somente OWNER ativo do tenant pode criar checkout."},
-                status=403,
-            )
 
         # 4) Customer
         customer_id = stripe_utils.get_or_create_customer(request.user)
@@ -201,6 +220,7 @@ class CreateCheckoutSession(APIView):
 
 class CreatePortalSession(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsPortalThrottle]
 
     @extend_schema(
         request=None,
@@ -212,6 +232,8 @@ class CreatePortalSession(APIView):
         trocar plano, cancelar, reativar, atualizar cartão, ver faturas.
         """
         stripe_client = stripe_utils.get_stripe()
+        _require_active_billing_owner(request.user)
+
         try:
             customer_id = stripe_utils.get_or_create_customer(request.user)
             return_url = getattr(
@@ -1023,6 +1045,7 @@ class CreateCreditPaymentIntentView(APIView):
     """Cria um PaymentIntent para compra de créditos."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsCreditPurchaseThrottle]
 
     @extend_schema(
         request=CreditPurchaseRequestSerializer,
@@ -1146,6 +1169,7 @@ class CreateCreditCheckoutSessionView(APIView):
     """Cria uma Stripe Checkout Session (mode=payment) para compra de créditos."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsCreditPurchaseThrottle]
 
     @extend_schema(
         request=CreditPurchaseRequestSerializer,
@@ -1277,6 +1301,7 @@ class SubscriptionActionView(APIView):
     """View para ações de assinatura (cancelar, reativar)."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsSubscriptionActionThrottle]
 
     @extend_schema(
         request=SubscriptionActionSerializer,
@@ -1396,6 +1421,7 @@ class ImprovedCheckoutSessionView(APIView):
     """View melhorada para criar checkout sessions."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsCheckoutThrottle]
 
     @extend_schema(
         request=CheckoutSessionRequestSerializer,
@@ -1403,6 +1429,8 @@ class ImprovedCheckoutSessionView(APIView):
     )
     def post(self, request):
         """Cria uma sessão de checkout usando o novo SubscriptionService."""
+        _require_active_billing_owner(request.user)
+
         serializer = CheckoutSessionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -1436,10 +1464,13 @@ class ImprovedPortalSessionView(APIView):
     """View melhorada para criar portal sessions."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsPortalThrottle]
 
     @extend_schema(request=None, responses={200: PortalSessionResponseSerializer})
     def post(self, request):
         """Cria uma sessão do portal de billing usando o novo SubscriptionService."""
+        _require_active_billing_owner(request.user)
+
         base_url = getattr(
             settings, "FRONTEND_BASE_URL", "http://localhost:3000"
         ).rstrip("/")
@@ -1463,6 +1494,7 @@ class StripeSettingsView(APIView):
     """Atualiza configurações de billing (Stripe) do tenant (OWNER-only)."""
 
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PaymentsSubscriptionActionThrottle]
 
     @extend_schema(
         request=StripeSettingsUpdateRequestSerializer,

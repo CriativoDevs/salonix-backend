@@ -152,9 +152,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# CORS: configurável por ambiente (dev/uat/prod)
-# Em dev mantemos permissivo; em staging/prod usar lista explícita
-CORS_ALLOW_ALL_ORIGINS = str(env_get("CORS_ALLOW_ALL_ORIGINS", "true")).lower() in {
+# CORS: seguro por padrão — wildcard desativado; use CORS_ALLOWED_ORIGINS para configurar em prod
+# Dev/test: fallback para lista explícita de origins locais (ver bloco abaixo)
+CORS_ALLOW_ALL_ORIGINS = str(env_get("CORS_ALLOW_ALL_ORIGINS", "false")).lower() in {
     "1",
     "true",
     "yes",
@@ -186,18 +186,19 @@ except Exception:
     ]
 
 CORS_ALLOW_CREDENTIALS = True
-# Quando credenciais estão habilitadas, não podemos usar "*" como origem.
+# Security: wildcard + credentials viola CORS spec e pode vazar tokens
 if CORS_ALLOW_CREDENTIALS and CORS_ALLOW_ALL_ORIGINS:
     CORS_ALLOW_ALL_ORIGINS = False
-    if not origins_raw:
-        CORS_ALLOWED_ORIGINS = [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "https://salonix-frontend-web.vercel.app",
-        ]
-        CORS_ALLOWED_ORIGIN_REGEXES = [
-            r"^https://salonix-frontend-web-.*\.vercel\.app$",
-        ]
+# Sempre definir allowlist explícita quando wildcard está desligado e nenhum env foi configurado
+if not CORS_ALLOW_ALL_ORIGINS and not origins_raw:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://salonix-frontend-web.vercel.app",
+    ]
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://salonix-frontend-web-.*\.vercel\.app$",
+    ]
 
 # Frontend URL para construção de links em emails (BE-ACCOUNT-CANCEL #396)
 FRONTEND_URL = env_get(
@@ -242,6 +243,18 @@ else:
     else:
         SESSION_COOKIE_SAMESITE = "Lax"
         CSRF_COOKIE_SAMESITE = "Lax"
+
+# Django SecurityMiddleware — flags explícitos (BE-SEC-04)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SESSION_COOKIE_HTTPONLY = True
+# CSRF_COOKIE_HTTPONLY deve ficar False — JS precisa ler o token
+CSRF_COOKIE_HTTPONLY = False
+
+# HSTS: ativar apenas em ambientes HTTPS para não quebrar dev
+if ENV in ("prod", "staging", "uat"):
+    SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000)  # 1 ano
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # opcional: flag ligada por padrão
 OBSERVABILITY_ENABLED = str(env_get("OBSERVABILITY_ENABLED", "true")).lower() == "true"
@@ -347,6 +360,15 @@ REPORTS_THROTTLE_REPORTS = env_get("REPORTS_THROTTLE_REPORTS", "60/min")
 REPORTS_THROTTLE_EXPORT_CSV = env_get("REPORTS_THROTTLE_EXPORT_CSV", "5/min")
 OPS_AUTH_THROTTLE_LOGIN = env_get("OPS_AUTH_THROTTLE_LOGIN", "10/min")
 OPS_AUTH_THROTTLE_REFRESH = env_get("OPS_AUTH_THROTTLE_REFRESH", "60/min")
+
+# --- Throttle de mutations de payments ---
+PAYMENTS_CHECKOUT_RATE = env_get("PAYMENTS_CHECKOUT_RATE", "5/hour")
+PAYMENTS_PORTAL_RATE = env_get("PAYMENTS_PORTAL_RATE", "10/hour")
+PAYMENTS_CREDIT_PURCHASE_RATE = env_get("PAYMENTS_CREDIT_PURCHASE_RATE", "10/hour")
+PAYMENTS_SUBSCRIPTION_ACTION_RATE = env_get(
+    "PAYMENTS_SUBSCRIPTION_ACTION_RATE", "10/hour"
+)
+OPS_ACTION_THROTTLE_RATE = env_get("OPS_ACTION_THROTTLE_RATE", "60/min")
 
 # REST_FRAMEWORK config
 REST_FRAMEWORK = {
@@ -454,6 +476,29 @@ REST_FRAMEWORK = {
         # console Ops
         "ops_auth_login": OPS_AUTH_THROTTLE_LOGIN,
         "ops_auth_refresh": OPS_AUTH_THROTTLE_REFRESH,
+        # ops mutations (block/unblock tenant, reset owner, update plan)
+        "ops_action": OPS_ACTION_THROTTLE_RATE,
+        # payments mutations
+        "payments_checkout": (
+            "100/hour"
+            if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+            else PAYMENTS_CHECKOUT_RATE
+        ),
+        "payments_portal": (
+            "100/hour"
+            if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+            else PAYMENTS_PORTAL_RATE
+        ),
+        "payments_credit_purchase": (
+            "100/hour"
+            if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+            else PAYMENTS_CREDIT_PURCHASE_RATE
+        ),
+        "payments_subscription_action": (
+            "100/hour"
+            if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+            else PAYMENTS_SUBSCRIPTION_ACTION_RATE
+        ),
     },
 }
 

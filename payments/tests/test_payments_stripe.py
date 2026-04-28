@@ -7,6 +7,13 @@ from users.models import CustomUser
 from payments.models import PaymentCustomer, Subscription
 
 
+def _error_message(response) -> str:
+    data = getattr(response, "data", {}) or {}
+    if "detail" in data:
+        return str(data.get("detail", ""))
+    return str(data.get("error", {}).get("message", ""))
+
+
 @pytest.fixture
 def auth_client(db):
     def _make(user=None):
@@ -265,10 +272,21 @@ def test_billing_portal_session(monkeypatch, settings, auth_client):
     settings.STRIPE_API_VERSION = "2024-06-20"
 
     from payments import stripe_utils
+    from users.models import Tenant, TenantStaffMember
 
     monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
 
     c, user = auth_client()
+    tenant = Tenant.objects.create(name="Portal Tenant", slug="portal-tenant")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
     url = "/api/payments/stripe/billing-portal/"
     resp = c.post(url, {}, format="json")
     assert resp.status_code == 200
@@ -276,6 +294,98 @@ def test_billing_portal_session(monkeypatch, settings, auth_client):
     assert PaymentCustomer.objects.filter(
         user=user, stripe_customer_id="cus_test_123"
     ).exists()
+
+
+@pytest.mark.django_db
+def test_billing_portal_forbidden_for_manager(monkeypatch, settings, auth_client):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+    from users.models import Tenant, TenantStaffMember
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(name="Manager Tenant", slug="manager-tenant")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.MANAGER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    resp = c.post("/api/payments/stripe/billing-portal/", {}, format="json")
+    assert resp.status_code == 403
+    assert "OWNER ativo" in _error_message(resp)
+
+
+@pytest.mark.django_db
+def test_improved_checkout_forbidden_for_manager(monkeypatch, settings, auth_client):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+    from users.models import Tenant, TenantStaffMember
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(name="Improved Tenant", slug="improved-tenant")
+    user.tenant = tenant
+    user.save()
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.MANAGER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    resp = c.post("/api/payments/stripe/v2/checkout/", {"plan": "basic"}, format="json")
+    assert resp.status_code == 403
+    assert "OWNER ativo" in _error_message(resp)
+
+
+@pytest.mark.django_db
+def test_improved_portal_forbidden_for_inactive_tenant(monkeypatch, settings):
+    settings.STRIPE_API_KEY = "sk_test_xxx"
+    settings.FRONTEND_BASE_URL = "http://localhost:5173"
+    settings.STRIPE_API_VERSION = "2024-06-20"
+
+    from payments import stripe_utils
+    from users.models import Tenant, TenantStaffMember
+
+    monkeypatch.setattr(stripe_utils, "get_stripe", lambda: _StripeSDK)
+
+    tenant = Tenant.objects.create(
+        name="Inactive Billing Tenant",
+        slug="inactive-billing-tenant",
+        is_active=False,
+    )
+    user = CustomUser.objects.create_user(
+        username="inactive-billing-owner",
+        email="inactive-billing-owner@example.com",
+        password="pass",
+        tenant=tenant,
+    )
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    c = APIClient()
+    c.force_authenticate(user=user)
+
+    resp = c.post("/api/payments/stripe/v2/portal/", {}, format="json")
+    assert resp.status_code == 403
+    assert "inativa" in _error_message(resp).lower()
 
 
 @pytest.mark.django_db
@@ -401,7 +511,44 @@ def test_checkout_requires_owner_role(monkeypatch, settings):
     url = "/api/payments/stripe/create-checkout-session/"
     resp = c.post(url, {"plan": "pro"}, format="json")
     assert resp.status_code == 403
-    assert "Somente OWNER" in resp.data.get("detail", "")
+    assert "OWNER ativo" in _error_message(resp)
+
+
+# ---------- throttle wire tests ----------
+
+
+def test_payment_mutation_views_have_throttle_classes():
+    """Verifica que views de mutação de pagamentos têm throttle configurado."""
+    from payments.views import (
+        CreateCheckoutSession,
+        CreatePortalSession,
+        CreateCreditPaymentIntentView,
+        CreateCreditCheckoutSessionView,
+        SubscriptionActionView,
+        ImprovedCheckoutSessionView,
+        ImprovedPortalSessionView,
+        StripeSettingsView,
+    )
+    from payments.throttling import (
+        PaymentsCheckoutThrottle,
+        PaymentsPortalThrottle,
+        PaymentsCreditPurchaseThrottle,
+        PaymentsSubscriptionActionThrottle,
+    )
+
+    assert PaymentsCheckoutThrottle in CreateCheckoutSession.throttle_classes
+    assert PaymentsPortalThrottle in CreatePortalSession.throttle_classes
+    assert (
+        PaymentsCreditPurchaseThrottle in CreateCreditPaymentIntentView.throttle_classes
+    )
+    assert (
+        PaymentsCreditPurchaseThrottle
+        in CreateCreditCheckoutSessionView.throttle_classes
+    )
+    assert PaymentsSubscriptionActionThrottle in SubscriptionActionView.throttle_classes
+    assert PaymentsCheckoutThrottle in ImprovedCheckoutSessionView.throttle_classes
+    assert PaymentsPortalThrottle in ImprovedPortalSessionView.throttle_classes
+    assert PaymentsSubscriptionActionThrottle in StripeSettingsView.throttle_classes
 
 
 @pytest.mark.django_db
@@ -506,28 +653,28 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
         def can_assign_founder(tenant=None):
             return True
 
-    monkeypatch.setattr(
-        "users.services.FounderService", MockFounderService
-    )
+    monkeypatch.setattr("users.services.FounderService", MockFounderService)
 
     tenant = Tenant.objects.create(name="Test Tenant", slug="test-tenant-plans")
-    
+
     available_plans = SubscriptionService.get_available_plans(tenant=tenant)
 
     # Procura pelos planos específicos
-    basic_plan = next((p for p in available_plans if p['plan_code'] == 'basic'), None)
-    pro_plan = next((p for p in available_plans if p['plan_code'] == 'pro'), None)
-    founder_plan = next((p for p in available_plans if p['plan_code'] == 'founder'), None)
+    basic_plan = next((p for p in available_plans if p["plan_code"] == "basic"), None)
+    pro_plan = next((p for p in available_plans if p["plan_code"] == "pro"), None)
+    founder_plan = next(
+        (p for p in available_plans if p["plan_code"] == "founder"), None
+    )
 
     # Validações
     assert basic_plan is not None
-    assert basic_plan['comm_auto_renew'] is False
-    assert basic_plan['credits_included'] == 5
+    assert basic_plan["comm_auto_renew"] is False
+    assert basic_plan["credits_included"] == 5
 
     assert pro_plan is not None
-    assert pro_plan['comm_auto_renew'] is True
-    assert pro_plan['credits_included'] == 15
+    assert pro_plan["comm_auto_renew"] is True
+    assert pro_plan["credits_included"] == 15
 
     assert founder_plan is not None
-    assert founder_plan['comm_auto_renew'] is False
-    assert founder_plan['credits_included'] == 5
+    assert founder_plan["comm_auto_renew"] is False
+    assert founder_plan["credits_included"] == 5
