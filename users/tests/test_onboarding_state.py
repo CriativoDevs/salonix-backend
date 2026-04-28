@@ -1,6 +1,8 @@
 import pytest
+from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APIClient
+from django.utils import timezone
 from users.models import CustomUser, Tenant
 
 
@@ -100,3 +102,76 @@ class TestBillingState:
         response = self.client.get(self.url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["billing_pending"] is False
+
+    def test_me_tenant_promotional_skips_subscription_sync(self, monkeypatch):
+        """Tenant promocional não deve reconciliar plano com Stripe no bootstrap."""
+        self.tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
+        self.tenant.save(update_fields=["billing_mode", "updated_at"])
+
+        from payments.services import SubscriptionService
+
+        def _should_not_be_called(_user):
+            raise AssertionError(
+                "SubscriptionService.get_current_subscription should not be called"
+            )
+
+        monkeypatch.setattr(
+            SubscriptionService,
+            "get_current_subscription",
+            _should_not_be_called,
+        )
+
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_me_tenant_applies_due_promotional_transition(self):
+        self.tenant.plan_tier = Tenant.PLAN_PRO
+        self.tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
+        self.tenant.promotional_expires_at = timezone.now() - timedelta(hours=1)
+        self.tenant.promotional_converts_to_plan = Tenant.PLAN_BASIC
+        self.tenant.save(
+            update_fields=[
+                "plan_tier",
+                "billing_mode",
+                "promotional_expires_at",
+                "promotional_converts_to_plan",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+
+        self.tenant.refresh_from_db()
+        assert self.tenant.billing_mode == Tenant.BILLING_MODE_STRIPE
+        assert self.tenant.plan_tier == Tenant.PLAN_BASIC
+        assert self.tenant.promotional_expires_at is None
+
+    @pytest.mark.parametrize(
+        ("app_type", "flag_field"),
+        (("admin", "rn_admin_enabled"), ("client", "rn_client_enabled")),
+    )
+    def test_me_tenant_mobile_promotional_bootstrap_without_subscription(
+        self, monkeypatch, app_type, flag_field
+    ):
+        setattr(self.tenant, flag_field, True)
+        self.tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
+        self.tenant.save(update_fields=[flag_field, "billing_mode", "updated_at"])
+
+        from payments.services import SubscriptionService
+
+        def _should_not_be_called(_user):
+            raise AssertionError(
+                "SubscriptionService.get_current_subscription should not be called"
+            )
+
+        monkeypatch.setattr(
+            SubscriptionService,
+            "get_current_subscription",
+            _should_not_be_called,
+        )
+
+        response = self.client.get(self.url, HTTP_X_APP_TYPE=app_type)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["plan"]["billing_mode"] == Tenant.BILLING_MODE_PROMOTIONAL

@@ -20,6 +20,7 @@ class TenantAdmin(admin.ModelAdmin):
         "name",
         "slug",
         "plan_tier",
+        "billing_mode",
         "status",
         "is_active",
         "users_count",
@@ -28,6 +29,7 @@ class TenantAdmin(admin.ModelAdmin):
     ]
     list_filter = [
         "plan_tier",
+        "billing_mode",
         "status",
         "is_active",
         "reports_enabled",
@@ -52,7 +54,18 @@ class TenantAdmin(admin.ModelAdmin):
             "Informações Básicas",
             {"fields": ("name", "slug", "is_active", "timezone", "currency")},
         ),
-        ("Plano e Configurações", {"fields": ("plan_tier", "addons_enabled")}),
+        (
+            "Plano e Configurações",
+            {
+                "fields": (
+                    "plan_tier",
+                    "billing_mode",
+                    "promotional_expires_at",
+                    "promotional_converts_to_plan",
+                    "addons_enabled",
+                )
+            },
+        ),
         (
             "Cancelamento de Conta",
             {

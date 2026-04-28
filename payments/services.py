@@ -423,6 +423,13 @@ class SubscriptionService:
 
     @classmethod
     def get_current_subscription(cls, user: UserType) -> Optional[Dict[str, Any]]:
+        tenant = getattr(user, "tenant", None)
+        if tenant and hasattr(tenant, "is_promotional_billing"):
+            if tenant.is_promotional_billing():
+                # Conta promocional não deve reconciliar com Stripe.
+                return None
+
+        subscription = None
         try:
             subscription = (
                 Subscription.objects.filter(
@@ -434,6 +441,16 @@ class SubscriptionService:
             )
 
             if not subscription:
+                return None
+
+            if not subscription.stripe_subscription_id:
+                logger.info(
+                    "No Stripe subscription id for tenant; treating as no active subscription",
+                    extra={
+                        "user_id": getattr(user, "id", None),
+                        "tenant_id": getattr(getattr(user, "tenant", None), "id", None),
+                    },
+                )
                 return None
 
             stripe_sub = stripe.Subscription.retrieve(
@@ -530,7 +547,61 @@ class SubscriptionService:
         except Subscription.DoesNotExist:
             return None
         except Exception as e:
-            logger.error(f"Stripe error getting subscription: {str(e)}")
+            msg = str(e)
+            lower_msg = msg.lower()
+            if "no such subscription" in lower_msg or "resource_missing" in lower_msg:
+                logger.info(
+                    "Stripe subscription missing; using local subscription state",
+                    extra={
+                        "user_id": getattr(user, "id", None),
+                        "tenant_id": getattr(getattr(user, "tenant", None), "id", None),
+                        "stripe_subscription_id": getattr(
+                            subscription, "stripe_subscription_id", None
+                        ),
+                    },
+                )
+
+                try:
+                    sub = (
+                        Subscription.objects.filter(
+                            user__tenant=user.tenant,
+                            status__in=["active", "trialing", "past_due"],
+                        )
+                        .order_by("-updated_at", "-created_at")
+                        .first()
+                    )
+                    if not sub:
+                        return None
+                    plan_code = get_plan_code_from_price(sub.price_id)
+                    plan_info = cls.AVAILABLE_PLANS.get(plan_code or "", {})
+
+                    STATUS_TRANSLATIONS = {
+                        "active": "Ativo",
+                        "trialing": "Em teste",
+                        "past_due": "Pagamento Pendente",
+                        "canceled": "Cancelado",
+                        "unpaid": "Não pago",
+                        "incomplete": "Incompleto",
+                        "incomplete_expired": "Expirado",
+                    }
+                    status_label = STATUS_TRANSLATIONS.get(sub.status, sub.status)
+
+                    return {
+                        "plan_code": plan_code,
+                        "plan_name": plan_info.get("name", (plan_code or "").title()),
+                        "status": sub.status,
+                        "status_label": status_label,
+                        "current_period_end": sub.current_period_end,
+                        "cancel_at_period_end": sub.cancel_at_period_end,
+                        "next_billing_date": sub.current_period_end,
+                        "price_monthly": plan_info.get(
+                            "price_monthly", Decimal("0.00")
+                        ),
+                    }
+                except Exception:
+                    return None
+
+            logger.error(f"Stripe error getting subscription: {msg}")
             # Ainda retornar mínima info usando registro local
             try:
                 sub = (

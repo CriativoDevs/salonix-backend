@@ -136,11 +136,36 @@ class Tenant(models.Model):
         (PLAN_FOUNDER, "Founder"),  # DEPRECATED: Use PLAN_BASIC + is_founder=True
     ]
 
+    BILLING_MODE_STRIPE = "stripe"
+    BILLING_MODE_PROMOTIONAL = "promotional"
+    BILLING_MODE_CHOICES = [
+        (BILLING_MODE_STRIPE, "Stripe"),
+        (BILLING_MODE_PROMOTIONAL, "Promotional"),
+    ]
+
     plan_tier = models.CharField(
         max_length=20,
         choices=PLAN_CHOICES,
         default=PLAN_BASIC,
         help_text="Nível do plano contratado",
+    )
+    billing_mode = models.CharField(
+        max_length=20,
+        choices=BILLING_MODE_CHOICES,
+        default=BILLING_MODE_STRIPE,
+        db_index=True,
+        help_text="Modo de billing do tenant (Stripe ou promocional interno)",
+    )
+    promotional_expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Data/hora em que o billing promocional expira, se aplicável",
+    )
+    promotional_converts_to_plan = models.CharField(
+        max_length=20,
+        choices=[(PLAN_BASIC, "Basic"), (PLAN_PRO, "Pro")],
+        default=PLAN_BASIC,
+        help_text="Plano pago alvo quando a promoção expirar",
     )
     addons_enabled = models.JSONField(
         default=list,
@@ -394,6 +419,39 @@ class Tenant(models.Model):
 
         return channels
 
+    def is_promotional_billing(self) -> bool:
+        """Retorna se o tenant usa trilha promocional sem Stripe."""
+        return self.billing_mode == self.BILLING_MODE_PROMOTIONAL
+
+    def uses_stripe_billing(self) -> bool:
+        """Retorna se o tenant usa billing padrão com Stripe."""
+        return self.billing_mode == self.BILLING_MODE_STRIPE
+
+    def is_promotional_transition_due(self, at=None) -> bool:
+        """Indica se a conta promocional já deve converter para plano pago."""
+        if not self.is_promotional_billing() or not self.promotional_expires_at:
+            return False
+        at = at or timezone.now()
+        return at >= self.promotional_expires_at
+
+    def apply_promotional_transition(self, at=None) -> bool:
+        """Converte tenant promocional expirado para billing padrão com plano pago."""
+        if not self.is_promotional_transition_due(at=at):
+            return False
+
+        self.billing_mode = self.BILLING_MODE_STRIPE
+        self.plan_tier = self.promotional_converts_to_plan
+        self.promotional_expires_at = None
+        self.save(
+            update_fields=[
+                "billing_mode",
+                "plan_tier",
+                "promotional_expires_at",
+                "updated_at",
+            ]
+        )
+        return True
+
     # ===== Métodos para Sistema de Cancelamento (BE-ACCOUNT-CANCEL #396) =====
 
     def get_retention_days(self):
@@ -436,6 +494,9 @@ class Tenant(models.Model):
         """Retorna dicionário com todas as feature flags para APIs"""
         return {
             "plan_tier": self.plan_tier,
+            "billing_mode": self.billing_mode,
+            "promotional_expires_at": self.promotional_expires_at,
+            "promotional_converts_to_plan": self.promotional_converts_to_plan,
             "addons_enabled": self.addons_enabled,
             "modules": {
                 "reports_enabled": self.can_use_basic_reports(),

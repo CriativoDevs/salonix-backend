@@ -3,9 +3,11 @@ Testes para o sistema de feature flags baseado em planos.
 """
 
 import pytest
+from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.urls import reverse
+from django.utils import timezone
 
 from users.models import Tenant, CustomUser
 from users.feature_flags import (
@@ -138,6 +140,7 @@ class TestTenantFeatureFlags:
         flags = tenant.get_feature_flags_dict()
 
         assert flags["plan_tier"] == "pro"
+        assert flags["billing_mode"] == Tenant.BILLING_MODE_STRIPE
         assert flags["addons_enabled"] == ["rn_admin", "rn_client"]
         assert flags["modules"]["reports_enabled"] is True
         assert flags["modules"]["pwa_client_enabled"] is True
@@ -145,6 +148,52 @@ class TestTenantFeatureFlags:
         assert flags["notifications"]["push_web"] is True
         assert flags["notifications"]["sms"] is True
         assert flags["branding"]["white_label_enabled"] is True
+
+    def test_promotional_billing_mode_helpers(self):
+        """Valida helper methods do novo billing_mode promocional."""
+        tenant = Tenant.objects.create(
+            name="Promo Salon",
+            slug="promo-salon",
+            billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+        )
+
+        assert tenant.is_promotional_billing() is True
+        assert tenant.uses_stripe_billing() is False
+
+    def test_promotional_transition_due_and_apply(self):
+        tenant = Tenant.objects.create(
+            name="Promo Expired Salon",
+            slug="promo-expired-salon",
+            plan_tier=Tenant.PLAN_PRO,
+            billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+            promotional_expires_at=timezone.now() - timedelta(days=1),
+            promotional_converts_to_plan=Tenant.PLAN_BASIC,
+        )
+
+        assert tenant.is_promotional_transition_due() is True
+        assert tenant.apply_promotional_transition() is True
+
+        tenant.refresh_from_db()
+        assert tenant.billing_mode == Tenant.BILLING_MODE_STRIPE
+        assert tenant.plan_tier == Tenant.PLAN_BASIC
+        assert tenant.promotional_expires_at is None
+
+    def test_promotional_transition_not_due_yet(self):
+        tenant = Tenant.objects.create(
+            name="Promo Future Salon",
+            slug="promo-future-salon",
+            plan_tier=Tenant.PLAN_PRO,
+            billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+            promotional_expires_at=timezone.now() + timedelta(days=3),
+            promotional_converts_to_plan=Tenant.PLAN_BASIC,
+        )
+
+        assert tenant.is_promotional_transition_due() is False
+        assert tenant.apply_promotional_transition() is False
+
+        tenant.refresh_from_db()
+        assert tenant.billing_mode == Tenant.BILLING_MODE_PROMOTIONAL
+        assert tenant.plan_tier == Tenant.PLAN_PRO
 
 
 @pytest.mark.django_db
