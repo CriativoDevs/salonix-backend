@@ -17,6 +17,8 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from users.models import Tenant
+
 User = get_user_model()
 
 
@@ -203,6 +205,42 @@ class TestMobileAppAccessControl:
         assert response.status_code == status.HTTP_200_OK
         assert "access" in response.data
         assert "refresh" in response.data
+
+    @pytest.mark.parametrize(
+        ("app_type", "flag_field"),
+        (("admin", "rn_admin_enabled"), ("client", "rn_client_enabled")),
+    )
+    def test_promotional_tenant_can_login_mobile_without_subscription(
+        self, app_type, flag_field
+    ):
+        tenant = Tenant.objects.create(
+            name=f"Promo {app_type.title()} Tenant",
+            slug=f"promo-{app_type}-tenant",
+            plan_tier=Tenant.PLAN_BASIC,
+            billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+            **{flag_field: True},
+        )
+        User.objects.create_user(
+            username=f"promo_{app_type}_owner",
+            email=f"promo-{app_type}@tenant.com",
+            password="Test123!@#",
+            tenant=tenant,
+        )
+
+        response = self.client.post(
+            self.token_url,
+            data={
+                "email": f"promo-{app_type}@tenant.com",
+                "password": "Test123!@#",
+            },
+            HTTP_X_APP_TYPE=app_type,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert (
+            response.data["tenant"]["plan"]["billing_mode"]
+            == Tenant.BILLING_MODE_PROMOTIONAL
+        )
 
     # ========================================================================
     # WEB LOGIN (NO HEADER) TESTS

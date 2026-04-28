@@ -176,6 +176,9 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
     def get_plan(self, obj):
         return {
             "tier": obj.plan_tier,
+            "billing_mode": obj.billing_mode,
+            "promotional_expires_at": obj.promotional_expires_at,
+            "promotional_converts_to_plan": obj.promotional_converts_to_plan,
             "addons_enabled": obj.addons_enabled,
         }
 

@@ -41,6 +41,9 @@ def test_register_returns_tenant_meta():
     assert "logo_url" in tenant["branding"]
     assert "app_name" in tenant["branding"]
 
+    assert "plan" in tenant
+    assert tenant["plan"]["billing_mode"] == Tenant.BILLING_MODE_STRIPE
+
     assert "feature_flags" in tenant
     assert isinstance(tenant["feature_flags"], dict)
 
@@ -77,3 +80,32 @@ def test_login_returns_tenant_meta():
     assert tenant_data["slug"] == "login-salon"
     assert "branding" in tenant_data
     assert "feature_flags" in tenant_data
+    assert tenant_data["plan"]["billing_mode"] == Tenant.BILLING_MODE_STRIPE
+
+
+@pytest.mark.django_db
+def test_web_login_returns_promotional_tenant_meta_without_subscription():
+    client = APIClient()
+    tenant = Tenant.objects.create(
+        name="Promo Web Salon",
+        slug="promo-web-salon",
+        billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+        plan_tier=Tenant.PLAN_BASIC,
+    )
+    user = User.objects.create_user(
+        username="promo-web-user",
+        email="promo-web@example.com",
+        password="Password123!",
+        tenant=tenant,
+    )
+
+    url = reverse("users:token_obtain_pair")
+    response = client.post(
+        url,
+        {"email": user.email, "password": "Password123!"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    tenant_data = response.json()["tenant"]
+    assert tenant_data["slug"] == tenant.slug
+    assert tenant_data["plan"]["billing_mode"] == Tenant.BILLING_MODE_PROMOTIONAL

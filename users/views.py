@@ -523,7 +523,7 @@ class TenantMetaView(APIView):
 
             User = get_user_model()
             any_user = User.objects.filter(tenant=tenant).order_by("id").first()
-            if any_user:
+            if any_user and not tenant.is_promotional_billing():
                 current = SubscriptionService.get_current_subscription(any_user) or {}
                 plan_code = current.get("plan_code")
                 if plan_code and tenant.plan_tier != plan_code:
@@ -771,25 +771,37 @@ class MeTenantView(APIView):
         if getattr(user, "is_ops_user", False) or not tenant:
             raise NotFound("Tenant não encontrado para o usuário autenticado.")
 
+        if tenant.apply_promotional_transition():
+            bootstrap_logger.info(
+                "tenant.promotional_transition.applied",
+                extra={
+                    "tenant_id": tenant.id,
+                    "tenant_slug": tenant.slug,
+                    "new_plan": tenant.plan_tier,
+                    "billing_mode": tenant.billing_mode,
+                },
+            )
+
         # Sincronizar o plano do tenant com o serviço de subscrição antes de servir o bootstrap
         try:
             from payments.services import SubscriptionService
 
-            current = SubscriptionService.get_current_subscription(user) or {}
-            plan_code = current.get("plan_code")
-            if plan_code and tenant.plan_tier != plan_code:
-                old = tenant.plan_tier
-                tenant.plan_tier = plan_code
-                tenant.save(update_fields=["plan_tier", "updated_at"])
-                bootstrap_logger.info(
-                    "tenant.bootstrap.plan_sync",
-                    extra={
-                        "tenant_id": tenant.id,
-                        "tenant_slug": tenant.slug,
-                        "old_plan": old,
-                        "new_plan": plan_code,
-                    },
-                )
+            if not tenant.is_promotional_billing():
+                current = SubscriptionService.get_current_subscription(user) or {}
+                plan_code = current.get("plan_code")
+                if plan_code and tenant.plan_tier != plan_code:
+                    old = tenant.plan_tier
+                    tenant.plan_tier = plan_code
+                    tenant.save(update_fields=["plan_tier", "updated_at"])
+                    bootstrap_logger.info(
+                        "tenant.bootstrap.plan_sync",
+                        extra={
+                            "tenant_id": tenant.id,
+                            "tenant_slug": tenant.slug,
+                            "old_plan": old,
+                            "new_plan": plan_code,
+                        },
+                    )
         except Exception:
             pass
 

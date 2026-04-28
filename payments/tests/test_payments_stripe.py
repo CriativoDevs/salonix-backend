@@ -266,6 +266,76 @@ def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_cli
 
 
 @pytest.mark.django_db
+def test_get_current_subscription_returns_none_for_promotional_tenant(monkeypatch):
+    from users.models import Tenant
+    from payments.services import SubscriptionService
+
+    tenant = Tenant.objects.create(
+        name="Promo Billing Tenant",
+        slug="promo-billing-tenant",
+        billing_mode=Tenant.BILLING_MODE_PROMOTIONAL,
+    )
+    user = CustomUser.objects.create_user(
+        username="promo-user",
+        email="promo-user@example.com",
+        password="pass",
+        tenant=tenant,
+    )
+
+    def _stripe_should_not_be_called(_subscription_id):
+        raise AssertionError("stripe.Subscription.retrieve should not be called")
+
+    monkeypatch.setattr(_StripeSubscription, "retrieve", _stripe_should_not_be_called)
+
+    current = SubscriptionService.get_current_subscription(user)
+    assert current is None
+
+
+@pytest.mark.django_db
+def test_get_current_subscription_handles_missing_stripe_subscription_without_error_log(
+    monkeypatch, caplog
+):
+    from users.models import Tenant
+    from payments.services import SubscriptionService
+    import payments.services as payment_services
+
+    tenant = Tenant.objects.create(
+        name="Local Sub Tenant",
+        slug="local-sub-tenant",
+        billing_mode=Tenant.BILLING_MODE_STRIPE,
+    )
+    user = CustomUser.objects.create_user(
+        username="local-sub-user",
+        email="local-sub-user@example.com",
+        password="pass",
+        tenant=tenant,
+    )
+
+    sub = Subscription.objects.create(
+        user=user,
+        stripe_subscription_id="sub_local_only_123",
+        status="active",
+    )
+
+    def _retrieve_missing(_subscription_id):
+        raise Exception("No such subscription: 'sub_local_only_123'")
+
+    monkeypatch.setattr(
+        payment_services.stripe.Subscription, "retrieve", _retrieve_missing
+    )
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        current = SubscriptionService.get_current_subscription(user)
+
+    assert current is not None
+    assert current["status"] == "active"
+    sub.refresh_from_db()
+    assert sub.status == "active"
+    assert "Stripe error getting subscription" not in caplog.text
+
+
+@pytest.mark.django_db
 def test_billing_portal_session(monkeypatch, settings, auth_client):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
