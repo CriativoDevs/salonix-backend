@@ -8,6 +8,10 @@ DEFAULT_SMOKE_PASS="${SMOKE_USER_PASSWORD:-Smoke@123}"
 LOGIN_PASS="${LOGIN_PASS:-$DEFAULT_SMOKE_PASS}"
 THROTTLE_COOLDOWN="${THROTTLE_COOLDOWN:-65}"
 THROTTLE_MAX_BURST="${THROTTLE_MAX_BURST:-6}"
+SMOKE_PREPARE_DATA="${SMOKE_PREPARE_DATA:-1}"
+SMOKE_REPORT_TENANTS="${SMOKE_REPORT_TENANTS:-default,nemo-land}"
+SMOKE_CREATE_MISSING_TENANTS="${SMOKE_CREATE_MISSING_TENANTS:-0}"
+PYTHON_BIN="${PYTHON_BIN:-python}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log() { echo -e "${YELLOW}[*]${NC} $*"; }
@@ -21,14 +25,273 @@ trap cleanup EXIT
 
 source "$(dirname "$0")/lib.sh"
 
-# Auth sempre via lib.sh (mais robusto). Se falhar, roda seed e tenta novamente.
-LOGIN_EMAIL="${LOGIN_EMAIL:-pro_smoke@demo.local}"  # Email padrão para pro_smoke
-if ! TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ); then
-  log "Token falhou. Rodando seed_demo para recriar usuários/staff/profissionais…"
-  "$(dirname "$0")/seed.sh" || fail "Seed falhou"
- TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ) || fail "Falha ao autenticar mesmo após seed"
-fi
-AUTH_HEADER="Authorization: Bearer $TOK"
+prepare_reports_data_for_tenants() {
+  if [[ "$SMOKE_PREPARE_DATA" != "1" ]]; then
+  log "Skipping data preparation (SMOKE_PREPARE_DATA=$SMOKE_PREPARE_DATA)."
+  return 0
+  fi
+
+  log "Preparing report data for tenants: $SMOKE_REPORT_TENANTS"
+
+  SMOKE_REPORT_TENANTS="$SMOKE_REPORT_TENANTS" \
+  SMOKE_CREATE_MISSING_TENANTS="$SMOKE_CREATE_MISSING_TENANTS" \
+  "$PYTHON_BIN" manage.py shell <<'PY'
+from datetime import timedelta
+from decimal import Decimal
+import calendar
+import os
+
+from django.apps import apps
+from django.utils import timezone
+
+from core.models import Appointment, Professional, SalonCustomer, ScheduleSlot, Service
+from users.models import CustomUser, Tenant, TenantStaffMember
+
+
+def as_bool(value: str) -> bool:
+  return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+slugs = [item.strip() for item in os.environ.get("SMOKE_REPORT_TENANTS", "default,nemo-land").split(",") if item.strip()]
+create_missing = as_bool(os.environ.get("SMOKE_CREATE_MISSING_TENANTS", "0"))
+now = timezone.now()
+
+
+def month_point(base_dt, month_offset: int, day: int, hour: int = 10):
+  month = base_dt.month + month_offset
+  year = base_dt.year
+  while month > 12:
+    month -= 12
+    year += 1
+  while month < 1:
+    month += 12
+    year -= 1
+
+  last_day = calendar.monthrange(year, month)[1]
+  safe_day = min(day, last_day)
+  return base_dt.replace(
+    year=year,
+    month=month,
+    day=safe_day,
+    hour=hour,
+    minute=0,
+    second=0,
+    microsecond=0,
+  )
+
+for slug in slugs:
+  tenant = Tenant.objects.filter(slug=slug).first()
+  if not tenant:
+    if not create_missing:
+      print(f"[SMOKE] Tenant '{slug}' not found. Skipping.")
+      continue
+
+    tenant = Tenant.objects.create(
+      slug=slug,
+      name=f"{slug.replace('-', ' ').title()}",
+      plan_tier="pro",
+      reports_enabled=True,
+      pwa_admin_enabled=True,
+      pwa_client_enabled=True,
+    )
+    print(f"[SMOKE] Tenant '{slug}' created.")
+  elif not tenant.is_active:
+    tenant.is_active = True
+    tenant.save(update_fields=["is_active"])
+    print(f"[SMOKE] Tenant '{slug}' activated.")
+
+  owner = CustomUser.objects.filter(tenant=tenant, is_active=True).order_by("id").first()
+  if not owner:
+    username = f"{slug.replace('-', '_')}_smoke_owner"
+    email = f"{username}@demo.local"
+    owner = CustomUser.objects.create_user(
+      username=username,
+      email=email,
+      password="Smoke@123",
+      tenant=tenant,
+    )
+    print(f"[SMOKE] User '{username}' created for tenant '{slug}'.")
+
+  smoke_username = f"smoke_reports_{slug.replace('-', '_')}"
+  smoke_email = f"{smoke_username}@demo.local"
+  smoke_user, smoke_created = CustomUser.objects.get_or_create(
+    username=smoke_username,
+    defaults={
+      "email": smoke_email,
+      "tenant": tenant,
+      "is_active": True,
+    },
+  )
+  if smoke_user.tenant_id != tenant.id:
+    smoke_user.tenant = tenant
+  if smoke_user.email != smoke_email:
+    smoke_user.email = smoke_email
+  if not smoke_user.is_active:
+    smoke_user.is_active = True
+  smoke_user.set_password("Smoke@123")
+  smoke_user.save(update_fields=["tenant", "email", "is_active", "password"])
+  print(
+    f"[SMOKE] Smoke user '{smoke_username}' {'created' if smoke_created else 'updated'} for tenant '{slug}'."
+  )
+
+  staff_member, _ = TenantStaffMember.objects.get_or_create(
+    tenant=tenant,
+    user=smoke_user,
+    defaults={
+      "role": TenantStaffMember.Role.MANAGER,
+      "status": TenantStaffMember.Status.ACTIVE,
+    },
+  )
+  needs_staff_update = False
+  if staff_member.role != TenantStaffMember.Role.MANAGER:
+    staff_member.role = TenantStaffMember.Role.MANAGER
+    needs_staff_update = True
+  if staff_member.status != TenantStaffMember.Status.ACTIVE:
+    staff_member.status = TenantStaffMember.Status.ACTIVE
+    needs_staff_update = True
+  if needs_staff_update:
+    staff_member.save(update_fields=["role", "status", "updated_at"])
+  print(f"[SMOKE] Staff role ensured for '{smoke_username}' in tenant '{slug}'.")
+
+  Subscription = apps.get_model("payments", "Subscription")
+  active_sub = (
+    Subscription.objects.filter(user__tenant=tenant, status__in=["active", "trialing"])
+    .order_by("-updated_at", "-created_at")
+    .first()
+  )
+  if not active_sub:
+    sub, sub_created = Subscription.objects.get_or_create(
+      user=owner,
+      defaults={
+        "stripe_subscription_id": f"smoke_sub_{slug}_{owner.id}",
+        "status": "active",
+        "cancel_at_period_end": False,
+      },
+    )
+    if not sub_created and sub.status not in {"active", "trialing"}:
+      sub.status = "active"
+      sub.cancel_at_period_end = False
+      sub.save(update_fields=["status", "cancel_at_period_end", "updated_at"])
+    print(f"[SMOKE] Active subscription ensured for tenant '{slug}'.")
+
+  professional, _ = Professional.objects.get_or_create(
+    tenant=tenant,
+    user=owner,
+    name="[SMOKE] Professional",
+    defaults={"bio": "Smoke reports dataset", "is_active": True},
+  )
+
+  service, _ = Service.objects.get_or_create(
+    tenant=tenant,
+    user=owner,
+    name="[SMOKE] Service",
+    defaults={"duration_minutes": 45, "price_eur": Decimal("35.00")},
+  )
+
+  customer, _ = SalonCustomer.objects.get_or_create(
+    tenant=tenant,
+    email=f"smoke+{slug}@demo.local",
+    defaults={
+      "name": f"Smoke {slug}",
+      "phone_number": "+351910000000",
+      "marketing_opt_in": True,
+      "is_active": True,
+    },
+  )
+
+  created = 0
+  updated = 0
+  schedule_points = [
+    (month_point(now, 0, 3), "completed"),
+    (month_point(now, 0, 8), "completed"),
+    (month_point(now, 0, 14), "paid"),
+    (month_point(now, 0, 22), "scheduled"),
+    (month_point(now, 1, 3), "completed"),
+    (month_point(now, 1, 8), "completed"),
+    (month_point(now, 1, 14), "paid"),
+    (month_point(now, 1, 22), "scheduled"),
+  ]
+
+  for start, status in schedule_points:
+    end = start + timedelta(minutes=int(service.duration_minutes or 45))
+
+    slot, _ = ScheduleSlot.objects.get_or_create(
+      tenant=tenant,
+      professional=professional,
+      start_time=start,
+      end_time=end,
+      defaults={"is_available": False, "status": "booked"},
+    )
+
+    appointment, was_created = Appointment.objects.get_or_create(
+      tenant=tenant,
+      client=owner,
+      service=service,
+      professional=professional,
+      slot=slot,
+      defaults={
+        "customer": customer,
+        "status": status,
+        "notes": "[SMOKE] generated by smoke_reports.sh",
+      },
+    )
+
+    if was_created:
+      created += 1
+      continue
+
+    changed = False
+    if appointment.status != status:
+      appointment.status = status
+      changed = True
+    if appointment.customer_id is None:
+      appointment.customer = customer
+      changed = True
+    if changed:
+      appointment.save(update_fields=["status", "customer"])
+      updated += 1
+
+    # Reports use Appointment.created_at; align it with the seeded month window.
+    if appointment.created_at != start:
+      Appointment.objects.filter(pk=appointment.pk).update(created_at=start)
+      updated += 1
+
+  month_forced_dates = [
+    month_point(now, 0, 3),
+    month_point(now, 0, 8),
+    month_point(now, 0, 14),
+    month_point(now, 1, 3),
+    month_point(now, 1, 8),
+    month_point(now, 1, 14),
+  ]
+  cp_qs = Appointment.objects.filter(
+    tenant=tenant,
+    status__in=["completed", "paid"],
+  ).order_by("-id")
+  for forced_start, appt in zip(month_forced_dates, cp_qs):
+    Appointment.objects.filter(pk=appt.pk).update(created_at=forced_start)
+    updated += 1
+
+  print(
+    f"[SMOKE] Tenant '{slug}' ready: appointments_created={created}, appointments_updated={updated}."
+  )
+PY
+
+  ok "Report data prepared for tenant set: $SMOKE_REPORT_TENANTS"
+}
+
+init_auth() {
+  LOGIN_EMAIL="${LOGIN_EMAIL:-${LOGIN_USER}@demo.local}"
+
+  if ! TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ); then
+    log "Token falhou para ${LOGIN_USER}. Rodando seed_demo para recriar usuários base…"
+    "$(dirname "$0")/seed.sh" || fail "Seed falhou"
+    TOK=$(get_token "$BASE_URL" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_EMAIL" ) || fail "Falha ao autenticar mesmo após seed"
+  fi
+
+  AUTH_HEADER="Authorization: Bearer $TOK"
+  ok "Autenticação OK para user=$LOGIN_USER"
+}
 
 # --- HTTP helper ---
 req() {
@@ -105,6 +368,8 @@ get_with_backoff_csv() {
 
 main() {
   log "Base URL: $BASE_URL"
+  prepare_reports_data_for_tenants
+  init_auth
 
   log "Preparando consentimento RGPD (customer + marketing/email)"
   req GET "$BASE_URL/api/salon/customers/" 200

@@ -42,7 +42,6 @@ import csv
 import io
 import logging
 
-
 COMPLETED_STATUSES = ("completed", "paid")
 logger = logging.getLogger("reports")
 
@@ -338,7 +337,7 @@ class OverviewReportView(_BaseReports):
     @cache_drf_response(
         prefix="reports:overview:json",
         ttl=settings.REPORTS_CACHE_TTL["overview_json"],
-        vary_on_params=[],  # sem from/to no JSON atual
+        vary_on_params=["from", "to"],
         vary_on_user=True,
         view_label="overview",
         format_label="json",
