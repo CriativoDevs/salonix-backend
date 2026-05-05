@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta
 from decimal import Decimal
+from django.db.utils import IntegrityError
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -21,6 +22,12 @@ class Command(BaseCommand):
     help = "Gera dados de teste em massa para performance testing"
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            "--tenant-slug",
+            type=str,
+            default="default",
+            help="Slug do tenant alvo (padrão: default)",
+        )
         parser.add_argument(
             "--appointments",
             type=int,
@@ -52,6 +59,12 @@ class Command(BaseCommand):
             help="Quantos dias no passado gerar dados (padrão: 365)",
         )
         parser.add_argument(
+            "--days-forward",
+            type=int,
+            default=30,
+            help="Quantos dias no futuro gerar dados (padrão: 30)",
+        )
+        parser.add_argument(
             "--batch-size",
             type=int,
             default=1000,
@@ -59,46 +72,50 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        tenant_slug = options["tenant_slug"]
         appointments_count = options["appointments"]
         customers_count = options["customers"]
         professionals_count = options["professionals"]
         services_count = options["services"]
         days_back = options["days_back"]
+        days_forward = options["days_forward"]
         batch_size = options["batch_size"]
 
         self.stdout.write(
             self.style.WARNING(
                 f"Gerando dados de teste em massa:\n"
+                f"- tenant: {tenant_slug}\n"
                 f"- {appointments_count} agendamentos\n"
                 f"- {customers_count} clientes\n"
                 f"- {professionals_count} profissionais\n"
                 f"- {services_count} serviços\n"
                 f"- {days_back} dias no passado\n"
+                f"- {days_forward} dias no futuro\n"
                 f"- Batch size: {batch_size}"
             )
         )
 
-        # Verificar se tenant padrão existe
+        # Verificar se tenant alvo existe
         try:
-            tenant = Tenant.objects.get(slug="default")
+            tenant = Tenant.objects.get(slug=tenant_slug)
         except Tenant.DoesNotExist:
             self.stdout.write(
-                self.style.ERROR(
-                    "Tenant 'default' não encontrado. Execute 'python manage.py seed_demo' primeiro."
-                )
+                self.style.ERROR(f"Tenant '{tenant_slug}' não encontrado.")
             )
             return
 
-        # Verificar se usuário admin existe
-        try:
-            admin_user = User.objects.get(username="admin")
-        except User.DoesNotExist:
-            self.stdout.write(
-                self.style.ERROR(
-                    "Usuário 'admin' não encontrado. Execute 'python manage.py seed_demo' primeiro."
-                )
+        admin_user = (
+            User.objects.filter(tenant=tenant, is_active=True).order_by("id").first()
+        )
+        if not admin_user:
+            admin_user = User.objects.create_user(
+                username=f"seed_{tenant.slug}_owner",
+                email=f"seed_{tenant.slug}@demo.local",
+                password="password123",
+                first_name="Seed",
+                last_name="Owner",
+                tenant=tenant,
             )
-            return
 
         self.stdout.write("Iniciando geração de dados...")
 
@@ -119,7 +136,7 @@ class Command(BaseCommand):
 
             # 4. Criar slots de horário
             slots = self._create_schedule_slots(
-                tenant, professionals, days_back, batch_size
+                tenant, professionals, days_back, days_forward, batch_size
             )
             self.stdout.write(f"✓ {len(slots)} slots criados")
 
@@ -198,36 +215,63 @@ class Command(BaseCommand):
         professionals = []
 
         for i in range(count):
-            # Criar usuário
-            username = f"prof_{i + 1:04d}"
-            email = f"prof{i + 1}@demo.local"
+            base_username = f"{tenant.slug}_prof_{i + 1:04d}"
+            email = f"{base_username}@demo.local"
 
-            user, created = User.objects.get_or_create(
-                username=username,
-                defaults={
-                    "email": email,
-                    "first_name": fake.first_name(),
-                    "last_name": fake.last_name(),
-                    "tenant": tenant,
-                },
-            )
+            user = User.objects.filter(username=base_username).first()
+            if user is None:
+                user = User.objects.create_user(
+                    username=base_username,
+                    email=email,
+                    password="password123",
+                    first_name=fake.first_name(),
+                    last_name=fake.last_name(),
+                    tenant=tenant,
+                )
+            else:
+                if getattr(user, "tenant_id", None) != tenant.id:
+                    user.tenant = tenant
+                if user.email != email:
+                    user.email = email
+                user.save(update_fields=["tenant", "email"])
 
-            if created:
-                user.set_unusable_password()
-                user.save()
+            # Se já existir vínculo de staff para outro tenant, cria um novo usuário exclusivo
+            existing_staff = TenantStaffMember.objects.filter(user=user).first()
+            if existing_staff and existing_staff.tenant_id != tenant.id:
+                suffix = timezone.now().strftime("%H%M%S%f")
+                alt_username = f"{base_username}_{suffix}"
+                user = User.objects.create_user(
+                    username=alt_username,
+                    email=f"{alt_username}@demo.local",
+                    password="password123",
+                    first_name=fake.first_name(),
+                    last_name=fake.last_name(),
+                    tenant=tenant,
+                )
 
-            # Criar staff member
-            staff, staff_created = TenantStaffMember.objects.get_or_create(
-                tenant=tenant,
-                user=user,
-                defaults={
-                    "role": TenantStaffMember.Role.COLLABORATOR,
-                    "status": TenantStaffMember.Status.ACTIVE,
-                    "invited_by": admin_user,
-                    "invited_at": timezone.now(),
-                    "activated_at": timezone.now(),
-                },
-            )
+            staff = TenantStaffMember.objects.filter(user=user).first()
+            if staff is None:
+                try:
+                    staff = TenantStaffMember.objects.create(
+                        user=user,
+                        tenant=tenant,
+                        role=TenantStaffMember.Role.COLLABORATOR,
+                        status=TenantStaffMember.Status.ACTIVE,
+                        invited_by=admin_user,
+                        invited_at=timezone.now(),
+                        activated_at=timezone.now(),
+                    )
+                except IntegrityError:
+                    # Another process may have created the staff row concurrently.
+                    staff = TenantStaffMember.objects.get(user=user)
+
+            if staff.tenant_id != tenant.id:
+                staff.tenant = tenant
+            if staff.status != TenantStaffMember.Status.ACTIVE:
+                staff.status = TenantStaffMember.Status.ACTIVE
+            if staff.role != TenantStaffMember.Role.COLLABORATOR:
+                staff.role = TenantStaffMember.Role.COLLABORATOR
+            staff.save(update_fields=["tenant", "status", "role", "updated_at"])
 
             # Criar professional
             professional = staff.ensure_professional()
@@ -282,13 +326,15 @@ class Command(BaseCommand):
 
         return SalonCustomer.objects.filter(tenant=tenant).order_by("-id")[:count]
 
-    def _create_schedule_slots(self, tenant, professionals, days_back, batch_size):
+    def _create_schedule_slots(
+        self, tenant, professionals, days_back, days_forward, batch_size
+    ):
         """Cria slots de horário para os profissionais"""
         slots = []
         batch = []
 
         start_date = timezone.now().date() - timedelta(days=days_back)
-        end_date = timezone.now().date() + timedelta(days=30)  # 30 dias no futuro
+        end_date = timezone.now().date() + timedelta(days=days_forward)
 
         working_hours = list(range(8, 18))  # 8h às 17h
 
@@ -347,45 +393,92 @@ class Command(BaseCommand):
 
         # Pegar slots disponíveis
         available_slots = list(
-            ScheduleSlot.objects.filter(
-                tenant=tenant, is_available=True
-            ).select_related("professional")
+            ScheduleSlot.objects.filter(tenant=tenant, is_available=True)
+            .select_related("professional")
+            .order_by("start_time", "id")
         )
 
         if not available_slots:
             self.stdout.write(self.style.WARNING("Nenhum slot disponível encontrado"))
             return []
 
+        now = timezone.now()
+
+        def add_months(dt, months):
+            year = dt.year + (dt.month - 1 + months) // 12
+            month = (dt.month - 1 + months) % 12 + 1
+            day = min(dt.day, 28)
+            return dt.replace(year=year, month=month, day=day)
+
+        target_months = []
+        for offset in [-3, -2, -1, 0, 1]:
+            month_dt = add_months(now, offset)
+            target_months.append((month_dt.year, month_dt.month))
+
+        slots_by_month = {}
+        for slot in available_slots:
+            key = (slot.start_time.year, slot.start_time.month)
+            slots_by_month.setdefault(key, []).append(slot)
+
+        forced_slots = []
+        forced_seen_ids = set()
+        for month_key in target_months:
+            month_slots = slots_by_month.get(month_key, [])
+            if not month_slots:
+                continue
+            slot = random.choice(month_slots)
+            if slot.id in forced_seen_ids:
+                continue
+            forced_seen_ids.add(slot.id)
+            forced_slots.append(slot)
+
+        remaining_slots = [s for s in available_slots if s.id not in forced_seen_ids]
+        random.shuffle(remaining_slots)
+
+        selected_slots = forced_slots + remaining_slots
+        selected_slots = selected_slots[: min(count, len(selected_slots))]
+
         # Criar alguns usuários para usar como client
         client_users = []
         for i in range(
             min(50, count // 10 + 1)
         ):  # Criar alguns usuários para reutilizar
-            username = f"client_{fake.user_name()}_{i}"
-            email = f"client_{i}@{fake.domain_name()}"
+            username = f"{tenant.slug}_seed_client_{i:03d}"
+            email = f"{username}@demo.local"
 
-            client_user = CustomUser.objects.create_user(
-                username=username,
-                email=email,
-                password="password123",
-                first_name=fake.first_name(),
-                last_name=fake.last_name(),
-            )
+            client_user = CustomUser.objects.filter(username=username).first()
+            if client_user is None:
+                client_user = CustomUser.objects.create_user(
+                    username=username,
+                    email=email,
+                    password="password123",
+                    first_name=fake.first_name(),
+                    last_name=fake.last_name(),
+                )
             # Associar ao tenant se necessário
             if hasattr(client_user, "tenant"):
-                client_user.tenant = tenant
-                client_user.save()
+                update_fields = []
+                if client_user.tenant_id != tenant.id:
+                    client_user.tenant = tenant
+                    update_fields.append("tenant")
+                if client_user.email != email:
+                    client_user.email = email
+                    update_fields.append("email")
+                if update_fields:
+                    client_user.save(update_fields=update_fields)
             client_users.append(client_user)
 
         status_choices = ["scheduled", "paid", "completed", "cancelled"]
         status_weights = [0.25, 0.35, 0.3, 0.1]  # Mais agendamentos pagos e completados
 
-        for i in range(min(count, len(available_slots))):
-            slot = available_slots[i]
+        for i, slot in enumerate(selected_slots):
             customer = random.choice(customers)
             service = random.choice(services)
             client_user = random.choice(client_users)
-            status = random.choices(status_choices, weights=status_weights)[0]
+            if i < len(forced_slots):
+                status = "completed" if i % 2 == 0 else "paid"
+            else:
+                status = random.choices(status_choices, weights=status_weights)[0]
 
             appointment = Appointment(
                 tenant=tenant,
@@ -403,6 +496,11 @@ class Command(BaseCommand):
                 # Salvar objetos em bulk
                 Appointment.objects.bulk_create(batch)
                 appointments.extend(batch)
+
+                for app in batch:
+                    Appointment.objects.filter(pk=app.pk).update(
+                        created_at=app.slot.start_time,
+                    )
                 batch = []
 
                 # Marcar slots como ocupados
@@ -417,6 +515,11 @@ class Command(BaseCommand):
         if batch:
             Appointment.objects.bulk_create(batch)
             appointments.extend(batch)
+
+            for app in batch:
+                Appointment.objects.filter(pk=app.pk).update(
+                    created_at=app.slot.start_time,
+                )
 
             # Marcar slots como ocupados
             slot_ids = [
