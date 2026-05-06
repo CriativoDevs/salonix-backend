@@ -718,11 +718,15 @@ class ExportTopServicesCSVView(_BaseReports):
     )
     def get(self, request) -> HttpResponse:
         start, end = _date_range(request)
+        tenant = getattr(request.user, "tenant", None)
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
         base = Appointment.objects.filter(
-            **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+            **date_gte,
+            **date_lte,
+            status__in=COMPLETED_STATUSES,
+            tenant=tenant,
         ).values("service_id", "service__name")
 
         if APPT_PRICE_FIELD:
@@ -810,6 +814,7 @@ class ExportRevenueCSVView(_BaseReports):
     )
     def get(self, request) -> HttpResponse:
         start, end = _date_range(request)
+        tenant = getattr(request.user, "tenant", None)
         interval = request.query_params.get("interval", "day")
         from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 
@@ -822,7 +827,10 @@ class ExportRevenueCSVView(_BaseReports):
 
         base = (
             Appointment.objects.filter(
-                **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+                **date_gte,
+                **date_lte,
+                status__in=COMPLETED_STATUSES,
+                tenant=tenant,
             )
             .annotate(bucket=trunc(DATE_FIELD))
             .values("bucket")
@@ -1033,11 +1041,12 @@ class ExportBasicReportsCSVView(_BaseReports):
 
         try:
             start, end = _date_range(request)
+            tenant = getattr(request.user, "tenant", None)
             date_gte = {f"{DATE_FIELD}__gte": start}
             date_lte = {f"{DATE_FIELD}__lte": end}
 
             # Buscar dados básicos (mesmo que ExportOverviewCSVView)
-            qs = Appointment.objects.filter(**date_gte, **date_lte)
+            qs = Appointment.objects.filter(**date_gte, **date_lte, tenant=tenant)
             total_count = qs.count()
             done_qs = qs.filter(status__in=COMPLETED_STATUSES)
             done_count = done_qs.count()
@@ -1331,13 +1340,17 @@ class ExportAdvancedReportsCSVView(_BaseReports):
         try:
             start, end = _date_range(request)
             interval = request.query_params.get("interval", "day")
+            tenant = getattr(request.user, "tenant", None)
 
             date_gte = {f"{DATE_FIELD}__gte": start}
             date_lte = {f"{DATE_FIELD}__lte": end}
 
             # === TOP SERVICES DATA ===
             top_services_qs = Appointment.objects.filter(
-                **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+                **date_gte,
+                **date_lte,
+                status__in=COMPLETED_STATUSES,
+                tenant=tenant,
             ).values("service_id", "service__name")
 
             if APPT_PRICE_FIELD:
@@ -1362,7 +1375,10 @@ class ExportAdvancedReportsCSVView(_BaseReports):
 
             revenue_qs = (
                 Appointment.objects.filter(
-                    **date_gte, **date_lte, status__in=COMPLETED_STATUSES
+                    **date_gte,
+                    **date_lte,
+                    status__in=COMPLETED_STATUSES,
+                    tenant=tenant,
                 )
                 .annotate(bucket=trunc(DATE_FIELD))
                 .values("bucket")
