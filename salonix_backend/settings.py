@@ -169,11 +169,13 @@ try:
 
     CORS_ALLOW_HEADERS = list(default_headers) + [
         "x-tenant-slug",
+        "x-captcha-token",
     ]
 except Exception:
     # Fallback seguro caso pacote mude API; permitir header custom
     CORS_ALLOW_HEADERS = [
         "x-tenant-slug",
+        "x-captcha-token",
         "accept",
         "accept-encoding",
         "authorization",
