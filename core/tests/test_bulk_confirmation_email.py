@@ -1,4 +1,5 @@
 import datetime
+import time
 import pytz
 import pytest
 from django.core import mail
@@ -7,7 +8,7 @@ from django.test.utils import override_settings
 from core.email_utils import send_bulk_appointment_confirmation_email
 
 
-@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 @pytest.mark.parametrize("with_professional", [True, False])
 def test_send_bulk_email_multipart_and_links(settings, with_professional):
     # Configura base para links ICS
@@ -51,10 +52,16 @@ def test_send_bulk_email_multipart_and_links(settings, with_professional):
         salon_name="TimelyOne",
     )
 
+    # O envio é assíncrono (thread); aguarda brevemente para evitar flaky test.
+    for _ in range(30):
+        if len(mail.outbox) >= 1:
+            break
+        time.sleep(0.05)
+
     # Verificações usando django.core.mail.outbox
     assert len(mail.outbox) == 1
     msg = mail.outbox[0]
-    
+
     # Verifica assunto e destinatário
     assert msg.subject == "Confirmação dos seus agendamentos"
     assert msg.to == ["alana@example.com"]
@@ -73,4 +80,5 @@ def test_send_bulk_email_multipart_and_links(settings, with_professional):
     for appt_id in (101, 102, 103):
         expected_link_part = f"/api/public/appointments/{appt_id}/ics/"
         assert expected_link_part in html_content
-        assert "?token=" in html_content
+        assert "?rid=" in html_content
+    assert "?token=" not in html_content

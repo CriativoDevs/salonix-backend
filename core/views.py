@@ -5261,10 +5261,14 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
 
 class AppointmentICSDownloadPublicView(APIView):
     """
-    GET /api/public/appointments/{id}/ics/?token=...
+    GET/POST /api/public/appointments/{id}/ics/
 
     Download público de arquivo .ics protegido por token HMAC.
     Não requer autenticação.
+
+    Métodos aceitos:
+    - GET: token em query string (?token=...) [legacy]
+    - POST: token em header (X-ICS-Token) [seguro, recomendado]
     """
 
     permission_classes = [AllowAny]
@@ -5277,8 +5281,40 @@ class AppointmentICSDownloadPublicView(APIView):
             )
         }
     )
-    def get(self, request, pk):
+    def _get_token(self, request, pk):
+        """Extrai token do header, query string ou rid temporário."""
+        # Prioridade 1: Header (mais seguro)
+        token = request.META.get("HTTP_X_ICS_TOKEN")
+        if token:
+            return token
+
+        # Compatibilidade com links antigos.
         token = request.query_params.get("token")
+        if token:
+            return token
+
+        # Link por rid opaco (e-mails), com resolução no cache.
+        rid = request.query_params.get("rid")
+        if not rid:
+            return None
+
+        entry = cache.get(f"ics:rid:{rid}")
+        if not isinstance(entry, dict):
+            return None
+
+        try:
+            entry_appt_id = int(entry.get("appointment_id"))
+            if int(pk) != entry_appt_id:
+                return None
+        except Exception:
+            return None
+
+        token_from_rid = entry.get("token")
+        return token_from_rid if isinstance(token_from_rid, str) else None
+
+    def _download_ics(self, request, pk):
+        """Lógica compartilhada de download entre GET e POST."""
+        token = self._get_token(request, pk)
         if not token:
             ICS_DOWNLOADS_TOTAL.labels(
                 tenant_id="unknown", status="missing_token"
@@ -5367,6 +5403,14 @@ class AppointmentICSDownloadPublicView(APIView):
             },
         )
         return response
+
+    def get(self, request, pk):
+        """GET com token em query string (compatibilidade)."""
+        return self._download_ics(request, pk)
+
+    def post(self, request, pk):
+        """POST com token em header (recomendado para segurança)."""
+        return self._download_ics(request, pk)
 
 
 class FeedbackListCreateView(APIView):

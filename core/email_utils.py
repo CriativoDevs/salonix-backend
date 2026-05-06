@@ -2,12 +2,14 @@ import logging
 import threading
 import time
 from django.conf import settings
+from django.core.cache import cache
 from django.db import connection
 from django.utils.translation import gettext as _
 from django.core import signing
 from django.core.mail import EmailMultiAlternatives
 from notifications.views import UNSUBSCRIBE_TOKEN_SALT
 from core.utils.ics import compute_public_ics_token
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +214,21 @@ def send_bulk_appointment_confirmation_email(
             base = getattr(settings, "ICS_BASE_URL", "")
             if base and appt_id:
                 base = base.rstrip("/")
-                # gerar token baseado em id e início do agendamento
+                # Gera token real e publica apenas um rid opaco com TTL no e-mail.
                 token = compute_public_ics_token(appt_id, dt)
-                ics_link = (
-                    f"{base}/api/public/appointments/{appt_id}/ics/?token={token}"
+                rid = secrets.token_urlsafe(18)
+                rid_ttl_seconds = int(
+                    getattr(settings, "ICS_EMAIL_RID_TTL_SECONDS", 7 * 24 * 60 * 60)
                 )
+                cache.set(
+                    f"ics:rid:{rid}",
+                    {
+                        "appointment_id": int(appt_id),
+                        "token": token,
+                    },
+                    timeout=rid_ttl_seconds,
+                )
+                ics_link = f"{base}/api/public/appointments/{appt_id}/ics/?rid={rid}"
         except Exception:
             ics_link = None
 
