@@ -7,8 +7,8 @@ from users.feature_flags import RequiresFeatureFlag
 
 from django.conf import settings
 from django.db import models
-from django.db.models import Sum, Count, F, Case, When, Value, BooleanField, Q
-from django.db.models.functions import TruncDay
+from django.db.models import Sum, Count, F, Case, When, Value, BooleanField, Q, Min
+from django.db.models.functions import TruncDay, TruncMonth
 from django.http import HttpResponse
 from typing import Any, Optional
 from django.utils import timezone
@@ -1114,6 +1114,116 @@ class ExportBasicReportsCSVView(_BaseReports):
             )
 
 
+def _compute_monthly_cohort(tenant, range_start, range_end, max_months: int = 6):
+    """
+    Calcula cohort mensal de clientes.
+
+    Para cada mês de aquisição (M0) do cliente, conta quantos desses clientes
+    retornaram nos meses seguintes M1, M2, ... (até max_months - 1).
+
+    Retorna lista ordenada por mês de aquisição:
+      [
+        {
+          "month": "2025-01",          # mês de aquisição (YYYY-MM)
+          "acquired": 10,              # clientes adquiridos nesse mês
+          "M1": 6,                     # dos 10, quantos voltaram 1 mês depois
+          "M2": 4,
+          ...
+        },
+        ...
+      ]
+    """
+    from core.models import SalonCustomer
+    from datetime import datetime as dt_class
+
+    # Clientes do tenant com primeira visita no range
+    customers = (
+        SalonCustomer.objects.filter(
+            tenant=tenant,
+            created_at__gte=range_start,
+            created_at__lte=range_end,
+        )
+        .annotate(acq_month=TruncMonth("created_at"))
+        .values("id", "acq_month")
+    )
+
+    if not customers:
+        return []
+
+    # Mapa: customer_id -> acq_month (date object)
+    customer_acq: dict = {}
+    for c in customers:
+        customer_acq[c["id"]] = c["acq_month"]
+
+    customer_ids = list(customer_acq.keys())
+
+    # Agendamentos concluídos desses clientes — usa slot__start_time como data real
+    # (created_at é auto_now_add e não reflete a data do serviço)
+    appts = (
+        Appointment.objects.filter(
+            tenant=tenant,
+            customer_id__in=customer_ids,
+            status__in=COMPLETED_STATUSES,
+        )
+        .values("customer_id", "slot__start_time")
+        .order_by("customer_id", "slot__start_time")
+    )
+
+    # Mapa: customer_id -> set of (year, month) tuples
+    activity: dict = {}
+    for row in appts:
+        cid = row["customer_id"]
+        appt_dt = row["slot__start_time"]
+        if appt_dt is None:
+            continue
+        # Extrai (year, month) do appointment date
+        if hasattr(appt_dt, "date"):  # datetime
+            appt_date = appt_dt.date()
+        else:  # já é date
+            appt_date = appt_dt
+        ym = (appt_date.year, appt_date.month)
+        if cid not in activity:
+            activity[cid] = set()
+        activity[cid].add(ym)
+
+    # Agrupa por mês de aquisição
+    from collections import defaultdict
+
+    cohorts: dict = defaultdict(list)
+    for customer_id, acq_month_date in customer_acq.items():
+        cohorts[acq_month_date].append(customer_id)
+
+    result = []
+    for acq_month_date in sorted(cohorts.keys()):
+        members = cohorts[acq_month_date]
+        acquired = len(members)
+
+        # acq_month_date é um date object
+        acq_year = acq_month_date.year
+        acq_mon = acq_month_date.month
+
+        entry: dict = {
+            "month": acq_month_date.strftime("%Y-%m"),
+            "acquired": acquired,
+        }
+
+        for m in range(1, max_months):
+            # Calcula (year, month) para M_m usando offset 0-based desde ano 0
+            # Exemplo: Jan-2025 + 1 = total_months=24301 → 24301//12=2025, 24301%12=1 → (2025,2) ✓
+            total_months = acq_year * 12 + acq_mon - 1 + m
+            target_year = total_months // 12
+            target_month = (total_months % 12) + 1
+            target_ym = (target_year, target_month)
+
+            # Conta membros do cohort que tiveram atividade no mês alvo
+            active = sum(1 for cid in members if target_ym in activity.get(cid, set()))
+            entry[f"M{m}"] = active
+
+        result.append(entry)
+
+    return result
+
+
 @extend_schema(
     tags=["Reports"],
     summary="Relatórios Avançados - Disponível apenas para planos Pro e Enterprise",
@@ -1176,6 +1286,14 @@ class RetentionReportView(_BaseReports):
                             "end": {"type": "string", "format": "date-time"},
                         },
                     },
+                    "repeat_rate": {
+                        "type": "object",
+                        "properties": {
+                            "30d": {"type": "number"},
+                            "60d": {"type": "number"},
+                            "90d": {"type": "number"},
+                        },
+                    },
                 },
             },
             403: OpenApiTypes.OBJECT,
@@ -1194,8 +1312,57 @@ class RetentionReportView(_BaseReports):
             tenant=getattr(request.user, "tenant", None),
         )
 
-        # Anota se é novo cliente (criado dentro do range)
-        qs = qs.annotate(
+        # Calcula repeat_rate: clientes cuja PRIMEIRA visita (slot__start_time) caiu
+        # dentro do range e que retornaram dentro de N dias após essa primeira visita.
+        # Usamos MIN() + exists() no ORM para evitar comparações Python entre datetimes.
+        repeat_rate = {"30d": 0.0, "60d": 0.0, "90d": 0.0}
+
+        tenant = getattr(request.user, "tenant", None)
+
+        # Primeira visita por cliente (mínimo de slot__start_time), filtrado ao range
+        first_visits_qs = (
+            Appointment.objects.filter(
+                customer__isnull=False,
+                status__in=COMPLETED_STATUSES,
+                tenant=tenant,
+                slot__start_time__isnull=False,
+            )
+            .values("customer_id")
+            .annotate(first_dt=Min("slot__start_time"))
+            .filter(first_dt__gte=start, first_dt__lte=end)
+        )
+
+        total = first_visits_qs.count()
+        if total > 0:
+            repeaters = {30: 0, 60: 0, 90: 0}
+            for row in first_visits_qs:
+                cid = row["customer_id"]
+                first_dt = row["first_dt"]
+                if first_dt is None:
+                    continue
+                for days in (30, 60, 90):
+                    has_return = Appointment.objects.filter(
+                        customer_id=cid,
+                        status__in=COMPLETED_STATUSES,
+                        tenant=tenant,
+                        slot__start_time__gt=first_dt,
+                        slot__start_time__lte=first_dt + timedelta(days=days),
+                    ).exists()
+                    if has_return:
+                        repeaters[days] += 1
+            repeat_rate = {
+                "30d": round(repeaters[30] / total * 100, 2),
+                "60d": round(repeaters[60] / total * 100, 2),
+                "90d": round(repeaters[90] / total * 100, 2),
+            }
+
+        # Filtra appointments no range para métricas de new/returning clients
+        qs = Appointment.objects.filter(
+            **date_gte,
+            **date_lte,
+            status__in=COMPLETED_STATUSES,
+            tenant=tenant,
+        ).annotate(
             is_new_client=Case(
                 When(customer__created_at__gte=start, then=Value(True)),
                 default=Value(False),
@@ -1224,7 +1391,30 @@ class RetentionReportView(_BaseReports):
             {
                 "new_clients": new_clients,
                 "returning_clients": returning_clients,
-                "period": {"start": start, "end": end},
+                "period": {
+                    "start": start,
+                    "end": end,
+                    "days": (end - start).days,
+                },
+                "repeat_rate": repeat_rate,
+                "cohort": _compute_monthly_cohort(
+                    tenant=getattr(request.user, "tenant", None),
+                    range_start=start,
+                    range_end=end,
+                ),
+                "definitions": {
+                    "new_clients": "Clientes cujo primeiro agendamento concluído ocorreu dentro do período selecionado.",
+                    "returning_clients": "Clientes com agendamento concluído no período que já tinham agendamento anterior.",
+                    "repeat_rate": {
+                        "description": "Percentagem de clientes que voltaram dentro de N dias após a primeira visita no período.",
+                        "windows": {"30d": 30, "60d": 60, "90d": 90},
+                    },
+                    "cohort": {
+                        "description": "Retenção mensal por coorte de aquisição. M0 = mês de aquisição, M1 = mês seguinte, etc.",
+                        "acquired": "Número de clientes adquiridos nesse mês.",
+                        "Mn": "Número de clientes do coorte que tiveram pelo menos um agendamento concluído n meses após M0.",
+                    },
+                },
             }
         )
 

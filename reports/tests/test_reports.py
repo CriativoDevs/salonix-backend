@@ -526,3 +526,283 @@ def test_retention_report_permissions_and_data():
     assert "retention" in r_adv.data
     assert "top_services" in r_adv.data
     assert "revenue" in r_adv.data
+
+
+@pytest.mark.django_db
+@pytest.mark.django_db
+def test_retention_repeat_rate_windows_30_60_90():
+    """
+    Valida repeat_rate com valores corretos.
+
+    Setup: 4 clientes com primeira visita no range.
+    - A repete em 25d -> contado em 30d, 60d, 90d
+    - B repete em 50d -> contado em 60d, 90d
+    - C repete em 90d -> contado em 90d
+    - D não repete
+
+    Esperado: 30d = 25%, 60d = 50%, 90d = 75%
+    """
+    from users.models import Tenant
+    from core.models import SalonCustomer
+    import uuid
+
+    suffix = str(uuid.uuid4())[:8]
+    tenant = Tenant.objects.create(
+        slug=f"pro-repeat-{suffix}",
+        name="Pro Repeat",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"repeat_{suffix}",
+        password="x",
+        email=f"repeat_{suffix}@test.com",
+        tenant=tenant,
+    )
+
+    c = APIClient()
+    c.force_authenticate(user)
+
+    now = timezone.now()
+    prof_kwargs, professional = _get_or_create_professional(user)
+    service = Service.objects.create(
+        user=user,
+        name="Service Repeat",
+        duration_minutes=30,
+        price_eur=100,
+        tenant=tenant,
+    )
+
+    dt_field = _resolve_dt_field(Appointment)
+    price_field = _resolve_price_field(Appointment)
+
+    def create_appt(customer, when, price=100):
+        slot_kwargs = _make_slot_for(when, service, professional, user)
+        base = {
+            "tenant": tenant,
+            "client": user,
+            "customer": customer,
+            "service": service,
+            "professional": professional,
+            dt_field: when,
+            "status": "completed",
+        }
+        if price_field:
+            base[price_field] = Decimal(str(price))
+        base.update(slot_kwargs)
+        return Appointment.objects.create(**base)
+
+    # Primeira visita de todos no range: 100 dias atrás
+    base_dt = now - timedelta(days=100)
+    range_start = now - timedelta(days=120)
+    range_end = now + timedelta(days=1)
+
+    customer_a = SalonCustomer.objects.create(
+        tenant=tenant, name="Customer A", email=f"a_{suffix}@c.com"
+    )
+    customer_b = SalonCustomer.objects.create(
+        tenant=tenant, name="Customer B", email=f"b_{suffix}@c.com"
+    )
+    customer_c = SalonCustomer.objects.create(
+        tenant=tenant, name="Customer C", email=f"c_{suffix}@c.com"
+    )
+    customer_d = SalonCustomer.objects.create(
+        tenant=tenant, name="Customer D", email=f"d_{suffix}@c.com"
+    )
+
+    # Force created_at para base_dt (dentro do range)
+    for cust in [customer_a, customer_b, customer_c, customer_d]:
+        SalonCustomer.objects.filter(pk=cust.pk).update(created_at=base_dt)
+        cust.refresh_from_db()
+
+    # Primeira visita em base_dt
+    create_appt(customer_a, base_dt)
+    create_appt(customer_b, base_dt)
+    create_appt(customer_c, base_dt)
+    create_appt(customer_d, base_dt)
+
+    # Segundas visitas
+    create_appt(customer_a, base_dt + timedelta(days=25))  # 25d
+    create_appt(customer_b, base_dt + timedelta(days=50))  # 50d
+    create_appt(customer_c, base_dt + timedelta(days=90))  # 90d
+    # D não repete
+
+    start_str = range_start.strftime("%Y-%m-%d")
+    end_str = range_end.strftime("%Y-%m-%d")
+
+    r = c.get(f"/api/reports/retention/?from={start_str}&to={end_str}")
+    assert r.status_code == 200
+    data = r.data
+
+    assert "repeat_rate" in data
+    assert Decimal(str(data["repeat_rate"]["30d"])) == Decimal("25.00")
+    assert Decimal(str(data["repeat_rate"]["60d"])) == Decimal("50.00")
+    assert Decimal(str(data["repeat_rate"]["90d"])) == Decimal("75.00")
+
+
+@pytest.mark.django_db
+def test_retention_cohort_monthly_structure():
+    """
+    Valida que cohort retorna lista com estrutura esperada (month, acquired, M1, etc).
+    """
+    from users.models import Tenant
+    from core.models import SalonCustomer
+    import uuid, datetime
+    from django.utils.timezone import make_aware
+
+    suffix = str(uuid.uuid4())[:8]
+    tenant = Tenant.objects.create(
+        slug=f"pro-cohort-{suffix}",
+        name="Pro Cohort",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"cohort_{suffix}",
+        password="x",
+        email=f"cohort_{suffix}@test.com",
+        tenant=tenant,
+    )
+
+    c = APIClient()
+    c.force_authenticate(user)
+
+    prof_kwargs, professional = _get_or_create_professional(user)
+    service = Service.objects.create(
+        user=user,
+        name="Service Cohort",
+        duration_minutes=30,
+        price_eur=50,
+        tenant=tenant,
+    )
+
+    dt_field = _resolve_dt_field(Appointment)
+    price_field = _resolve_price_field(Appointment)
+
+    def create_appt(customer, when, price=50):
+        slot_kwargs = _make_slot_for(when, service, professional, user)
+        base = {
+            "tenant": tenant,
+            "client": user,
+            "customer": customer,
+            "service": service,
+            "professional": professional,
+            dt_field: when,
+            "status": "completed",
+        }
+        if price_field:
+            base[price_field] = Decimal(str(price))
+        base.update(slot_kwargs)
+        return Appointment.objects.create(**base)
+
+    m0 = make_aware(datetime.datetime(2025, 1, 15, 10, 0))
+    m1 = make_aware(datetime.datetime(2025, 2, 10, 10, 0))
+
+    customer_a = SalonCustomer.objects.create(
+        tenant=tenant,
+        name="Cohort A",
+        email=f"a_{suffix}@c.com",
+    )
+    customer_b = SalonCustomer.objects.create(
+        tenant=tenant,
+        name="Cohort B",
+        email=f"b_{suffix}@c.com",
+    )
+
+    SalonCustomer.objects.filter(pk=customer_a.pk).update(created_at=m0)
+    SalonCustomer.objects.filter(pk=customer_b.pk).update(created_at=m0)
+    customer_a.refresh_from_db()
+    customer_b.refresh_from_db()
+
+    create_appt(customer_a, m0)
+    create_appt(customer_b, m0)
+    create_appt(customer_a, m1)
+
+    r = c.get("/api/reports/retention/?from=2025-01-01&to=2025-01-31")
+    assert r.status_code == 200
+    data = r.data
+
+    assert "cohort" in data
+    cohort = data["cohort"]
+    assert isinstance(cohort, list)
+    assert len(cohort) >= 1
+
+    jan_entry = next((e for e in cohort if e["month"] == "2025-01"), None)
+    assert jan_entry is not None
+    assert isinstance(jan_entry, dict)
+    assert "month" in jan_entry
+    assert "acquired" in jan_entry
+    assert jan_entry["acquired"] == 2
+    assert "M1" in jan_entry
+    assert jan_entry["M1"] == 1  # Apenas customer_a volta em fevereiro
+
+
+# ---------- Edge cases: BE-REPORTS-03 item 4 ----------
+
+
+@pytest.mark.django_db
+def test_retention_short_range_one_day():
+    """
+    Range de 1 dia (from == to) → period.days == 0, sem erro.
+    Validado com dados reais (agendamento criado).
+    """
+    from users.models import Tenant
+    from core.models import SalonCustomer
+    import uuid, datetime
+    from django.utils.timezone import make_aware
+
+    suffix = str(uuid.uuid4())[:8]
+    tenant = Tenant.objects.create(
+        slug=f"pro-1day-{suffix}",
+        name="1Day",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"1day_{suffix}",
+        password="x",
+        email=f"1day_{suffix}@test.com",
+        tenant=tenant,
+    )
+    c = APIClient()
+    c.force_authenticate(user)
+
+    prof_kwargs, professional = _get_or_create_professional(user)
+    service = Service.objects.create(
+        user=user,
+        name="Svc 1Day",
+        duration_minutes=30,
+        price_eur=50,
+        tenant=tenant,
+    )
+
+    dt_field = _resolve_dt_field(Appointment)
+    price_field = _resolve_price_field(Appointment)
+
+    dt = make_aware(datetime.datetime(2025, 6, 15, 10, 0))
+    customer = SalonCustomer.objects.create(
+        tenant=tenant,
+        name="Client 1Day",
+        email=f"1day_{suffix}@c.com",
+    )
+    SalonCustomer.objects.filter(pk=customer.pk).update(created_at=dt)
+
+    slot_kwargs = _make_slot_for(dt, service, professional, user)
+    base = {
+        "tenant": tenant,
+        "client": user,
+        "customer": customer,
+        "service": service,
+        "professional": professional,
+        dt_field: dt,
+        "status": "completed",
+    }
+    if price_field:
+        base[price_field] = Decimal("50")
+    base.update(slot_kwargs)
+    Appointment.objects.create(**base)
+
+    r = c.get("/api/reports/retention/?from=2025-06-15&to=2025-06-15")
+    assert r.status_code == 200
+    data = r.data
+    assert data["period"]["days"] == 0
+    assert "cohort" in data
+    assert "repeat_rate" in data
+    assert "definitions" in data
