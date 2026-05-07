@@ -12,7 +12,7 @@ from unittest.mock import patch
 @pytest.mark.django_db
 class TestFounderPlan:
     def test_founder_plan_initial_credits(self):
-        """Testa se o plano Founder recebe 5€ de crédito inicial."""
+        """Testa se o plano Founder recebe 2€ de crédito inicial."""
         tenant = Tenant.objects.create(
             name="Tenant Founder",
             slug="tenant-founder-credits",
@@ -22,11 +22,11 @@ class TestFounderPlan:
 
         tenant.refresh_from_db()
 
-        assert tenant.comm_credit_eur == Decimal("5.00")
+        assert tenant.comm_credit_eur == Decimal("2.00")
 
         ledger_entry = CommLedger.objects.filter(tenant=tenant).first()
         assert ledger_entry is not None
-        assert ledger_entry.amount_eur == Decimal("5.00")
+        assert ledger_entry.amount_eur == Decimal("2.00")
         assert ledger_entry.description == "Crédito inicial do plano Founder"
 
     def test_founder_cancellation_resets_status(self):

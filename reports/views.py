@@ -384,10 +384,10 @@ class TopServicesReportView(_BaseReports):
     throttle_scope = "reports"
 
     def get_permissions(self):
-        """Top Services exige plano Standard (Business Analysis)"""
+        """Top Services exige plano Pro"""
         return [
             IsAuthenticated(),
-            RequiresStandardReports(),
+            RequiresProReports(),
         ]
 
     @cache_drf_response(
@@ -451,10 +451,10 @@ class RevenueSeriesReportView(_BaseReports):
     throttle_scope = "reports"
 
     def get_permissions(self):
-        """Revenue Series exige plano Standard (Business Analysis)"""
+        """Revenue Series exige plano Pro"""
         return [
             IsAuthenticated(),
-            RequiresStandardReports(),
+            RequiresProReports(),
         ]
 
     @cache_drf_response(
@@ -909,27 +909,10 @@ class RequiresBasicReports(BasePermission):
         return tenant.can_use_basic_reports()
 
 
-class RequiresStandardReports(BasePermission):
+class RequiresProReports(BasePermission):
     """
-    Permission que permite acesso a relatórios de análise (Business Analysis).
-    Agora parte do pacote Pro (antigo Standard).
-    """
-
-    def has_permission(self, request, view):
-        if not hasattr(request, "user") or not request.user.is_authenticated:
-            return False
-
-        if not hasattr(request.user, "tenant") or request.user.tenant is None:
-            return False
-
-        tenant = request.user.tenant
-        return tenant.can_use_advanced_reports()  # Unificado no Pro
-
-
-class RequiresAdvancedReports(BasePermission):
-    """
-    Permission que permite acesso a relatórios avançados (Insights).
-    Apenas plano Pro tem acesso.
+    Permission para relatórios Pro (top-services, revenue, retention, advanced export).
+    Exige plano Pro ou Founder.
     """
 
     def has_permission(self, request, view):
@@ -941,18 +924,6 @@ class RequiresAdvancedReports(BasePermission):
 
         tenant = request.user.tenant
         return tenant.can_use_advanced_reports()
-
-        if not hasattr(request.user, "tenant") or request.user.tenant is None:
-            return False
-
-        tenant = request.user.tenant
-
-        # Verifica se tem acesso a relatórios E se é Pro ou Enterprise
-        if not tenant.can_use_reports():
-            return False
-
-        # Pro tem acesso a relatórios avançados
-        return tenant.plan_tier == "pro"
 
 
 # === Views para relatórios básicos e avançados ===
@@ -1165,7 +1136,7 @@ class RetentionReportView(_BaseReports):
     def get_permissions(self):
         return [
             IsAuthenticated(),
-            RequiresAdvancedReports(),
+            RequiresProReports(),
         ]
 
     @cache_drf_response(
@@ -1261,10 +1232,10 @@ class RetentionReportView(_BaseReports):
 class AdvancedReportsView(APIView):
     """
     Endpoint para relatórios avançados.
-    Disponível apenas para planos Pro e Enterprise.
+    Disponível apenas para plano Pro.
     """
 
-    permission_classes = [IsAuthenticated, RequiresAdvancedReports]
+    permission_classes = [IsAuthenticated, RequiresProReports]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
@@ -1315,7 +1286,7 @@ class ExportAdvancedReportsCSVView(_BaseReports):
       - Seção Revenue Series (período, agendamentos, receita, ticket médio)
     """
 
-    permission_classes = [IsAuthenticated, RequiresAdvancedReports]
+    permission_classes = [IsAuthenticated, RequiresProReports]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 

@@ -747,4 +747,4 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
 
     assert founder_plan is not None
     assert founder_plan["comm_auto_renew"] is False
-    assert founder_plan["credits_included"] == 5
+    assert founder_plan["credits_included"] == 2

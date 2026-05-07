@@ -1,8 +1,10 @@
 import pytest
+from decimal import Decimal
 from django.contrib.auth import get_user_model
 from users.models import Tenant, UserFeatureFlags
 
 User = get_user_model()
+
 
 @pytest.mark.django_db
 class TestPlanFeatures:
@@ -24,7 +26,7 @@ class TestPlanFeatures:
         assert tenant.can_use_standard_reports() is False
         assert tenant.can_use_advanced_reports() is False
         assert tenant.can_use_pwa_client() is True  # Basic tem PWA Cliente
-        assert tenant.can_use_native_apps() is False # Apenas Pro
+        assert tenant.can_use_native_apps() is False  # Apenas Pro
         assert tenant.can_use_white_label() is False
         assert tenant.can_use_custom_domain() is False
 
@@ -35,7 +37,7 @@ class TestPlanFeatures:
             slug="pro-salon",
             plan_tier=Tenant.PLAN_PRO,
             custom_domain_enabled=True,
-            rn_admin_enabled=True
+            rn_admin_enabled=True,
         )
 
         # Features esperadas
@@ -43,7 +45,7 @@ class TestPlanFeatures:
         assert tenant.can_use_standard_reports() is True
         assert tenant.can_use_advanced_reports() is True
         assert tenant.can_use_pwa_client() is True
-        assert tenant.can_use_native_apps() is True # Via rn_admin_enabled ou plan tier
+        assert tenant.can_use_native_apps() is True  # Via rn_admin_enabled ou plan tier
         assert tenant.can_use_white_label() is True
         assert tenant.can_use_custom_domain() is True
 
@@ -55,7 +57,7 @@ class TestPlanFeatures:
         tenant = Tenant.objects.create(
             name="Founder Salon",
             slug="founder-salon",
-            plan_tier=Tenant.PLAN_BASIC, # Webhook força Basic
+            plan_tier=Tenant.PLAN_BASIC,  # Webhook força Basic
             is_founder=True,
         )
 
@@ -64,15 +66,14 @@ class TestPlanFeatures:
         assert tenant.can_use_standard_reports() is False
         assert tenant.can_use_advanced_reports() is False
         assert tenant.can_use_pwa_client() is True
-        
+
         # Founder NÃO deve ter features do Pro
         assert tenant.can_use_white_label() is False
         assert tenant.can_use_custom_domain() is False
 
     def test_founder_plan_credits(self):
         """
-        Valida que o Founder recebe os créditos iniciais corretos (5.00 EUR),
-        mesmo se o plan_tier for Basic (que também é 5.00).
+        Valida que o Founder recebe os créditos iniciais corretos (2.00 EUR).
         """
         tenant = Tenant.objects.create(
             name="Founder Credits",
@@ -80,11 +81,11 @@ class TestPlanFeatures:
             plan_tier=Tenant.PLAN_BASIC,
             is_founder=True,
         )
-        
+
         # Recarrega do banco para pegar atualização do signal
         tenant.refresh_from_db()
-        
-        assert tenant.comm_credit_eur == 5.00
+
+        assert tenant.comm_credit_eur == Decimal("2.00")
 
     def test_legacy_founder_tier_behavior(self):
         """
@@ -101,7 +102,7 @@ class TestPlanFeatures:
         # Se o tier for explicitamente 'founder', ele tem acesso a reports básicos?
         # Pelo código atual: Sim, can_use_basic_reports inclui PLAN_FOUNDER.
         assert tenant.can_use_basic_reports() is True
-        
+
         # E PWA Client?
         # Pelo código atual: NÃO, can_use_pwa_client só checa Basic e Pro.
         # A menos que pwa_client_enabled seja True (default é True no model).
@@ -113,6 +114,6 @@ class TestPlanFeatures:
         tenant.save()
         # Aqui ele perderia acesso se o tier não estivesse na lista allowed
         assert tenant.can_use_pwa_client() is False
-        
-        # Conclusão: É seguro manter PLAN_FOUNDER como fallback, 
+
+        # Conclusão: É seguro manter PLAN_FOUNDER como fallback,
         # mas o ideal é que todos sejam plan_tier='basic'.
