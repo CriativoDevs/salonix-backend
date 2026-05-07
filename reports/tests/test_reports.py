@@ -340,7 +340,7 @@ def test_reports_permissions_by_plan():
     """
     Testa se as permissões de relatórios são aplicadas corretamente por plano.
     Basic: Acesso apenas ao Overview.
-    Standard/Pro: Acesso a relatórios de análise (Top Services, Revenue).
+    Pro: Acesso a relatórios de análise (Top Services, Revenue, Retention, Advanced).
     """
     from users.models import Tenant
     import uuid
