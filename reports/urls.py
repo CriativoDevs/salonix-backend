@@ -1,4 +1,5 @@
 from django.urls import path
+from reports.views_export import ExportJobCreateView, ExportJobStatusView, ExportJobDownloadView
 from reports.views import (
     ExportTopServicesCSVView,
     ExportRevenueCSVView,
@@ -44,6 +45,11 @@ urlpatterns = [
     ),
     path("top-services/export/", ExportTopServicesCSVView.as_view()),
     path("revenue/export/", ExportRevenueCSVView.as_view()),
+    # Async export
+    path("exports/", ExportJobCreateView.as_view(), name="export_job_create"),
+    path("exports/<uuid:job_id>/", ExportJobStatusView.as_view(), name="export_job_status"),
+    path("exports/<uuid:job_id>/download/", ExportJobDownloadView.as_view(), name="export_job_download"),
+
     # Admin
     path(
         "admin/cache/invalidate/",

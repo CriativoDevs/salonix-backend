@@ -595,6 +595,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notifications.tasks.send_appointment_reminders",
         "schedule": crontab(minute=0),  # Executar a cada hora cheia
     },
+    "cleanup-expired-export-jobs-daily": {
+        "task": "reports.cleanup_expired_export_jobs",
+        "schedule": crontab(hour=3, minute=0),  # 3:00 AM diário
+    },
 }
 
 # Diretório para backups locais de tenants (BE-ACCOUNT-CANCEL #396)
