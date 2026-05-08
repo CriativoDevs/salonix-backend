@@ -64,3 +64,25 @@ class ExportJob(models.Model):
     @property
     def is_expired(self):
         return timezone.now() >= self.expires_at
+
+
+class DailyReportAggregate(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="daily_aggregates",
+    )
+    date = models.DateField()
+    appointments_total = models.PositiveIntegerField(default=0)
+    appointments_completed = models.PositiveIntegerField(default=0)
+    revenue_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        unique_together = [("tenant", "date")]
+        indexes = [
+            models.Index(fields=["tenant", "date"], name="rep_daily_tenant_date_idx"),
+        ]
+        ordering = ("-date",)
+
+    def __str__(self):
+        return f"DailyAggregate {self.tenant_id} {self.date}"
