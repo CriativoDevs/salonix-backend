@@ -351,27 +351,17 @@ class OverviewReportView(_BaseReports):
     @observe_request(endpoint="/api/reports/overview/")
     def get(self, request):
         start, end = _date_range(request)
-        date_gte = {f"{DATE_FIELD}__gte": start}
-        date_lte = {f"{DATE_FIELD}__lte": end}
+        tenant = getattr(request.user, "tenant", None)
 
-        qs = Appointment.objects.filter(
-            **date_gte,
-            **date_lte,
-            tenant=getattr(request.user, "tenant", None),
-        )
-        total = qs.count()
-        done = qs.filter(status__in=COMPLETED_STATUSES)
-        done_count = done.count()
+        from reports.aggregator import get_overview_data
+        data = get_overview_data(tenant.id if tenant else None, start, end)
 
-        if APPT_PRICE_FIELD:
-            revenue = done.aggregate(total=Sum(APPT_PRICE_FIELD))["total"] or 0
-        else:
-            revenue = done.aggregate(total=_price_sum())["total"] or 0
-
+        done_count = data["appointments_completed"]
+        revenue = data["revenue_total"]
         avg_ticket = (revenue / done_count) if done_count else 0
         return Response(
             {
-                "appointments_total": total,
+                "appointments_total": data["appointments_total"],
                 "appointments_completed": done_count,
                 "revenue_total": revenue,
                 "avg_ticket": avg_ticket,
@@ -481,47 +471,16 @@ class RevenueSeriesReportView(_BaseReports):
     def get(self, request):
         start, end = _date_range(request)
         interval = request.query_params.get("interval", "day")
-        from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
-
-        trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
-            interval, TruncDay
-        )
-        date_gte = {f"{DATE_FIELD}__gte": start}
-        date_lte = {f"{DATE_FIELD}__lte": end}
         limit, offset = _get_limit_offset(request)
+        tenant = getattr(request.user, "tenant", None)
 
-        base = (
-            Appointment.objects.filter(
-                **date_gte,
-                **date_lte,
-                status__in=COMPLETED_STATUSES,
-                tenant=getattr(request.user, "tenant", None),
-            )
-            .annotate(bucket=trunc(DATE_FIELD))
-            .values("bucket")
-        )
+        from reports.aggregator import get_revenue_series
+        all_rows = get_revenue_series(tenant.id if tenant else None, start, end, interval)
 
-        if APPT_PRICE_FIELD:
-            base = base.annotate(
-                revenue=Sum(APPT_PRICE_FIELD), appointment_count=Count("id")
-            )
-        else:
-            base = base.annotate(revenue=_price_sum(), appointment_count=Count("id"))
+        total = len(all_rows)
+        page = all_rows[offset : offset + limit]
 
-        total = base.count()
-
-        # mantemos ordem crescente por período; paginamos sobre ela
-        qs = base.order_by("bucket")[offset : offset + limit]
-
-        data = [
-            {
-                "period_start": r["bucket"],
-                "revenue": r["revenue"] or 0,
-                "appointment_count": r["appointment_count"] or 0,
-            }
-            for r in qs
-        ]
-        resp = Response({"interval": interval, "series": data})
+        resp = Response({"interval": interval, "series": page})
         return _set_pagination_headers(
             resp, total=total, limit=limit, offset=offset, request=request
         )

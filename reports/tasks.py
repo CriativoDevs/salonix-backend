@@ -226,6 +226,23 @@ def _generate_advanced(tenant, start, end, interval: str = "day") -> str:
     return buf.getvalue()
 
 
+@shared_task(name="reports.update_daily_aggregates")
+def update_daily_aggregates():
+    """Recalcula o agregado de ontem para todos os tenants ativos."""
+    from datetime import date, timedelta
+    from reports.backfill import backfill_tenant
+    from users.models import Tenant
+
+    yesterday = date.today() - timedelta(days=1)
+    tenant_ids = list(Tenant.objects.filter(is_active=True).values_list("id", flat=True))
+    results = {}
+    for tenant_id in tenant_ids:
+        results[tenant_id] = backfill_tenant(tenant_id, since=yesterday, until=yesterday)
+
+    logger.info("daily_aggregates_updated", extra={"tenants": len(tenant_ids), "date": str(yesterday)})
+    return results
+
+
 @shared_task(name="reports.cleanup_expired_export_jobs")
 def cleanup_expired_export_jobs():
     expired = ExportJob.objects.filter(expires_at__lte=timezone.now())

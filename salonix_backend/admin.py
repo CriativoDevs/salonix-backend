@@ -44,8 +44,8 @@ from notifications.admin import (
 )
 from payments.models import Subscription, PaymentCustomer
 from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
-from reports.models import ExportJob
-from reports.admin import ExportJobAdmin
+from reports.models import ExportJob, DailyReportAggregate
+from reports.admin import ExportJobAdmin, DailyReportAggregateAdmin
 from datetime import datetime, timedelta
 
 
@@ -325,3 +325,4 @@ admin_site.register(NotificationDevice, NotificationDeviceAdmin)
 admin_site.register(NotificationLog, NotificationLogAdmin)
 
 admin_site.register(ExportJob, ExportJobAdmin)
+admin_site.register(DailyReportAggregate, DailyReportAggregateAdmin)
