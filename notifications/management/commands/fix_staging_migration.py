@@ -12,14 +12,20 @@ class Command(BaseCommand):
             'notifications_notification',
         ]
         
+        allowed = frozenset(tables_to_drop)
+
         with connection.cursor() as cursor:
             # Desativa verificação de chave estrangeira temporariamente para permitir drop em qualquer ordem
             cursor.execute('SET FOREIGN_KEY_CHECKS = 0;')
-            
+
             for table in tables_to_drop:
+                if table not in allowed:
+                    self.stdout.write(self.style.ERROR(f'Table {table!r} not in allowlist — skipped.'))
+                    continue
                 self.stdout.write(f'Checking table {table}...')
                 try:
-                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                    # DDL não aceita parâmetros bindados; tabela validada contra allowlist acima.
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")  # noqa: S608
                     self.stdout.write(self.style.SUCCESS(f'Dropped table {table}'))
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f'Error dropping {table}: {e}'))
