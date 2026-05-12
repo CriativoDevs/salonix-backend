@@ -135,6 +135,12 @@ BULK_APPOINTMENTS_ERRORS = _get_or_create_counter(
     ("tenant_id", "status"),
 )
 
+CSV_IMPORT_REJECTIONS_TOTAL = _get_or_create_counter(
+    "csv_import_rejections_total",
+    "Total number of rejected CSV import attempts by reason",
+    ("reason",),
+)
+
 APPOINTMENT_SERIES_UPDATED_TOTAL = _get_or_create_counter(
     "appointment_series_updated_total",
     "Total number of series update operations",
@@ -457,6 +463,8 @@ class PublicSlotListView(ListAPIView):
         professional_id = self.request.query_params.get("professional_id")
         if not professional_id:
             raise ValidationError({"professional_id": "Este parâmetro é obrigatório."})
+        if not str(professional_id).isdigit():
+            raise ValidationError({"professional_id": "Valor inválido."})
 
         # Respeitar o tenant informado (header X-Tenant-Slug ou query param tenant)
         tenant_slug = self.request.headers.get("X-Tenant-Slug") or self.request.GET.get(
@@ -464,15 +472,21 @@ class PublicSlotListView(ListAPIView):
         )
 
         qs = ScheduleSlot.objects.filter(
-            professional_id=professional_id, is_available=True
+            professional_id=int(professional_id), is_available=True
         )
 
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
         if date_from:
-            qs = qs.filter(start_time__gte=date_from)
+            parsed_from = parse_date(date_from) or parse_datetime(date_from)
+            if not parsed_from:
+                raise ValidationError({"date_from": "Formato de data inválido."})
+            qs = qs.filter(start_time__gte=parsed_from)
         if date_to:
-            qs = qs.filter(start_time__lte=date_to)
+            parsed_to = parse_date(date_to) or parse_datetime(date_to)
+            if not parsed_to:
+                raise ValidationError({"date_to": "Formato de data inválido."})
+            qs = qs.filter(start_time__lte=parsed_to)
 
         if tenant_slug:
             try:
@@ -3382,6 +3396,18 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
         return Response({"status": "queued"}, status=drf_status.HTTP_202_ACCEPTED)
 
 
+_import_logger = logging.getLogger("core.import")
+
+
+def _reject_csv(reason: str, extra: dict) -> None:
+    """Logs a structured rejection event and increments the Prometheus counter."""
+    CSV_IMPORT_REJECTIONS_TOTAL.labels(reason=reason).inc()
+    _import_logger.warning(
+        "csv_import_rejected",
+        extra={"reason": reason, **extra},
+    )
+
+
 class ImportCSVBaseView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -3395,13 +3421,77 @@ class ImportCSVBaseView(APIView):
     def _parse_bool(self, value):
         return str(value).lower() in {"1", "true", "t", "yes", "y"}
 
+    _CSV_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+    _CSV_MAX_ROWS = 5_000
+    _CSV_ALLOWED_CONTENT_TYPES = frozenset({
+        "text/csv", "text/plain", "application/csv",
+        "application/octet-stream",  # common browser fallback for .csv
+    })
+    # Signatures of binary formats that must never be accepted as CSV
+    _BINARY_MAGIC_BYTES = (
+        b"\x50\x4b\x03\x04",  # ZIP / xlsx / docx
+        b"\xd0\xcf\x11\xe0",  # OLE2 / xls / doc
+        b"\x89\x50\x4e\x47",  # PNG
+        b"\xff\xd8\xff",       # JPEG
+        b"\x25\x50\x44\x46",  # PDF
+    )
+
+    def _log_ctx(self, request) -> dict:
+        tenant = self._get_tenant(request)
+        return {
+            "tenant_id": getattr(tenant, "id", None),
+            "user_id": getattr(request.user, "id", None),
+            "view": self.__class__.__name__,
+        }
+
+    def _validate_csv_file(self, f, log_ctx: dict) -> None:
+        import os
+        ext = os.path.splitext(f.name or "")[1].lower()
+        if ext not in (".csv", ".txt", ""):
+            _reject_csv("invalid_extension", {**log_ctx, "ext": ext})
+            raise ValidationError({"file": ["Apenas arquivos .csv são aceitos."]})
+        mime = (f.content_type or "").split(";")[0].strip().lower()
+        if mime and mime not in self._CSV_ALLOWED_CONTENT_TYPES:
+            _reject_csv("invalid_mime_type", {**log_ctx, "mime": mime})
+            raise ValidationError({"file": [f"Tipo de arquivo '{mime}' não é permitido. Envie um CSV."]})
+
     def _read_csv(self, request):
         f = request.FILES.get("file")
         if not f:
             raise ValidationError({"file": ["Arquivo CSV obrigatório."]})
-        content = f.read().decode("utf-8", errors="replace")
+        ctx = self._log_ctx(request)
+        self._validate_csv_file(f, ctx)
+        if f.size > self._CSV_MAX_BYTES:
+            _reject_csv("file_too_large", {**ctx, "size_bytes": f.size})
+            raise ValidationError(
+                {"file": [f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."]}
+            )
+        raw = f.read(self._CSV_MAX_BYTES + 1)
+        if len(raw) > self._CSV_MAX_BYTES:
+            _reject_csv("file_too_large", {**ctx, "size_bytes": len(raw)})
+            raise ValidationError(
+                {"file": [f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."]}
+            )
+        # Reject files whose first bytes match known binary formats
+        for magic in self._BINARY_MAGIC_BYTES:
+            if raw.startswith(magic):
+                _reject_csv("binary_content", {**ctx, "magic_prefix": raw[:4].hex()})
+                raise ValidationError({"file": ["Formato de arquivo inválido. Envie um CSV em texto plano."]})
+        # Strip UTF-8 BOM if present, then require valid UTF-8
+        if raw.startswith(b"\xef\xbb\xbf"):
+            raw = raw[3:]
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            _reject_csv("encoding_error", ctx)
+            raise ValidationError({"file": ["Arquivo CSV deve estar em UTF-8."]})
         reader = csv.DictReader(io.StringIO(content))
         rows = list(reader)
+        if len(rows) > self._CSV_MAX_ROWS:
+            _reject_csv("too_many_rows", {**ctx, "row_count": len(rows)})
+            raise ValidationError(
+                {"file": [f"CSV excede o limite de {self._CSV_MAX_ROWS} linhas. Divida o arquivo e reimporte."]}
+            )
         return rows
 
 
@@ -4237,7 +4327,7 @@ class ImportAppointmentsCSVView(TenantIsolatedMixin, ImportCSVBaseView):
             if existing:
                 skipped += 1
             else:
-                notes_val = str(row.get("notes") or "")
+                notes_val = sanitize_text_input(str(row.get("notes") or ""), max_length=1000)
                 slot.mark_booked()
                 Appointment.objects.create(
                     client=request.user,
