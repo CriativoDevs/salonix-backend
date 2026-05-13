@@ -321,6 +321,12 @@ class SalonCustomerMiniSerializer(serializers.ModelSerializer):
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
+    slot = serializers.PrimaryKeyRelatedField(
+        queryset=ScheduleSlot.objects.all(), required=False, allow_null=True
+    )
+    start_time = serializers.DateTimeField(required=False, write_only=True)
+    end_time = serializers.DateTimeField(required=False, write_only=True)
+
     class Meta:
         model = Appointment
         fields = [
@@ -330,6 +336,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "service",
             "professional",
             "slot",
+            "start_time",
+            "end_time",
             "notes",
             "created_at",
             "status",
@@ -338,13 +346,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         read_only_fields = ["client", "created_at", "cancelled_by"]
 
     def validate_notes(self, value):
-        """Validar e sanitizar notas do agendamento."""
         if value:
             return sanitize_text_input(value, max_length=500)
         return value
 
     def validate(self, data):
-        """Validação completa do agendamento."""
         request = self.context.get("request")
         user = request.user if request else None
         tenant = getattr(request, "tenant", None) if request else None
@@ -354,31 +360,51 @@ class AppointmentSerializer(serializers.ModelSerializer):
             self.context.get("enforce_client_slot_uniqueness")
         )
 
-        # Validações básicas existentes
         slot = data.get("slot")
         professional = data.get("professional")
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
 
         errors = {}
 
-        # 1. Verifica se o slot está disponível
-        if slot and not slot.is_available:
-            errors["slot"] = "Este horário já foi agendado."
+        if slot is None:
+            # Caminho de auto-criação: exige start_time, end_time e professional
+            if not start_time:
+                errors["start_time"] = "Informe start_time quando slot não for fornecido."
+            if not end_time:
+                errors["end_time"] = "Informe end_time quando slot não for fornecido."
+            if not professional:
+                errors["professional"] = "Informe professional quando slot não for fornecido."
 
-        # 2. Verifica se o slot é do profissional informado
-        if slot and professional and slot.professional != professional:
-            errors["slot"] = "Este horário não pertence ao profissional informado."
-
-        # 3. Verifica se o slot está no futuro
-        if slot and slot.start_time <= timezone.now():
-            errors["slot"] = "Não é possível agendar horários no passado."
-
-        # 4. Verifica se o cliente já tem um agendamento para o mesmo slot
-        if user and slot and enforce_client_slot_uniqueness:
-            base_qs = Appointment.objects.filter(client=user, slot=slot)
-            if self.instance:
-                base_qs = base_qs.exclude(pk=self.instance.pk)
-            if base_qs.exclude(status="cancelled").exists():
-                errors["slot"] = "Você já tem um agendamento para este horário."
+            if not errors:
+                if end_time <= start_time:
+                    errors["end_time"] = "end_time deve ser posterior a start_time."
+                elif start_time <= timezone.now():
+                    errors["start_time"] = "Não é possível agendar horários no passado."
+                else:
+                    # Verifica sobreposição com slots já existentes do profissional
+                    overlap = ScheduleSlot.objects.filter(
+                        professional=professional,
+                        start_time__lt=end_time,
+                        end_time__gt=start_time,
+                        status="booked",
+                    ).exists()
+                    if overlap:
+                        errors["start_time"] = "O profissional já tem um agendamento neste horário."
+        else:
+            # Caminho tradicional: slot fornecido
+            if not slot.is_available:
+                errors["slot"] = "Este horário já foi agendado."
+            elif professional and slot.professional != professional:
+                errors["slot"] = "Este horário não pertence ao profissional informado."
+            elif slot.start_time <= timezone.now():
+                errors["slot"] = "Não é possível agendar horários no passado."
+            elif user and enforce_client_slot_uniqueness:
+                base_qs = Appointment.objects.filter(client=user, slot=slot)
+                if self.instance:
+                    base_qs = base_qs.exclude(pk=self.instance.pk)
+                if base_qs.exclude(status="cancelled").exists():
+                    errors["slot"] = "Você já tem um agendamento para este horário."
 
         if customer is None and self.instance is not None:
             customer = self.instance.customer
@@ -397,12 +423,10 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if errors:
             raise serializers.ValidationError(errors)
 
-        # Usar validação avançada se tenant estiver disponível
-        if tenant:
+        if slot is not None and tenant:
             try:
                 data = validate_appointment_data(data, tenant, user)
             except Exception:
-                # Se a validação avançada falhar, manter validação básica
                 pass
 
         return data
