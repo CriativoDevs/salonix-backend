@@ -16,7 +16,7 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
+from .models import CustomUser, UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, TenantBusinessHours
 from .services import FounderService
 from salonix_backend.validators import (
     validate_phone_number,
@@ -1116,6 +1116,21 @@ class TenantBrandingUpdateSerializer(serializers.ModelSerializer):
                 "Não é possível enviar 'logo' e 'logo_url' simultaneamente. Use apenas um."
             )
 
+        return data
+
+
+class TenantBusinessHoursSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantBusinessHours
+        fields = ["id", "day_of_week", "start_time", "end_time", "is_active"]
+
+    def validate(self, data):
+        start = data.get("start_time")
+        end = data.get("end_time")
+        if start and end and end <= start:
+            raise serializers.ValidationError(
+                {"end_time": "Horário de fim deve ser posterior ao horário de início."}
+            )
         return data
 
 

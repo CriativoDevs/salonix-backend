@@ -526,6 +526,50 @@ class Tenant(models.Model):
         }
 
 
+class TenantBusinessHours(models.Model):
+    DAY_MONDAY = 0
+    DAY_TUESDAY = 1
+    DAY_WEDNESDAY = 2
+    DAY_THURSDAY = 3
+    DAY_FRIDAY = 4
+    DAY_SATURDAY = 5
+    DAY_SUNDAY = 6
+
+    DAY_CHOICES = [
+        (DAY_MONDAY, "Monday"),
+        (DAY_TUESDAY, "Tuesday"),
+        (DAY_WEDNESDAY, "Wednesday"),
+        (DAY_THURSDAY, "Thursday"),
+        (DAY_FRIDAY, "Friday"),
+        (DAY_SATURDAY, "Saturday"),
+        (DAY_SUNDAY, "Sunday"),
+    ]
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="business_hours",
+    )
+    day_of_week = models.IntegerField(choices=DAY_CHOICES)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    is_active = models.BooleanField(default=cast(Any, True))
+
+    class Meta:
+        unique_together = ("tenant", "day_of_week")
+        ordering = ["day_of_week"]
+        indexes = [
+            models.Index(fields=["tenant"]),
+            models.Index(fields=["tenant", "day_of_week"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.tenant.name} | {self.get_day_of_week_display()} "
+            f"{self.start_time}-{self.end_time}"
+        )
+
+
 class CustomUser(AbstractUser):
     class OpsRoles(models.TextChoices):
         OPS_ADMIN = "ops_admin", "Ops Admin"
