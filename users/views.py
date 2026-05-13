@@ -40,7 +40,7 @@ import time
 import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
-from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser
+from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser, TenantBusinessHours
 from .services import CreditService, TenantService, FounderService
 from .permissions import IsActiveTenant, RequiresMobileAccess
 from salonix_backend.pii_utils import mask_email, mask_user_repr
@@ -69,6 +69,7 @@ from .serializers import (
     TenantNotificationsUpdateSerializer,
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
+    TenantBusinessHoursSerializer,
 )
 from .throttling import (
     UsersAuthLoginThrottle,
@@ -744,6 +745,73 @@ class TenantProfileView(APIView):
             }
         }
         return Response(resp, status=status.HTTP_200_OK)
+
+
+class TenantBusinessHoursView(APIView):
+    """
+    GET /api/users/tenant/business-hours/
+    PUT /api/users/tenant/business-hours/
+
+    GET: retorna horários de funcionamento do tenant (owner/manager/collaborator).
+    PUT: substitui todos os dias de uma vez (owner/manager apenas).
+         Envia lista de objetos: [{day_of_week, start_time, end_time, is_active}].
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _resolve_tenant(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if not tenant:
+            raise TenantError(
+                "Usuário sem tenant.",
+                code=ErrorCodes.BUSINESS_TENANT_NOT_FOUND,
+            )
+        return tenant
+
+    def _check_write_permission(self, request):
+        user = request.user
+        if not (
+            getattr(user, "is_superuser", False)
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                "Apenas owner ou manager podem alterar horários de funcionamento."
+            )
+
+    def get(self, request):
+        tenant = self._resolve_tenant(request)
+        hours = TenantBusinessHours.objects.filter(tenant=tenant)
+        serializer = TenantBusinessHoursSerializer(hours, many=True)
+        return Response(serializer.data)
+
+    def put(self, request):
+        from django.db import transaction as db_transaction
+
+        tenant = self._resolve_tenant(request)
+        self._check_write_permission(request)
+
+        data = request.data
+        if not isinstance(data, list):
+            raise ValidationError("Esperado uma lista de horários de funcionamento.")
+
+        serializer = TenantBusinessHoursSerializer(data=data, many=True)
+        serializer.is_valid(raise_exception=True)
+
+        days = [item["day_of_week"] for item in serializer.validated_data]
+        if len(days) != len(set(days)):
+            raise ValidationError({"day_of_week": "Dias duplicados na requisição."})
+
+        with db_transaction.atomic():
+            TenantBusinessHours.objects.filter(tenant=tenant).delete()
+            TenantBusinessHours.objects.bulk_create([
+                TenantBusinessHours(tenant=tenant, **item)
+                for item in serializer.validated_data
+            ])
+
+        hours = TenantBusinessHours.objects.filter(tenant=tenant)
+        return Response(TenantBusinessHoursSerializer(hours, many=True).data)
 
 
 class MeTenantView(APIView):
