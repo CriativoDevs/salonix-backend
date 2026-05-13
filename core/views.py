@@ -35,7 +35,7 @@ from core.models import (
     AppointmentReservedSlot,
     Feedback,
 )
-from users.models import Tenant, TenantStaffMember
+from users.models import Tenant, TenantStaffMember, TenantBusinessHours
 from core.utils.client_access import create_client_access_data
 from notifications.services import (
     send_customer_pwa_invite,
@@ -4489,6 +4489,124 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             raise PermissionDenied("Permissão insuficiente para criar slots.")
 
         serializer.save(tenant=tenant)
+
+    @action(detail=False, methods=["post"], url_path="bulk-generate")
+    def bulk_generate(self, request):
+        """
+        POST /api/slots/bulk-generate/
+
+        Gera slots em bulk para um profissional dentro do horário de funcionamento.
+
+        Body: { professional_id, period ("day"|"week"|"month"), interval_minutes (default 30), date (YYYY-MM-DD, default hoje) }
+        Retorna: { created: N, skipped: M }
+        """
+        import zoneinfo
+        from datetime import date as date_type, datetime, timedelta
+
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if not tenant:
+            raise ValidationError("Usuário sem tenant.")
+
+        if not (
+            user.is_superuser
+            or user.has_staff_role(TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER)
+        ):
+            raise PermissionDenied("Apenas owner ou manager podem gerar slots em bulk.")
+
+        professional_id = request.data.get("professional_id")
+        period = request.data.get("period")
+        interval_minutes = request.data.get("interval_minutes", 30)
+        date_str = request.data.get("date")
+
+        if not professional_id:
+            raise ValidationError({"professional_id": "Campo obrigatório."})
+        if period not in ("day", "week", "month"):
+            raise ValidationError({"period": "Deve ser 'day', 'week' ou 'month'."})
+        try:
+            interval_minutes = int(interval_minutes)
+        except (TypeError, ValueError):
+            raise ValidationError({"interval_minutes": "Deve ser um número inteiro."})
+        if not (15 <= interval_minutes <= 480):
+            raise ValidationError({"interval_minutes": "Deve ser entre 15 e 480 minutos."})
+
+        try:
+            professional = Professional.objects.get(id=professional_id, tenant=tenant)
+        except Professional.DoesNotExist:
+            raise ValidationError({"professional_id": "Profissional não encontrado para este tenant."})
+
+        tz = zoneinfo.ZoneInfo(tenant.timezone or "Europe/Lisbon")
+        if date_str:
+            try:
+                base_date = date_type.fromisoformat(str(date_str))
+            except ValueError:
+                raise ValidationError({"date": "Data inválida. Use formato YYYY-MM-DD."})
+        else:
+            base_date = datetime.now(tz).date()
+
+        if period == "day":
+            dates = [base_date]
+        elif period == "week":
+            monday = base_date - timedelta(days=base_date.weekday())
+            dates = [monday + timedelta(days=i) for i in range(7)]
+        else:
+            first = base_date.replace(day=1)
+            if first.month == 12:
+                last = first.replace(year=first.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                last = first.replace(month=first.month + 1, day=1) - timedelta(days=1)
+            dates = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+        bh_qs = TenantBusinessHours.objects.filter(tenant=tenant, is_active=True)
+        if not bh_qs.exists():
+            raise ValidationError(
+                "Tenant não possui horário de funcionamento configurado. "
+                "Configure em Configurações > Horário de funcionamento."
+            )
+        bh_by_day = {bh.day_of_week: bh for bh in bh_qs}
+
+        period_start = datetime.combine(dates[0], datetime.min.time()).replace(tzinfo=tz)
+        period_end = datetime.combine(dates[-1], datetime.max.time()).replace(tzinfo=tz)
+        existing_starts = set(
+            ScheduleSlot.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                start_time__gte=period_start,
+                start_time__lte=period_end,
+            ).values_list("start_time", flat=True)
+        )
+
+        interval = timedelta(minutes=interval_minutes)
+        slots_to_create = []
+        skipped_count = 0
+        pending_starts = set()
+
+        for day in dates:
+            bh = bh_by_day.get(day.weekday())
+            if not bh:
+                continue
+            current = datetime.combine(day, bh.start_time).replace(tzinfo=tz)
+            end_dt = datetime.combine(day, bh.end_time).replace(tzinfo=tz)
+            while current + interval <= end_dt:
+                slot_end = current + interval
+                if current in existing_starts or current in pending_starts:
+                    skipped_count += 1
+                else:
+                    slots_to_create.append(ScheduleSlot(
+                        tenant=tenant,
+                        professional=professional,
+                        start_time=current,
+                        end_time=slot_end,
+                        is_available=True,
+                        status="available",
+                    ))
+                    pending_starts.add(current)
+                current += interval
+
+        if slots_to_create:
+            ScheduleSlot.objects.bulk_create(slots_to_create)
+
+        return Response({"created": len(slots_to_create), "skipped": skipped_count})
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()  # get_object valida o tenant via mixin/checagem
