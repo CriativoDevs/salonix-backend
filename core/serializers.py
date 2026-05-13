@@ -492,9 +492,11 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
 class BulkAppointmentSlotSerializer(serializers.Serializer):
     """Serializer para cada slot individual em um agendamento múltiplo."""
 
-    slot_id = serializers.IntegerField()
+    slot_id = serializers.IntegerField(required=False, allow_null=True)
     service_id = serializers.IntegerField(required=False)
     professional_id = serializers.IntegerField(required=False)
+    start_time = serializers.DateTimeField(required=False)
+    end_time = serializers.DateTimeField(required=False)
     date = serializers.DateField(
         required=False, help_text="Data do agendamento (YYYY-MM-DD)"
     )
@@ -504,10 +506,9 @@ class BulkAppointmentSlotSerializer(serializers.Serializer):
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
     def validate_slot_id(self, value):
-        """Validar se o slot existe."""
-        if value is None or int(value) <= 0:
+        if value is not None and int(value) <= 0:
             raise serializers.ValidationError("slot_id inválido.")
-        return int(value)
+        return int(value) if value is not None else None
 
 
 class BulkAppointmentSerializer(serializers.Serializer):
@@ -589,9 +590,11 @@ class BulkAppointmentSerializer(serializers.Serializer):
         if len(value) > 20:
             raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
 
-        slot_ids = [appt["slot_id"] for appt in value]
+        slot_items = [a for a in value if a.get("slot_id")]
+        time_items = [a for a in value if not a.get("slot_id")]
+        slot_ids = [appt["slot_id"] for appt in slot_items]
 
-        # duplicados
+        # duplicados (apenas entre itens com slot_id)
         if len(slot_ids) != len(set(slot_ids)):
             raise serializers.ValidationError("Slots duplicados não são permitidos.")
 
@@ -601,19 +604,7 @@ class BulkAppointmentSerializer(serializers.Serializer):
             request, "tenant", None
         )
 
-        slots_qs = (
-            ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant)
-            if tenant
-            else ScheduleSlot.objects.filter(id__in=slot_ids)
-        )
-        slots_by_id = {s.id: s for s in slots_qs}
-
-        # inexistentes
-        missing = set(slot_ids) - set(slots_by_id.keys())
-        if missing:
-            raise serializers.ValidationError(f"Slots não encontrados: {missing}")
-
-        # profissional esperado: topo ou por item
+        # profissional topo (usado como fallback por item)
         top_professional_id = None
         try:
             raw_top_pid = (self.initial_data or {}).get("professional_id")
@@ -624,45 +615,91 @@ class BulkAppointmentSerializer(serializers.Serializer):
 
         from django.utils import timezone
 
-        wrong_professional: list[int] = []
-        unavailable: list[int] = []
-        past: list[int] = []
-
-        for appt in value:
-            slot = slots_by_id.get(int(appt["slot_id"]))
-            eff_pid = appt.get("professional_id")
-            if eff_pid is None:
-                eff_pid = top_professional_id
-            try:
-                eff_pid_int = int(eff_pid) if eff_pid is not None else None
-            except Exception:
-                eff_pid_int = None
-
-            # compatibilidade com profissional
-            if eff_pid_int is not None and slot and slot.professional_id != eff_pid_int:
-                wrong_professional.append(slot.id)
-
-            # disponibilidade
-            if slot and (
-                not slot.is_available
-                or getattr(slot, "status", "available") != "available"
-            ):
-                unavailable.append(slot.id)
-
-            # passado
-            if slot and slot.start_time <= timezone.now():
-                past.append(slot.id)
-
-        if unavailable:
-            raise serializers.ValidationError(f"Slots não disponíveis: {unavailable}")
-        if wrong_professional:
-            raise serializers.ValidationError(
-                f"Slots não pertencem ao profissional informado: {wrong_professional}"
+        # --- Validar itens com slot_id (caminho tradicional) ---
+        if slot_ids:
+            slots_qs = (
+                ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant)
+                if tenant
+                else ScheduleSlot.objects.filter(id__in=slot_ids)
             )
-        if past:
-            raise serializers.ValidationError(
-                f"Não é possível agendar slots no passado: {past}"
+            slots_by_id = {s.id: s for s in slots_qs}
+
+            missing = set(slot_ids) - set(slots_by_id.keys())
+            if missing:
+                raise serializers.ValidationError(f"Slots não encontrados: {missing}")
+
+            wrong_professional: list[int] = []
+            unavailable: list[int] = []
+            past: list[int] = []
+
+            for appt in slot_items:
+                slot = slots_by_id.get(int(appt["slot_id"]))
+                eff_pid = appt.get("professional_id")
+                if eff_pid is None:
+                    eff_pid = top_professional_id
+                try:
+                    eff_pid_int = int(eff_pid) if eff_pid is not None else None
+                except Exception:
+                    eff_pid_int = None
+
+                if eff_pid_int is not None and slot and slot.professional_id != eff_pid_int:
+                    wrong_professional.append(slot.id)
+                if slot and (
+                    not slot.is_available
+                    or getattr(slot, "status", "available") != "available"
+                ):
+                    unavailable.append(slot.id)
+                if slot and slot.start_time <= timezone.now():
+                    past.append(slot.id)
+
+            if unavailable:
+                raise serializers.ValidationError(f"Slots não disponíveis: {unavailable}")
+            if wrong_professional:
+                raise serializers.ValidationError(
+                    f"Slots não pertencem ao profissional informado: {wrong_professional}"
+                )
+            if past:
+                raise serializers.ValidationError(
+                    f"Não é possível agendar slots no passado: {past}"
+                )
+
+        # --- Validar itens sem slot_id (auto-criação via start_time/end_time) ---
+        for appt in time_items:
+            eff_pid = appt.get("professional_id") or top_professional_id
+            start_time = appt.get("start_time")
+            end_time = appt.get("end_time")
+
+            item_errors: dict[str, str] = {}
+            if not start_time:
+                item_errors["start_time"] = "Informe start_time quando slot_id não for fornecido."
+            if not end_time:
+                item_errors["end_time"] = "Informe end_time quando slot_id não for fornecido."
+            if not eff_pid:
+                item_errors["professional_id"] = "Informe professional_id quando slot_id não for fornecido."
+            if item_errors:
+                raise serializers.ValidationError(item_errors)
+
+            if end_time <= start_time:
+                raise serializers.ValidationError(
+                    {"end_time": "end_time deve ser posterior a start_time."}
+                )
+            if start_time <= timezone.now():
+                raise serializers.ValidationError(
+                    {"start_time": "Não é possível agendar horários no passado."}
+                )
+
+            overlap_qs = ScheduleSlot.objects.filter(
+                professional_id=eff_pid,
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+                status="booked",
             )
+            if tenant:
+                overlap_qs = overlap_qs.filter(tenant=tenant)
+            if overlap_qs.exists():
+                raise serializers.ValidationError(
+                    {"start_time": "O profissional já tem um agendamento neste horário."}
+                )
 
         return value
 
@@ -770,17 +807,19 @@ class BulkAppointmentResponseSerializer(serializers.Serializer):
 
 
 class MixedBulkAppointmentItemSerializer(serializers.Serializer):
-    """Item para criação mista: requer service_id e professional_id por slot."""
+    """Item para criação mista: requer service_id e professional_id por item."""
 
-    slot_id = serializers.IntegerField()
+    slot_id = serializers.IntegerField(required=False, allow_null=True)
+    start_time = serializers.DateTimeField(required=False)
+    end_time = serializers.DateTimeField(required=False)
     service_id = serializers.IntegerField()
     professional_id = serializers.IntegerField()
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
     def validate_slot_id(self, value):
-        if value is None or int(value) <= 0:
+        if value is not None and int(value) <= 0:
             raise serializers.ValidationError("slot_id inválido.")
-        return int(value)
+        return int(value) if value is not None else None
 
 
 class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
@@ -838,20 +877,43 @@ class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
         if len(value) > 20:
             raise serializers.ValidationError("Máximo de 20 agendamentos por lote.")
 
-        # slots duplicados são erro de validação
+        # duplicados apenas entre itens com slot_id
         try:
-            slot_ids = [int(item["slot_id"]) for item in value]
+            slot_ids = [int(item["slot_id"]) for item in value if item.get("slot_id")]
         except Exception:
-            raise serializers.ValidationError("Itens devem conter slot_id válido.")
+            raise serializers.ValidationError("slot_id deve ser um inteiro válido.")
         if len(slot_ids) != len(set(slot_ids)):
             raise serializers.ValidationError("Slots duplicados não são permitidos.")
 
-        # Demais validações (existência, disponibilidade, compatibilidades) serão tratadas item a item na view
+        # Validar campos obrigatórios para itens sem slot_id
+        from django.utils import timezone
+
+        for item in value:
+            if not item.get("slot_id"):
+                start_time = item.get("start_time")
+                end_time = item.get("end_time")
+                item_errors: dict[str, str] = {}
+                if not start_time:
+                    item_errors["start_time"] = "Informe start_time quando slot_id não for fornecido."
+                if not end_time:
+                    item_errors["end_time"] = "Informe end_time quando slot_id não for fornecido."
+                if item_errors:
+                    raise serializers.ValidationError(item_errors)
+                if end_time <= start_time:
+                    raise serializers.ValidationError(
+                        {"end_time": "end_time deve ser posterior a start_time."}
+                    )
+                if start_time <= timezone.now():
+                    raise serializers.ValidationError(
+                        {"start_time": "Não é possível agendar horários no passado."}
+                    )
+
+        # Demais validações (existência, disponibilidade) tratadas item a item na view
         return value
 
 
 class MixedBulkItemResultSerializer(serializers.Serializer):
-    slot_id = serializers.IntegerField()
+    slot_id = serializers.IntegerField(required=False, allow_null=True)
     status = serializers.CharField()
     message = serializers.CharField()
     appointment_id = serializers.IntegerField(required=False)

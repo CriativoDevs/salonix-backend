@@ -281,3 +281,242 @@ class TestMixedBulkAppointments(TestCase):
         extras = AppointmentReservedSlot.objects.filter(appointment=appt)
         assert extras.count() == 1
         assert extras.first().slot_id == s2.id
+
+
+class TestMixedBulkStartEndTime(TestCase):
+    """Testes para mixed-bulk usando start_time/end_time (sem slot_id) e mix dos dois."""
+
+    def setUp(self):
+        Tenant.objects.all().delete()
+
+        self.tenant = Tenant.objects.create(
+            name="Salão MX", slug="salao-mx", plan_tier="pro", is_active=True
+        )
+        self.salon_user = CustomUser.objects.create_user(
+            username="salon_mx", email="salon@mx.com", password="x", tenant=self.tenant
+        )
+        self.client_user = CustomUser.objects.create_user(
+            username="client_mx",
+            email="client@mx.com",
+            password="x",
+            tenant=self.tenant,
+            phone_number="+351912345678",
+        )
+        self.service = Service.objects.create(
+            name="Corte",
+            price_eur=20.00,
+            duration_minutes=30,
+            user=self.salon_user,
+            tenant=self.tenant,
+        )
+        self.prof = Professional.objects.create(
+            name="Carlos", bio="", user=self.salon_user, tenant=self.tenant
+        )
+        ProfessionalService.objects.create(
+            tenant=self.tenant,
+            professional=self.prof,
+            service=self.service,
+            is_active=True,
+        )
+
+        self.api = APIClient()
+        self.api.force_authenticate(user=self.client_user)
+        self.url = reverse("appointment-mixed-bulk-create")
+
+    def _st(self, days=1, hour=10):
+        base = timezone.now().replace(minute=0, second=0, microsecond=0)
+        return base + timedelta(days=days, hours=hour)
+
+    # ------------------------------------------------------------------
+    # 1. Mixed-bulk totalmente com start_time/end_time
+    # ------------------------------------------------------------------
+
+    def test_all_start_end_time_creates_slots_and_appointments(self):
+        st1 = self._st(days=1, hour=10)
+        st2 = self._st(days=2, hour=14)
+
+        data = {
+            "items": [
+                {
+                    "start_time": st1.isoformat(),
+                    "end_time": (st1 + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+                {
+                    "start_time": st2.isoformat(),
+                    "end_time": (st2 + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+            ]
+        }
+
+        resp = self.api.post(self.url, data, format="json")
+        assert resp.status_code == status.HTTP_201_CREATED, resp.json()
+
+        body = resp.json()
+        assert body["appointments_created"] == 2
+        assert all(r["status"] == "created" for r in body["results"])
+
+        # Slots foram criados e estão booked
+        assert ScheduleSlot.objects.filter(
+            professional=self.prof, tenant=self.tenant, status="booked"
+        ).count() == 2
+
+    # ------------------------------------------------------------------
+    # 2. Mixed-bulk misto: slot_id + start_time/end_time
+    # ------------------------------------------------------------------
+
+    def test_mixed_slot_id_and_start_end_time(self):
+        existing_slot = ScheduleSlot.objects.create(
+            professional=self.prof,
+            start_time=self._st(days=3, hour=9),
+            end_time=self._st(days=3, hour=9) + timedelta(hours=1),
+            is_available=True,
+            tenant=self.tenant,
+        )
+        auto_st = self._st(days=4, hour=14)
+
+        data = {
+            "items": [
+                {
+                    "slot_id": existing_slot.id,
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+                {
+                    "start_time": auto_st.isoformat(),
+                    "end_time": (auto_st + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+            ]
+        }
+
+        resp = self.api.post(self.url, data, format="json")
+        assert resp.status_code == status.HTTP_201_CREATED, resp.json()
+
+        body = resp.json()
+        assert body["appointments_created"] == 2
+        assert all(r["status"] == "created" for r in body["results"])
+
+        existing_slot.refresh_from_db()
+        assert existing_slot.status == "booked"
+
+    # ------------------------------------------------------------------
+    # 3. Validação: campos obrigatórios para itens sem slot_id
+    # ------------------------------------------------------------------
+
+    def test_missing_start_time_returns_400(self):
+        st = self._st(days=5, hour=10)
+        data = {
+            "items": [
+                {
+                    "end_time": (st + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                }
+            ]
+        }
+        resp = self.api.post(self.url, data, format="json")
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "start_time" in str(resp.json())
+
+    def test_past_start_time_returns_400(self):
+        past = timezone.now() - timedelta(hours=2)
+        data = {
+            "items": [
+                {
+                    "start_time": past.isoformat(),
+                    "end_time": (past + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                }
+            ]
+        }
+        resp = self.api.post(self.url, data, format="json")
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    # ------------------------------------------------------------------
+    # 4. Sucesso parcial: item com start_time inválido não cancela os demais
+    #    (mixed-bulk mantém comportamento de sucesso parcial)
+    # ------------------------------------------------------------------
+
+    def test_partial_success_one_auto_item_fails_other_succeeds(self):
+        """
+        Mixed-bulk tem sucesso parcial: se um item (slot_id) falha,
+        o outro (start_time/end_time) ainda pode ser criado.
+        """
+        # Slot indisponível para forçar erro no primeiro item
+        bad_slot = ScheduleSlot.objects.create(
+            professional=self.prof,
+            start_time=self._st(days=6, hour=9),
+            end_time=self._st(days=6, hour=9) + timedelta(hours=1),
+            is_available=False,
+            status="booked",
+            tenant=self.tenant,
+        )
+        auto_st = self._st(days=7, hour=14)
+
+        data = {
+            "items": [
+                {
+                    "slot_id": bad_slot.id,  # indisponível
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+                {
+                    "start_time": auto_st.isoformat(),
+                    "end_time": (auto_st + timedelta(hours=1)).isoformat(),
+                    "service_id": self.service.id,
+                    "professional_id": self.prof.id,
+                },
+            ]
+        }
+
+        resp = self.api.post(self.url, data, format="json")
+        assert resp.status_code == 207  # sucesso parcial
+
+        body = resp.json()
+        assert body["appointments_created"] == 1
+        assert body["results"][0]["status"] == "error"
+        assert body["results"][1]["status"] == "created"
+
+        # Slot auto-criado está booked
+        assert ScheduleSlot.objects.filter(
+            professional=self.prof, start_time=auto_st, status="booked"
+        ).exists()
+
+    # ------------------------------------------------------------------
+    # 5. Profissional não oferece serviço no caminho auto-create
+    # ------------------------------------------------------------------
+
+    def test_auto_create_professional_not_offering_service_returns_error(self):
+        other_service = Service.objects.create(
+            name="Massagem",
+            price_eur=50.00,
+            duration_minutes=60,
+            user=self.salon_user,
+            tenant=self.tenant,
+        )
+        # Não criar ProfessionalService para this.prof + other_service
+        auto_st = self._st(days=8, hour=10)
+
+        data = {
+            "items": [
+                {
+                    "start_time": auto_st.isoformat(),
+                    "end_time": (auto_st + timedelta(hours=1)).isoformat(),
+                    "service_id": other_service.id,
+                    "professional_id": self.prof.id,
+                }
+            ]
+        }
+
+        resp = self.api.post(self.url, data, format="json")
+        # Nenhum criado → 400
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        body = resp.json()
+        assert body["results"][0]["status"] == "error"
+        assert "oferece" in body["results"][0]["message"].lower()
