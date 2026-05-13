@@ -578,19 +578,35 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
 
     def perform_create(self, serializer):
         data = cast(Dict[str, Any], serializer.validated_data)
-        slot = data["slot"]
-        if (not slot.is_available) or (slot.status != "available"):
-            raise ValidationError(
-                "Este horário já foi agendado ou não está disponível."
+        slot = data.get("slot")
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+        if slot is None:
+            # Auto-criação de slot a partir de start_time / end_time / professional
+            professional = data["professional"]
+            start_time = data.pop("start_time")
+            end_time = data.pop("end_time")
+            slot, created = ScheduleSlot.objects.get_or_create(
+                professional=professional,
+                start_time=start_time,
+                defaults={"end_time": end_time, "tenant": tenant, "is_available": True, "status": "available"},
             )
+            if not created and (not slot.is_available or slot.status != "available"):
+                raise ValidationError("Este horário já foi agendado ou não está disponível.")
+            data["slot"] = slot
+        else:
+            data.pop("start_time", None)
+            data.pop("end_time", None)
+            if (not slot.is_available) or (slot.status != "available"):
+                raise ValidationError(
+                    "Este horário já foi agendado ou não está disponível."
+                )
 
         # marca como reservado via helper do model
         slot.mark_booked()
 
-        # Definir tenant e client
-        tenant = getattr(self.request, "tenant", None) or getattr(
-            self.request.user, "tenant", None
-        )
         customer = self._ensure_customer(tenant, data.get("customer"))
 
         save_kwargs: Dict[str, Any] = {"client": self.request.user}
