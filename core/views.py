@@ -792,8 +792,8 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         notes="Gerado via seed/bulk de agendamentos.",
                     )
 
-            # pré-carregar slots
-            slot_ids = [cast(int, a["slot_id"]) for a in appointments_list]
+            # pré-carregar slots (apenas itens que informam slot_id)
+            slot_ids = [cast(int, a["slot_id"]) for a in appointments_list if a.get("slot_id")]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
             slots_by_id = {s.id: s for s in slots}
 
@@ -854,106 +854,129 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     pass
                 return None
 
-            # Processamento item a item
+            # Processamento item a item — toda a criação dentro de um único atomic
             appointments: list[Appointment] = []
             results: list[dict] = []
 
-            for appt_data in appointments_list:
-                sid = cast(int, appt_data.get("service_id") or top_service_id)
-                pid = cast(int, appt_data.get("professional_id") or top_professional_id)
-                service = services_by_id.get(sid)
-                professional = professionals_by_id.get(pid)
-                slot = slots_by_id.get(cast(int, appt_data["slot_id"]))
+            with transaction.atomic():
+                for appt_data in appointments_list:
+                    sid = cast(int, appt_data.get("service_id") or top_service_id)
+                    pid = cast(int, appt_data.get("professional_id") or top_professional_id)
+                    service = services_by_id.get(sid)
+                    professional = professionals_by_id.get(pid)
+                    raw_slot_id = appt_data.get("slot_id")
+                    slot = slots_by_id.get(cast(int, raw_slot_id)) if raw_slot_id else None
 
-                error_code = None
-                message = None
-                suggested = None
+                    error_code = None
+                    message = None
+                    suggested = None
 
-                if slot is None:
-                    error_code = "slot_not_found"
-                    message = "Slot não encontrado para este tenant."
-                else:
-                    # Compatibilidade com profissional
-                    if slot.professional_id != professional.id:
-                        error_code = "slot_wrong_professional"
-                        message = "Slot não pertence ao profissional informado."
+                    if raw_slot_id and slot is None:
+                        error_code = "slot_not_found"
+                        message = "Slot não encontrado para este tenant."
+                    elif raw_slot_id and slot is not None:
+                        # Compatibilidade com profissional
+                        if slot.professional_id != professional.id:
+                            error_code = "slot_wrong_professional"
+                            message = "Slot não pertence ao profissional informado."
 
-                    # Passado
-                    if error_code is None and slot.start_time <= timezone.now():
-                        error_code = "slot_in_past"
-                        message = "Slot no passado."
+                        # Passado
+                        if error_code is None and slot.start_time <= timezone.now():
+                            error_code = "slot_in_past"
+                            message = "Slot no passado."
 
-                    # Disponibilidade
-                    if error_code is None and (
-                        not slot.is_available
-                        or getattr(slot, "status", "available") != "available"
-                    ):
-                        error_code = "slot_unavailable"
-                        message = "Slot indisponível."
+                        # Disponibilidade
+                        if error_code is None and (
+                            not slot.is_available
+                            or getattr(slot, "status", "available") != "available"
+                        ):
+                            error_code = "slot_unavailable"
+                            message = "Slot indisponível."
 
-                if error_code is None and slot is not None:
-                    if suggest_only:
-                        # Apenas sugerir (não criar/agendar)
-                        suggested = {
-                            "slot_id": slot.id,
-                            "start_time": slot.start_time,
-                            "end_time": slot.end_time,
-                            "professional_id": professional.id,
-                        }
+                    if error_code is None:
+                        if suggest_only and slot is not None:
+                            # Apenas sugerir (não criar/agendar); válido só para itens com slot_id
+                            suggested = {
+                                "slot_id": slot.id,
+                                "start_time": slot.start_time,
+                                "end_time": slot.end_time,
+                                "professional_id": professional.id,
+                            }
+                            results.append(
+                                {
+                                    "slot_id": slot.id,
+                                    "status": "ok",
+                                    "message": "Slot disponível.",
+                                    "suggested_slot": suggested,
+                                }
+                            )
+                        else:
+                            if not raw_slot_id:
+                                # Auto-criação de slot a partir de start_time/end_time
+                                slot, _ = ScheduleSlot.objects.get_or_create(
+                                    professional=professional,
+                                    start_time=appt_data["start_time"],
+                                    end_time=appt_data["end_time"],
+                                    tenant=tenant,
+                                    defaults={"is_available": True, "status": "available"},
+                                )
+                                if not slot.is_available or slot.status != "available":
+                                    error_code = "slot_occupied"
+                                    message = "O horário informado já está ocupado."
+                            if error_code is None:
+                                slot.mark_booked()
+                                appointment = Appointment.objects.create(
+                                    client=user,
+                                    service=service,
+                                    professional=professional,
+                                    slot=slot,
+                                    notes=str(
+                                        appt_data.get("notes") or data.get("notes") or ""
+                                    ),
+                                    status="scheduled",
+                                    tenant=tenant,
+                                    customer=customer,
+                                )
+                                appointments.append(appointment)
+
+                                raw_unit = getattr(service, "price_eur", None) or getattr(
+                                    service, "price", 0
+                                )
+                                try:
+                                    unit_price = Decimal(str(raw_unit))
+                                except Exception:
+                                    unit_price = Decimal("0")
+                                total_value_dec += unit_price
+
+                                results.append(
+                                    {
+                                        "slot_id": slot.id,
+                                        "status": "created",
+                                        "appointment_id": appointment.id,
+                                        "message": "Agendamento criado.",
+                                    }
+                                )
+
+                    if error_code is not None:
+                        # Item inválido — sugerir próximo slot (apenas quando há slot de referência)
+                        if slot is not None and professional is not None:
+                            suggested = suggest_next_slot(professional, slot)
                         results.append(
                             {
-                                "slot_id": slot.id,
-                                "status": "ok",
-                                "message": "Slot disponível.",
+                                "slot_id": cast(int, raw_slot_id) if raw_slot_id else None,
+                                "status": "error",
+                                "error_code": error_code or "invalid",
+                                "message": message or "Item inválido.",
                                 "suggested_slot": suggested,
                             }
                         )
-                    else:
-                        # Criar — deixe exceções propagarem para garantir transação atômica (500)
-                        with transaction.atomic():
-                            slot.mark_booked()
-                            appointment = Appointment.objects.create(
-                                client=user,
-                                service=service,
-                                professional=professional,
-                                slot=slot,
-                                notes=str(
-                                    appt_data.get("notes") or data.get("notes") or ""
-                                ),
-                                status="scheduled",
-                                tenant=tenant,
-                                customer=customer,
-                            )
-                        appointments.append(appointment)
 
-                        raw_unit = getattr(service, "price_eur", None) or getattr(
-                            service, "price", 0
-                        )
-                        try:
-                            unit_price = Decimal(str(raw_unit))
-                        except Exception:
-                            unit_price = Decimal("0")
-                        total_value_dec += unit_price
-
-                        results.append(
-                            {
-                                "slot_id": slot.id,
-                                "status": "created",
-                                "appointment_id": appointment.id,
-                                "message": "Agendamento criado.",
-                            }
-                        )
-                else:
-                    # Item inválido — sugerir próximo slot
-                    if slot is not None and professional is not None:
-                        suggested = suggest_next_slot(professional, slot)
-                    results.append(
+                # Qualquer item inválido cancela a transação inteira (tudo ou nada)
+                if not suggest_only and any(r.get("status") == "error" for r in results):
+                    raise ValidationError(
                         {
-                            "slot_id": cast(int, appt_data["slot_id"]),
-                            "status": "error",
-                            "error_code": error_code or "invalid",
-                            "message": message or "Item inválido.",
-                            "suggested_slot": suggested,
+                            "detail": "Transação cancelada: um ou mais itens inválidos.",
+                            "errors": [r for r in results if r.get("status") == "error"],
                         }
                     )
 
@@ -1184,7 +1207,7 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 
         # Pré-carregar slots/serviços/profissionais
         item_list = cast(List[Dict[str, Any]], data.get("items") or [])
-        slot_ids = [int(item["slot_id"]) for item in item_list]
+        slot_ids = [int(item["slot_id"]) for item in item_list if item.get("slot_id")]
         service_ids = [int(item["service_id"]) for item in item_list]
         professional_ids = [int(item["professional_id"]) for item in item_list]
 
@@ -1310,7 +1333,8 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 
         # Processar itens com sucesso parcial
         for item in item_list:
-            slot = slots_by_id.get(int(item["slot_id"]))
+            raw_slot_id = item.get("slot_id")
+            slot = slots_by_id.get(int(raw_slot_id)) if raw_slot_id else None
             service = services_by_id.get(int(item["service_id"]))
             professional = professionals_by_id.get(int(item["professional_id"]))
             suggested = None
@@ -1318,10 +1342,13 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             error_code = None
             message = None
 
-            if slot is None or service is None or professional is None:
+            if service is None or professional is None:
                 error_code = "not_found"
                 message = "Item inválido: recurso não encontrado."
-            else:
+            elif raw_slot_id and slot is None:
+                error_code = "not_found"
+                message = "Slot não encontrado para este tenant."
+            elif slot is not None:
                 if slot.professional_id != professional.id:
                     error_code = "wrong_professional"
                     message = "Slot não pertence ao profissional informado."
@@ -1358,16 +1385,33 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     ).exists():
                         error_code = "not_offered"
                         message = "Profissional não oferece o serviço."
+            else:
+                # Caminho auto-criação: apenas validar que profissional oferece o serviço
+                if not ProfessionalService.objects.filter(
+                    tenant=tenant,
+                    service_id=service.id,
+                    professional_id=professional.id,
+                ).exists():
+                    error_code = "not_offered"
+                    message = "Profissional não oferece o serviço."
 
-            if (
-                error_code is None
-                and slot is not None
-                and service is not None
-                and professional is not None
-            ):
+            if error_code is None and service is not None and professional is not None:
                 try:
                     with transaction.atomic():
-                        # Reservar bloco contínuo se necessário
+                        if not raw_slot_id:
+                            # Auto-criação de slot a partir de start_time/end_time
+                            slot, _ = ScheduleSlot.objects.get_or_create(
+                                professional=professional,
+                                start_time=item["start_time"],
+                                end_time=item["end_time"],
+                                tenant=tenant,
+                                defaults={"is_available": True, "status": "available"},
+                            )
+                            if not slot.is_available or slot.status != "available":
+                                raise ValidationError(
+                                    "O horário informado já está ocupado."
+                                )
+                        # Reservar bloco contínuo se necessário (apenas para slots pré-existentes)
                         try:
                             duration = int(getattr(service, "duration_minutes", 0) or 0)
                         except Exception:
@@ -1376,10 +1420,9 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             (slot.end_time - slot.start_time).total_seconds() // 60
                         )
                         extra_slots: List[ScheduleSlot] = []
-                        if duration > slot_minutes:
+                        if raw_slot_id and duration > slot_minutes:
                             block = _find_contiguous_block(slot, duration)
-                            # Neste ponto, já validado; reservar todos
-                            for s in block[1:]:  # primeiro é o slot atual
+                            for s in block[1:]:
                                 s.mark_booked()
                                 extra_slots.append(s)
                         slot.mark_booked()
@@ -1393,7 +1436,6 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             tenant=tenant,
                             customer=customer,
                         )
-                        # Persistir vínculo para slots extras
                         if extra_slots:
                             from core.models import AppointmentReservedSlot
 
@@ -1421,10 +1463,10 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         }
                     )
                 except Exception as e:
-                    suggested = _suggest_next_slot(professional, slot)
+                    suggested = _suggest_next_slot(professional, slot) if slot is not None else None
                     results.append(
                         {
-                            "slot_id": slot.id,
+                            "slot_id": slot.id if slot is not None else None,
                             "status": "error",
                             "message": f"Falha ao criar agendamento: {str(e)}",
                             "suggested_slot": suggested,
@@ -1447,7 +1489,7 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     )
                 results.append(
                     {
-                        "slot_id": int(item.get("slot_id")),
+                        "slot_id": int(raw_slot_id) if raw_slot_id else None,
                         "status": "error",
                         "message": message or "Item inválido.",
                         "suggested_slot": suggested,
