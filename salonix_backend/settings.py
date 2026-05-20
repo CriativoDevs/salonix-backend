@@ -120,6 +120,7 @@ INSTALLED_APPS = [
     "payments",
     "reports",
     "captcha",
+    "cms",
 ]
 
 # Silenciar warnings de URLField default em Django 6
