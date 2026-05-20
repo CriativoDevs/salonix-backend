@@ -46,8 +46,8 @@ from payments.models import Subscription, PaymentCustomer
 from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
 from reports.models import ExportJob, DailyReportAggregate
 from reports.admin import ExportJobAdmin, DailyReportAggregateAdmin
-from cms.models import PublicPage, PageSEO
-from cms.admin import PublicPageAdmin
+from cms.models import PublicPage, PageSEO, RoadmapItem
+from cms.admin import PublicPageAdmin, RoadmapItemAdmin
 from datetime import datetime, timedelta
 
 
@@ -330,3 +330,4 @@ admin_site.register(ExportJob, ExportJobAdmin)
 admin_site.register(DailyReportAggregate, DailyReportAggregateAdmin)
 
 admin_site.register(PublicPage, PublicPageAdmin)
+admin_site.register(RoadmapItem, RoadmapItemAdmin)

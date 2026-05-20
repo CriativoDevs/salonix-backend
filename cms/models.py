@@ -1,5 +1,4 @@
 from django.db import models
-from typing import cast, Any
 
 
 class PublicPage(models.Model):
@@ -63,3 +62,31 @@ class PageSEO(models.Model):
 
     def __str__(self):
         return f"SEO: {self.page.title}"
+
+
+class RoadmapItem(models.Model):
+    STATUS_PLANNED = "planned"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_DELIVERED = "delivered"
+    STATUS_CHOICES = [
+        (STATUS_PLANNED, "Planejado"),
+        (STATUS_IN_PROGRESS, "Em andamento"),
+        (STATUS_DELIVERED, "Entregue"),
+    ]
+
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PLANNED)
+    order = models.PositiveIntegerField(default=0, help_text="Menor numero aparece primeiro.")
+    is_visible = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("order", "created_at")
+        indexes = [
+            models.Index(fields=["is_visible", "order"], name="cms_roadmap_visible_order_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.get_status_display()})"
