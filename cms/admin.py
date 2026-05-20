@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from cms.models import PublicPage, PageSEO
+from cms.models import PublicPage, PageSEO, RoadmapItem
 
 
 class PageSEOInline(admin.StackedInline):
@@ -61,3 +61,39 @@ class PublicPageAdmin(admin.ModelAdmin):
         for page in queryset:
             page.unpublish()
         self.message_user(request, f"{queryset.count()} pagina(s) movida(s) para draft.")
+
+
+@admin.register(RoadmapItem)
+class RoadmapItemAdmin(admin.ModelAdmin):
+    list_display = ("title", "status", "order", "is_visible", "visible_badge", "updated_at")
+    list_filter = ("status", "is_visible")
+    search_fields = ("title", "description")
+    list_editable = ("order", "is_visible")
+    actions = ["make_visible", "make_hidden"]
+
+    fieldsets = (
+        ("Conteudo", {
+            "fields": ("title", "description", "status"),
+        }),
+        ("Visibilidade e Ordem", {
+            "fields": ("is_visible", "order"),
+        }),
+    )
+
+    def visible_badge(self, obj):
+        if obj.is_visible:
+            return format_html('<span style="color:green;font-weight:bold;">Visivel</span>')
+        return format_html('<span style="color:gray;">Oculto</span>')
+
+    visible_badge.short_description = "Visibilidade"
+    visible_badge.admin_order_field = "is_visible"
+
+    @admin.action(description="Tornar visiveis os itens selecionados")
+    def make_visible(self, request, queryset):
+        queryset.update(is_visible=True)
+        self.message_user(request, f"{queryset.count()} item(ns) marcado(s) como visivel.")
+
+    @admin.action(description="Ocultar os itens selecionados")
+    def make_hidden(self, request, queryset):
+        queryset.update(is_visible=False)
+        self.message_user(request, f"{queryset.count()} item(ns) ocultado(s).")
