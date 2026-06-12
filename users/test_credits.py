@@ -99,13 +99,14 @@ class CreditServiceTestCase(TestCase):
             created_by=self.user,
         )
 
+        # BE-PLANS-01 (#481): plano Pro bloqueado não recebe crédito inicial,
+        # portanto o histórico contém apenas as transações criadas no teste.
         history = self.credit_service.get_credit_history()
-        self.assertEqual(len(history), 3)
+        self.assertEqual(len(history), 2)
 
         # Verifica ordenação (mais recente primeiro)
         self.assertEqual(history[0].description, "Test 2")
         self.assertEqual(history[1].description, "Test 1")
-        self.assertIn("Crédito inicial", history[2].description)
 
     def test_get_credit_stats(self):
         """Testa obtenção de estatísticas de créditos."""
@@ -130,8 +131,9 @@ class CreditServiceTestCase(TestCase):
 
         self.assertEqual(stats["total_purchased"], Decimal("10.00"))
         self.assertEqual(stats["total_consumed"], Decimal("3.00"))
-        # 5.00 (bonus test) + 15.00 (initial credit pro plan) = 20.00
-        self.assertEqual(stats["total_bonus"], Decimal("20.00"))
+        # BE-PLANS-01 (#481): Pro bloqueado não recebe crédito inicial;
+        # apenas os 5.00 do bônus criado no teste.
+        self.assertEqual(stats["total_bonus"], Decimal("5.00"))
 
 
 class CreditEndpointsTestCase(APITestCase):
@@ -184,7 +186,9 @@ class CreditEndpointsTestCase(APITestCase):
         data = response.json()
         results = data["results"]
 
-        self.assertEqual(len(results), 2)
+        # BE-PLANS-01 (#481): Pro bloqueado não recebe crédito inicial,
+        # então o histórico contém apenas a transação criada no teste.
+        self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["transaction_type"], "consumption")
         self.assertEqual(results[0]["amount_eur"], "2.00")
 
@@ -306,10 +310,12 @@ class TenantCreditMethodsTestCase(TestCase):
 
     def test_can_use_custom_domain(self):
         """Testa método can_use_custom_domain."""
+        # Sem a flag custom_domain_enabled, nenhum plano permite
         self.assertFalse(self.tenant_basic.can_use_custom_domain())
         self.assertTrue(self.tenant_pro.can_use_custom_domain())
 
-        # Mesmo com custom_domain_enabled=True, plano básico não deve permitir
+        # BE-PLANS-01 (#481): Basic absorveu domínio personalizado;
+        # com a flag habilitada, o Basic passa a permitir.
         self.tenant_basic.custom_domain_enabled = True
         self.tenant_basic.save()
-        self.assertFalse(self.tenant_basic.can_use_custom_domain())
+        self.assertTrue(self.tenant_basic.can_use_custom_domain())

@@ -166,28 +166,21 @@ class TestOpsTenantsEndpoints:
         access = ops_authenticate(admin.email)
         url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
 
+        # BE-PLANS-01 (#481): todos os planos ativos suportam SMS/WhatsApp/addons;
+        # a mudança de plano não gera mais conflitos nem exige force.
         response = api_client.post(
             url,
             {"plan_tier": Tenant.PLAN_BASIC},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )
-        assert response.status_code == status.HTTP_409_CONFLICT
-        assert "conflicts" in response.data
-        assert len(response.data["conflicts"]) > 0
-
-        response = api_client.post(
-            url,
-            {"plan_tier": Tenant.PLAN_BASIC, "force": True},
-            format="json",
-            HTTP_AUTHORIZATION=f"Bearer {access}",
-        )
         assert response.status_code == status.HTTP_200_OK
         tenant.refresh_from_db()
         assert tenant.plan_tier == Tenant.PLAN_BASIC
-        assert tenant.sms_enabled is False
-        assert tenant.whatsapp_enabled is False
-        assert "rn_admin" not in (tenant.addons_enabled or [])
+        # Features absorvidas permanecem habilitadas após a mudança de plano
+        assert tenant.sms_enabled is True
+        assert tenant.whatsapp_enabled is True
+        assert "rn_admin" in (tenant.addons_enabled or [])
 
     def test_plan_downgrade_invalidates_tenant_sessions_only(
         self,
@@ -279,9 +272,10 @@ class TestOpsTenantsEndpoints:
 
         access = ops_authenticate(admin.email)
         url = reverse("ops-tenants-update-plan", kwargs={"pk": tenant.id})
+        # BE-PLANS-01 (#481): Pro bloqueado; upgrade de teste passa a usar Founder.
         response = api_client.post(
             url,
-            {"plan_tier": Tenant.PLAN_PRO},
+            {"plan_tier": Tenant.PLAN_FOUNDER},
             format="json",
             HTTP_AUTHORIZATION=f"Bearer {access}",
         )

@@ -6,6 +6,8 @@ A permissão avalia o header X-App-Type (admin/client/web) e verifica o
 entitlement do tenant antes de conceder acesso.
 """
 
+from unittest.mock import patch
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import PermissionDenied
@@ -188,15 +190,27 @@ class TestRequiresMobileAccessPermission:
     # Admin App — X-App-Type: admin
     # ------------------------------------------------------------------
 
-    def test_basic_tenant_admin_app_is_denied_with_payload(
+    def test_basic_tenant_admin_app_is_allowed(
         self, factory, tenant_basic, django_user_model
     ):
-        """Basic com X-App-Type: admin deve levantar 403 com payload de upgrade."""
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; admin liberado."""
+        user = django_user_model.objects.get(email="owner@basictenant.com")
+        request = _make_request(factory, app_type="admin")
+        request.user = user
+        assert RequiresMobileAccess().has_permission(request, MockMobileView()) is True
+
+    def test_tenant_without_entitlement_admin_app_is_denied_with_payload(
+        self, factory, tenant_basic, django_user_model
+    ):
+        """Sem entitlement (mockado), X-App-Type: admin deve levantar 403 com payload."""
+        from users.models import Tenant
+
         user = django_user_model.objects.get(email="owner@basictenant.com")
         request = _make_request(factory, app_type="admin")
         request.user = user
 
-        with pytest.raises(PermissionDenied) as exc_info:
+        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
+                pytest.raises(PermissionDenied) as exc_info:
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         detail = exc_info.value.detail
@@ -228,15 +242,27 @@ class TestRequiresMobileAccessPermission:
     # Client App — X-App-Type: client
     # ------------------------------------------------------------------
 
-    def test_basic_tenant_client_app_is_denied_with_payload(
+    def test_basic_tenant_client_app_is_allowed_by_plan(
         self, factory, tenant_basic, django_user_model
     ):
-        """Basic com X-App-Type: client deve levantar 403 com payload de upgrade."""
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; client liberado."""
+        user = django_user_model.objects.get(email="owner@basictenant.com")
+        request = _make_request(factory, app_type="client")
+        request.user = user
+        assert RequiresMobileAccess().has_permission(request, MockMobileView()) is True
+
+    def test_tenant_without_entitlement_client_app_is_denied_with_payload(
+        self, factory, tenant_basic, django_user_model
+    ):
+        """Sem entitlement (mockado), X-App-Type: client deve levantar 403 com payload."""
+        from users.models import Tenant
+
         user = django_user_model.objects.get(email="owner@basictenant.com")
         request = _make_request(factory, app_type="client")
         request.user = user
 
-        with pytest.raises(PermissionDenied) as exc_info:
+        with patch.object(Tenant, "can_use_native_client", return_value=False), \
+                pytest.raises(PermissionDenied) as exc_info:
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         detail = exc_info.value.detail
@@ -272,16 +298,20 @@ class TestRequiresMobileAccessPermission:
         self, factory, tenant_basic, django_user_model
     ):
         """Mensagem de erro deve diferenciar Admin App de Client App."""
+        from users.models import Tenant
+
         user = django_user_model.objects.get(email="owner@basictenant.com")
 
         request_admin = _make_request(factory, app_type="admin")
         request_admin.user = user
-        with pytest.raises(PermissionDenied) as admin_exc:
+        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
+                pytest.raises(PermissionDenied) as admin_exc:
             RequiresMobileAccess().has_permission(request_admin, MockMobileView())
 
         request_client = _make_request(factory, app_type="client")
         request_client.user = user
-        with pytest.raises(PermissionDenied) as client_exc:
+        with patch.object(Tenant, "can_use_native_client", return_value=False), \
+                pytest.raises(PermissionDenied) as client_exc:
             RequiresMobileAccess().has_permission(request_client, MockMobileView())
 
         assert admin_exc.value.detail["detail"] != client_exc.value.detail["detail"]
@@ -294,11 +324,14 @@ class TestRequiresMobileAccessPermission:
         self, factory, tenant_basic, django_user_model
     ):
         """X-App-Type: ADMIN (maiúsculo) deve ser tratado igual a admin."""
+        from users.models import Tenant
+
         user = django_user_model.objects.get(email="owner@basictenant.com")
         request = _make_request(factory, app_type="ADMIN")
         request.user = user
 
-        with pytest.raises(PermissionDenied) as exc_info:
+        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
+                pytest.raises(PermissionDenied) as exc_info:
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         assert exc_info.value.detail["code"] == "PLAN_UPGRADE_REQUIRED"

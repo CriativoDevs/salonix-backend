@@ -91,9 +91,9 @@ class CreateCheckoutSession(APIView):
         requested_plan = (request.data.get("plan") or "basic").lower()
         requested_interval = (request.data.get("interval") or "monthly").lower()
 
+        # BE-PLANS-01 (#481): plano Pro bloqueado para novas subscrições.
         allowed_plans = {
             "basic",
-            "pro",
             "founder",
         }
 
@@ -430,6 +430,19 @@ class StripeWebhookView(APIView):
                         else getattr(tenant, "PLAN_BASIC", "basic")
                     )
 
+                # BE-PLANS-01 (#481): evento residual de plano bloqueado (ex: Pro)
+                # não pode reativar o plano — loga e mantém o plano atual.
+                if desired_plan and Tenant.is_plan_blocked(desired_plan):
+                    logger.warning(
+                        "Blocked plan received from Stripe event; keeping current plan",
+                        extra={
+                            "tenant_id": tenant.id,
+                            "blocked_plan": desired_plan,
+                            "current_plan": tenant.plan_tier,
+                        },
+                    )
+                    desired_plan = None
+
                 if desired_plan and tenant.plan_tier != desired_plan:
                     old_plan = tenant.plan_tier
                     tenant.plan_tier = desired_plan
@@ -624,7 +637,16 @@ class StripeWebhookView(APIView):
                                             f"[WEBHOOK] Tenant {tenant.slug} promoted to Founder."
                                         )
 
-                                if tenant.plan_tier != target_tier:
+                                # BE-PLANS-01 (#481): nunca sincronizar para plano bloqueado.
+                                if Tenant.is_plan_blocked(target_tier):
+                                    logger.warning(
+                                        "[WEBHOOK] Blocked plan in metadata; keeping current plan",
+                                        extra={
+                                            "tenant_id": tenant.id,
+                                            "blocked_plan": target_tier,
+                                        },
+                                    )
+                                elif tenant.plan_tier != target_tier:
                                     logger.info(
                                         f"[WEBHOOK] Forcing tenant plan update: {tenant.plan_tier} -> {target_tier}"
                                     )
@@ -1392,7 +1414,13 @@ class BillingOverviewView(APIView):
                 tenant = getattr(request.user, "tenant", None)
                 current = overview.get("current_subscription") or {}
                 plan_code = current.get("plan_code")
-                if tenant and plan_code and tenant.plan_tier != plan_code:
+                # BE-PLANS-01 (#481): nunca sincronizar para plano bloqueado.
+                if (
+                    tenant
+                    and plan_code
+                    and tenant.plan_tier != plan_code
+                    and not Tenant.is_plan_blocked(plan_code)
+                ):
                     old = tenant.plan_tier
                     tenant.plan_tier = plan_code
                     tenant.save(update_fields=["plan_tier", "updated_at"])
@@ -1527,13 +1555,8 @@ class StripeSettingsView(APIView):
         auto_renewal = serializer.validated_data["auto_renewal"]
         old_value = bool(getattr(tenant, "comm_auto_renew", False))
 
-        # Validar plano para habilitar auto-renovação (Pro+)
-        if auto_renewal and tenant.plan_tier != Tenant.PLAN_PRO:
-            PAYMENTS_SETTINGS_UPDATED_TOTAL.labels(result="forbidden").inc()
-            return Response(
-                {"detail": "Renovação automática disponível apenas em planos Pro"},
-                status=403,
-            )
+        # BE-PLANS-01 (#481): auto-renovação era exclusiva do Pro; feature absorvida
+        # por todos os planos ativos (valores de créditos não mudam).
 
         try:
             setattr(tenant, "comm_auto_renew", auto_renewal)

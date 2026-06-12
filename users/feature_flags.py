@@ -105,10 +105,13 @@ def requires_plan(min_plan, error_message=None):
                 raise PermissionDenied("Usuário não possui tenant associado.")
 
             tenant = request.user.tenant
+            # BE-PLANS-01 (#481): Basic e Founder absorveram as features do Pro;
+            # todos os planos ativos satisfazem qualquer requisito de plano.
             plan_hierarchy = {
-                "basic": 0,
-                "standard": 1,
+                "basic": 2,
+                "standard": 2,
                 "pro": 2,
+                "founder": 2,
             }
 
             current_plan_level = plan_hierarchy.get(tenant.plan_tier, 0)
@@ -149,10 +152,13 @@ class RequiresPlan(BasePermission):
             return False
 
         tenant = request.user.tenant
+        # BE-PLANS-01 (#481): Basic e Founder absorveram as features do Pro;
+        # todos os planos ativos satisfazem qualquer requisito de plano.
         plan_hierarchy = {
-            "basic": 0,
-            "standard": 1,
+            "basic": 2,
+            "standard": 2,
             "pro": 2,
+            "founder": 2,
         }
 
         current_plan_level = plan_hierarchy.get(tenant.plan_tier, 0)

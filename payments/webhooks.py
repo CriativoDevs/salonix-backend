@@ -11,6 +11,7 @@ from django.utils import timezone
 from decimal import Decimal
 
 from .models import CreditPayment, StripeWebhookEvent, PaymentCustomer, Subscription
+from users.models import Tenant
 from users.services import CreditService
 from . import stripe_utils
 
@@ -248,8 +249,14 @@ class StripeWebhookView(View):
                 flags.save()
 
                 # Atualizar tenant plan_tier
+                # BE-PLANS-01 (#481): nunca atribuir plano bloqueado via webhook.
                 tenant = payment_customer.user.tenant
-                if tenant:
+                if tenant and Tenant.is_plan_blocked(plan_code):
+                    logger.warning(
+                        "Blocked plan from Stripe webhook ignored",
+                        extra={"tenant_id": tenant.id, "blocked_plan": plan_code},
+                    )
+                elif tenant:
                     tenant.plan_tier = plan_code
                     tenant.save()
 
@@ -310,8 +317,14 @@ class StripeWebhookView(View):
                 flags.pro_plan = "pro" if flags.is_pro else None
                 flags.save()
 
+                # BE-PLANS-01 (#481): nunca atribuir plano bloqueado via webhook.
                 tenant = payment_customer.user.tenant
-                if tenant:
+                if tenant and Tenant.is_plan_blocked(plan_code):
+                    logger.warning(
+                        "Blocked plan from Stripe webhook ignored",
+                        extra={"tenant_id": tenant.id, "blocked_plan": plan_code},
+                    )
+                elif tenant:
                     tenant.plan_tier = plan_code
                     tenant.save()
 

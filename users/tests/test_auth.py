@@ -206,9 +206,10 @@ class TestAuthEndpoints:
         )
         assert refresh_resp.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_me_profile_admin_app_denied_for_basic_tenant(
+    def test_me_profile_admin_app_allowed_for_basic_tenant(
         self, user_fixture, tenant_fixture
     ):
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; Admin App liberado."""
         tenant_fixture.plan_tier = "basic"
         tenant_fixture.rn_admin_enabled = False
         tenant_fixture.save(
@@ -218,11 +219,7 @@ class TestAuthEndpoints:
         self.client.force_authenticate(user=user_fixture)
         response = self.client.get(self.me_profile_url, HTTP_X_APP_TYPE="admin")
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.data["error"]["code"] == "E004"
-        assert response.data["error"]["details"]["code"] == "PLAN_UPGRADE_REQUIRED"
-        assert response.data["error"]["details"]["current_plan"] == "basic"
-        assert response.data["error"]["details"]["plan_required"] == "pro"
+        assert response.status_code == status.HTTP_200_OK
 
     def test_me_profile_admin_app_allowed_for_pro_tenant(self, user_fixture):
         self.client.force_authenticate(user=user_fixture)

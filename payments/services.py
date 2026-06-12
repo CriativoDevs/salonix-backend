@@ -227,14 +227,20 @@ class SubscriptionService:
     """Serviço para gerenciar assinaturas Stripe."""
 
     # Definição dos planos disponíveis
+    # BE-PLANS-01 (#481): o Basic absorveu as features que eram exclusivas do Pro
+    # (preço e créditos inalterados). O Pro permanece definido apenas como
+    # referência histórica/reativação futura — está em Tenant.BLOCKED_PLANS e não
+    # aparece em listagens públicas nem pode ser contratado.
     AVAILABLE_PLANS = {
         "basic": {
             "name": "Basic",
             "price_monthly": Decimal("29.00"),
             "features": [
                 "PWA Admin/Manager/Staff/Client",
-                "Relatórios básicos (Overview)",
-                "Email e web push",
+                "Apps Nativos (Admin/Staff/Client)",
+                "Relatórios completos (Overview + Business + Insights)",
+                "White‑label e Domínio personalizado",
+                "Email, web push e notificações avançadas (SMS/WhatsApp)",
             ],
             "credits_included": Decimal("5.00"),
             "comm_extra_allowed": True,
@@ -272,7 +278,10 @@ class SubscriptionService:
         from users.services import FounderService
 
         plans = []
-        plan_order = ["basic", "pro"]
+        # BE-PLANS-01 (#481): planos bloqueados não aparecem na listagem pública.
+        plan_order = [
+            code for code in ["basic", "pro"] if not Tenant.is_plan_blocked(code)
+        ]
         current_index = (
             plan_order.index(current_plan) if current_plan in plan_order else -1
         )
@@ -321,8 +330,13 @@ class SubscriptionService:
                 },
             )
 
-        print(
-            f"[get_available_plans] tenant={tenant}, founder_available={founder_available}, plans={[p['plan_code'] for p in plans]}"
+        logger.debug(
+            "get_available_plans resolved",
+            extra={
+                "tenant_id": getattr(tenant, "id", None),
+                "founder_available": founder_available,
+                "plans": [p["plan_code"] for p in plans],
+            },
         )
         return plans
 

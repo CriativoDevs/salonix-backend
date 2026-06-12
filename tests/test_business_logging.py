@@ -501,7 +501,7 @@ class TestBusinessLogging:
             {"url": "http://checkout.stripe.com", "id": "sess_123"},
         )
 
-        data = {"plan": "pro", "period": "monthly"}
+        data = {"plan": "basic", "period": "monthly"}
 
         caplog.clear()
         with caplog.at_level(logging.INFO, logger="payments.views"):
@@ -519,5 +519,5 @@ class TestBusinessLogging:
         assert len(log_records) > 0
         record = log_records[0]
         assert getattr(record, "tenant_id", None) == tenant.slug
-        assert getattr(record, "plan_code", None) == "pro"
+        assert getattr(record, "plan_code", None) == "basic"
         assert getattr(record, "checkout_url", None) == "http://checkout.stripe.com"

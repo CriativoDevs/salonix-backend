@@ -11,6 +11,8 @@ Cenários testados:
 - Web login (sem header) funciona independente do plano
 """
 
+from unittest.mock import patch
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -102,12 +104,8 @@ class TestMobileAppAccessControl:
     # ADMIN APP ACCESS TESTS
     # ========================================================================
 
-    def test_basic_tenant_cannot_access_admin_app(self, tenant_basic):
-        """
-        Basic tenant (€29) tenta logar no Admin App → HTTP 403
-
-        Expectativa: Backend bloqueia com mensagem de upgrade
-        """
+    def test_basic_tenant_can_access_admin_app(self, tenant_basic):
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; login admin liberado."""
         response = self.client.post(
             self.token_url,
             data={
@@ -116,6 +114,23 @@ class TestMobileAppAccessControl:
             },
             HTTP_X_APP_TYPE="admin",
         )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "access" in response.data
+
+    def test_tenant_without_entitlement_cannot_access_admin_app(self, tenant_basic):
+        """Sem entitlement (mockado), login no Admin App → HTTP 403 com upgrade."""
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_admin", return_value=False):
+            response = self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="admin",
+            )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "detail" in response.data
@@ -167,12 +182,8 @@ class TestMobileAppAccessControl:
     # CLIENT APP ACCESS TESTS
     # ========================================================================
 
-    def test_basic_tenant_cannot_access_client_app(self, tenant_basic):
-        """
-        Basic tenant (€29) tenta logar no Client App → HTTP 403
-
-        Expectativa: Backend bloqueia com mensagem de upgrade para Pro
-        """
+    def test_basic_tenant_can_access_client_app(self, tenant_basic):
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; login client liberado."""
         response = self.client.post(
             self.token_url,
             data={
@@ -181,6 +192,23 @@ class TestMobileAppAccessControl:
             },
             HTTP_X_APP_TYPE="client",
         )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "access" in response.data
+
+    def test_tenant_without_entitlement_cannot_access_client_app(self, tenant_basic):
+        """Sem entitlement (mockado), login no Client App → HTTP 403 com upgrade."""
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_client", return_value=False):
+            response = self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="client",
+            )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Pro" in response.data["detail"]  # Mention Pro plan
@@ -309,14 +337,17 @@ class TestMobileAppAccessControl:
 
         Expectativa: Payload estruturado para frontend exibir modal de upgrade
         """
-        response = self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@basictenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="admin",
-        )
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_admin", return_value=False):
+            response = self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="admin",
+            )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -361,14 +392,17 @@ class TestMobileAppAccessControl:
 
         Expectativa: Backend normaliza header para lowercase
         """
-        response = self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@basictenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="ADMIN",  # Uppercase
-        )
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_admin", return_value=False):
+            response = self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="ADMIN",  # Uppercase
+            )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert response.data["plan_required"] == "pro"
@@ -446,15 +480,18 @@ class TestMobileAppAccessMetrics:
             event="login_admin_denied", result="failure"
         )._value._value
 
-        # Attempt login
-        self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@basictenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="admin",
-        )
+        # Attempt login (entitlement mockado para exercitar negação)
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_admin", return_value=False):
+            self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="admin",
+            )
 
         # Verify metric incremented
         final_value = USERS_AUTH_EVENTS_TOTAL.labels(
@@ -475,14 +512,17 @@ class TestMobileAppAccessMetrics:
             event="login_client_denied", result="failure"
         )._value._value
 
-        self.client.post(
-            self.token_url,
-            data={
-                "email": "owner@basictenant.com",
-                "password": "Test123!@#",
-            },
-            HTTP_X_APP_TYPE="client",
-        )
+        from users.models import Tenant
+
+        with patch.object(Tenant, "can_use_native_client", return_value=False):
+            self.client.post(
+                self.token_url,
+                data={
+                    "email": "owner@basictenant.com",
+                    "password": "Test123!@#",
+                },
+                HTTP_X_APP_TYPE="client",
+            )
 
         final_value = USERS_AUTH_EVENTS_TOTAL.labels(
             event="login_client_denied", result="failure"

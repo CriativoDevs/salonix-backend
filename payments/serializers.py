@@ -8,6 +8,16 @@ class CheckoutSessionRequestSerializer(serializers.Serializer):
         required=False,
         help_text="Plano desejado",
     )
+
+    def validate_plan(self, value):
+        # BE-PLANS-01 (#481): plano Pro bloqueado para novas subscrições.
+        from users.models import Tenant
+
+        if value in Tenant.BLOCKED_PLANS:
+            raise serializers.ValidationError(
+                "Este plano não está disponível no momento."
+            )
+        return value
     interval = serializers.ChoiceField(
         choices=["monthly", "annual"],
         required=False,

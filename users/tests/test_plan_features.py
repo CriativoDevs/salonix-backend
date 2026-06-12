@@ -21,13 +21,14 @@ class TestPlanFeatures:
             plan_tier=Tenant.PLAN_BASIC,
         )
 
-        # Features esperadas
+        # BE-PLANS-01 (#481): Basic absorveu todas as features ex-Pro
         assert tenant.can_use_basic_reports() is True
-        assert tenant.can_use_standard_reports() is False
-        assert tenant.can_use_advanced_reports() is False
-        assert tenant.can_use_pwa_client() is True  # Basic tem PWA Cliente
-        assert tenant.can_use_native_apps() is False  # Apenas Pro
-        assert tenant.can_use_white_label() is False
+        assert tenant.can_use_standard_reports() is True
+        assert tenant.can_use_advanced_reports() is True
+        assert tenant.can_use_pwa_client() is True
+        assert tenant.can_use_native_apps() is True
+        assert tenant.can_use_white_label() is True
+        # Domínio custom continua dependendo da flag explícita
         assert tenant.can_use_custom_domain() is False
 
     def test_pro_plan_features(self):
@@ -61,14 +62,13 @@ class TestPlanFeatures:
             is_founder=True,
         )
 
-        # Deve ter as mesmas features do Basic
+        # BE-PLANS-01 (#481): Founder/Basic têm todas as features ex-Pro
         assert tenant.can_use_basic_reports() is True
-        assert tenant.can_use_standard_reports() is False
-        assert tenant.can_use_advanced_reports() is False
+        assert tenant.can_use_standard_reports() is True
+        assert tenant.can_use_advanced_reports() is True
         assert tenant.can_use_pwa_client() is True
-
-        # Founder NÃO deve ter features do Pro
-        assert tenant.can_use_white_label() is False
+        assert tenant.can_use_white_label() is True
+        # Domínio custom continua dependendo da flag explícita
         assert tenant.can_use_custom_domain() is False
 
     def test_founder_plan_credits(self):
@@ -104,16 +104,14 @@ class TestPlanFeatures:
         assert tenant.can_use_basic_reports() is True
 
         # E PWA Client?
-        # Pelo código atual: NÃO, can_use_pwa_client só checa Basic e Pro.
-        # A menos que pwa_client_enabled seja True (default é True no model).
         assert tenant.pwa_client_enabled is True
         assert tenant.can_use_pwa_client() is True
 
-        # Se desligarmos a flag explicita?
+        # BE-PLANS-01 (#481): PLAN_FOUNDER entrou na lista de planos permitidos
+        # de can_use_pwa_client; mesmo sem a flag explícita, mantém acesso.
         tenant.pwa_client_enabled = False
         tenant.save()
-        # Aqui ele perderia acesso se o tier não estivesse na lista allowed
-        assert tenant.can_use_pwa_client() is False
+        assert tenant.can_use_pwa_client() is True
 
         # Conclusão: É seguro manter PLAN_FOUNDER como fallback,
         # mas o ideal é que todos sejam plan_tier='basic'.
