@@ -471,7 +471,8 @@ class TestBusinessLogging:
 
     @patch("stripe.Customer.create")
     @patch("stripe.checkout.Session.create")
-    @override_settings(STRIPE_PRICE_PRO_MONTHLY_ID="price_test_pro_123")
+    # BE-PLANS-01 (#481): checkout usa Basic; override garante o price ID no CI.
+    @override_settings(STRIPE_PRICE_BASIC_MONTHLY_ID="price_test_basic_123")
     def test_checkout_session_logs(
         self,
         mock_stripe_session,
@@ -501,7 +502,7 @@ class TestBusinessLogging:
             {"url": "http://checkout.stripe.com", "id": "sess_123"},
         )
 
-        data = {"plan": "pro", "period": "monthly"}
+        data = {"plan": "basic", "period": "monthly"}
 
         caplog.clear()
         with caplog.at_level(logging.INFO, logger="payments.views"):
@@ -519,5 +520,5 @@ class TestBusinessLogging:
         assert len(log_records) > 0
         record = log_records[0]
         assert getattr(record, "tenant_id", None) == tenant.slug
-        assert getattr(record, "plan_code", None) == "pro"
+        assert getattr(record, "plan_code", None) == "basic"
         assert getattr(record, "checkout_url", None) == "http://checkout.stripe.com"

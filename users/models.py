@@ -136,6 +136,16 @@ class Tenant(models.Model):
         (PLAN_FOUNDER, "Founder"),  # DEPRECATED: Use PLAN_BASIC + is_founder=True
     ]
 
+    # BE-PLANS-01 (#481): planos bloqueados para venda/seleção. O Pro permanece em
+    # PLAN_CHOICES para preservar dados históricos e permitir reativação futura,
+    # mas não pode aparecer em listagens públicas nem ser atribuído via checkout.
+    BLOCKED_PLANS = [PLAN_PRO]
+
+    @classmethod
+    def is_plan_blocked(cls, plan_code) -> bool:
+        """Retorna se o plano está bloqueado para venda/seleção (BE-PLANS-01)."""
+        return plan_code in cls.BLOCKED_PLANS
+
     BILLING_MODE_STRIPE = "stripe"
     BILLING_MODE_PROMOTIONAL = "promotional"
     BILLING_MODE_CHOICES = [
@@ -356,23 +366,38 @@ class Tenant(models.Model):
         return self.can_use_advanced_reports()
 
     def can_use_advanced_reports(self):
-        """Verifica se pode usar relatórios avançados (Business Analysis + Insights) - Pro+"""
-        return self.plan_tier == self.PLAN_PRO
+        """Verifica se pode usar relatórios avançados (Business Analysis + Insights).
+
+        BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos.
+        """
+        return self.plan_tier in [self.PLAN_BASIC, self.PLAN_PRO, self.PLAN_FOUNDER]
 
     def can_use_pwa_client(self):
         """Verifica se pode usar PWA Cliente (Todos os planos)"""
         return self.pwa_client_enabled or self.plan_tier in [
             self.PLAN_BASIC,
             self.PLAN_PRO,
+            self.PLAN_FOUNDER,
         ]
 
     def can_use_white_label(self):
-        """Verifica se pode usar white-label (Pro apenas)"""
-        return self.plan_tier == self.PLAN_PRO
+        """Verifica se pode usar white-label.
+
+        BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos.
+        """
+        return self.plan_tier in [self.PLAN_BASIC, self.PLAN_PRO, self.PLAN_FOUNDER]
 
     def can_use_custom_domain(self):
-        """Verifica se o tenant pode usar domínio personalizado (Pro+)."""
-        return self.plan_tier == self.PLAN_PRO and bool(self.custom_domain_enabled)
+        """Verifica se o tenant pode usar domínio personalizado.
+
+        BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos;
+        continua dependendo da flag explícita custom_domain_enabled.
+        """
+        return self.plan_tier in [
+            self.PLAN_BASIC,
+            self.PLAN_PRO,
+            self.PLAN_FOUNDER,
+        ] and bool(self.custom_domain_enabled)
 
     def can_purchase_extra_credits(self):
         """Verifica se o tenant pode comprar créditos avulsos."""
@@ -383,19 +408,38 @@ class Tenant(models.Model):
         return self.comm_auto_renew
 
     def can_use_native_admin(self):
-        """Verifica se pode usar app nativo Admin (Pro+ ou flag explícita)"""
-        return self.rn_admin_enabled or self.plan_tier == self.PLAN_PRO
+        """Verifica se pode usar app nativo Admin.
+
+        BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos.
+        """
+        return self.rn_admin_enabled or self.plan_tier in [
+            self.PLAN_BASIC,
+            self.PLAN_PRO,
+            self.PLAN_FOUNDER,
+        ]
 
     def can_use_native_client(self):
-        """Verifica se pode usar app nativo Cliente (Pro+ ou flag explícita)"""
-        return self.rn_client_enabled or self.plan_tier == self.PLAN_PRO
+        """Verifica se pode usar app nativo Cliente.
+
+        BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos.
+        """
+        return self.rn_client_enabled or self.plan_tier in [
+            self.PLAN_BASIC,
+            self.PLAN_PRO,
+            self.PLAN_FOUNDER,
+        ]
 
     def can_use_native_apps(self):
         """Verifica se pode usar qualquer app nativo"""
         return self.can_use_native_admin() or self.can_use_native_client()
 
     def can_use_advanced_notifications(self):
-        allowed_by_plan = self.plan_tier == self.PLAN_PRO
+        # BE-PLANS-01 (#481): feature ex-Pro absorvida por todos os planos ativos.
+        allowed_by_plan = self.plan_tier in [
+            self.PLAN_BASIC,
+            self.PLAN_PRO,
+            self.PLAN_FOUNDER,
+        ]
         has_channel_flag = self.sms_enabled or self.whatsapp_enabled
         has_extra_credit = (
             bool(self.comm_extra_allowed) and (self.comm_credit_eur or 0) > 0
@@ -440,7 +484,11 @@ class Tenant(models.Model):
             return False
 
         self.billing_mode = self.BILLING_MODE_STRIPE
-        self.plan_tier = self.promotional_converts_to_plan
+        # BE-PLANS-01 (#481): nunca converter para um plano bloqueado.
+        target_plan = self.promotional_converts_to_plan
+        if self.is_plan_blocked(target_plan):
+            target_plan = self.PLAN_BASIC
+        self.plan_tier = target_plan
         self.promotional_expires_at = None
         self.save(
             update_fields=[
@@ -455,13 +503,16 @@ class Tenant(models.Model):
     # ===== Métodos para Sistema de Cancelamento (BE-ACCOUNT-CANCEL #396) =====
 
     def get_retention_days(self):
-        """Retorna dias de retenção baseado no plano."""
+        """Retorna dias de retenção baseado no plano.
+
+        BE-PLANS-01 (#481): Basic passa a 90 dias (paridade com o ex-Pro).
+        """
         RETENTION_DAYS = {
-            self.PLAN_BASIC: 30,
+            self.PLAN_BASIC: 90,
             self.PLAN_PRO: 90,
             self.PLAN_FOUNDER: 90,
         }
-        return RETENTION_DAYS.get(self.plan_tier, 30)
+        return RETENTION_DAYS.get(self.plan_tier, 90)
 
     def calculate_deletion_date(self):
         """Calcula data de hard delete baseada em cancelled_at + retenção."""

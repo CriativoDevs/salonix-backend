@@ -9,7 +9,9 @@ from payments.models import Subscription, PaymentCustomer
 
 @override_settings(
     STRIPE_TRIAL_PERIOD_DAYS=14,
-    STRIPE_PRICE_PRO_MONTHLY_ID="price_pro_test",
+    # BE-PLANS-01 (#481): checkout de teste usa Basic (Pro bloqueado);
+    # override garante o price ID independente do ambiente (CI não tem .env).
+    STRIPE_PRICE_BASIC_MONTHLY_ID="price_basic_test",
 )
 class CheckoutTrialTestCase(APITestCase):
     def setUp(self):
@@ -55,7 +57,7 @@ class CheckoutTrialTestCase(APITestCase):
 
     def test_new_customer_gets_trial(self):
         """User with no subscription history should get trial days."""
-        response = self.client.post(self.url, {"plan": "pro"})
+        response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
 
         # Check call args
@@ -69,7 +71,7 @@ class CheckoutTrialTestCase(APITestCase):
             user=self.user, stripe_subscription_id="sub_active", status="active"
         )
 
-        response = self.client.post(self.url, {"plan": "pro"})
+        response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
 
         _, kwargs = self.mock_stripe.checkout.Session.create.call_args
@@ -83,7 +85,7 @@ class CheckoutTrialTestCase(APITestCase):
             user=self.user, stripe_subscription_id="sub_canceled", status="canceled"
         )
 
-        response = self.client.post(self.url, {"plan": "pro"})
+        response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
 
         _, kwargs = self.mock_stripe.checkout.Session.create.call_args
@@ -96,7 +98,7 @@ class CheckoutTrialTestCase(APITestCase):
             user=self.user, stripe_subscription_id="sub_incomplete", status="incomplete"
         )
 
-        response = self.client.post(self.url, {"plan": "pro"})
+        response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
 
         _, kwargs = self.mock_stripe.checkout.Session.create.call_args

@@ -10,6 +10,25 @@ from typing import Any
 from .models import CustomUser, Tenant, UserFeatureFlags, TenantStaffMember, CommLedger
 
 
+class PlanTierListFilter(admin.SimpleListFilter):
+    """Filtro de plano sem os planos bloqueados (BE-PLANS-01 #481)."""
+
+    title = "Plano"
+    parameter_name = "plan_tier"
+
+    def lookups(self, request, model_admin):
+        return [
+            (value, label)
+            for value, label in Tenant.PLAN_CHOICES
+            if not Tenant.is_plan_blocked(value)
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(plan_tier=self.value())
+        return queryset
+
+
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
     """
@@ -28,7 +47,7 @@ class TenantAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = [
-        "plan_tier",
+        PlanTierListFilter,
         "billing_mode",
         "status",
         "is_active",
@@ -142,6 +161,18 @@ class TenantAdmin(admin.ModelAdmin):
         models.CharField: {"widget": TextInput(attrs={"size": "10"})},
     }
 
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        # BE-PLANS-01 (#481): planos bloqueados não aparecem como opção
+        # selecionável ao criar/editar tenant (preservados apenas como
+        # valor histórico em registros existentes).
+        if db_field.name in ("plan_tier", "promotional_converts_to_plan"):
+            kwargs["choices"] = [
+                (value, label)
+                for value, label in db_field.get_choices(include_blank=False)
+                if not Tenant.is_plan_blocked(value)
+            ]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
+
     def users_count(self, obj):
         """Conta quantos usuários pertencem a este tenant."""
         count = obj.users.count()
@@ -173,7 +204,8 @@ class TenantAdmin(admin.ModelAdmin):
 
     feature_summary.short_description = "Features Ativas"
 
-    actions = ["activate_tenants", "deactivate_tenants", "upgrade_to_pro"]
+    # BE-PLANS-01 (#481): ação "upgrade_to_pro" removida — plano Pro bloqueado.
+    actions = ["activate_tenants", "deactivate_tenants"]
 
     def activate_tenants(self, request, queryset):
         """Ativa tenants selecionados."""
@@ -188,20 +220,6 @@ class TenantAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} tenant(s) desativado(s) com sucesso.")
 
     deactivate_tenants.short_description = "Desativar tenants selecionados"
-
-    def upgrade_to_pro(self, request, queryset):
-        """Upgrade para plano Pro com todas as features."""
-        updated = queryset.update(
-            plan_tier=Tenant.PLAN_PRO,
-            reports_enabled=True,
-            pwa_client_enabled=True,
-            push_web_enabled=True,
-            push_mobile_enabled=True,
-        )
-        self.message_user(request, f"{updated} tenant(s) upgradado(s) para Pro.")
-
-    upgrade_to_pro.short_description = "Upgrade para plano Pro"
-
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):

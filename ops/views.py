@@ -412,15 +412,9 @@ class OpsTenantViewSet(viewsets.ReadOnlyModelViewSet):
         force = serializer.validated_data.get("force", False)
 
         # Check conflicts
+        # BE-PLANS-01 (#481): todos os planos ativos suportam SMS/WhatsApp/addons
+        # (features ex-Pro absorvidas); não há mais conflitos de recursos entre planos.
         conflicts = []
-        if new_plan != Tenant.PLAN_PRO:
-            # Non-Pro plans don't support SMS/Whatsapp/Addons
-            if tenant.sms_enabled:
-                conflicts.append("sms_enabled")
-            if tenant.whatsapp_enabled:
-                conflicts.append("whatsapp_enabled")
-            if tenant.addons_enabled:
-                conflicts.extend(tenant.addons_enabled)
 
         # Add more logic for other plan transitions if needed
 

@@ -373,13 +373,14 @@ def test_reports_permissions_by_plan():
     r = c.get("/api/reports/overview/")
     assert r.status_code == 200
 
-    # Top Services -> 403 (Requer Pro)
+    # BE-PLANS-01 (#481): Basic absorveu os relatórios ex-Pro
+    # Top Services -> OK
     r = c.get("/api/reports/top-services/")
-    assert r.status_code == 403
+    assert r.status_code == 200
 
-    # Revenue -> 403 (Requer Pro)
+    # Revenue -> OK
     r = c.get("/api/reports/revenue/")
-    assert r.status_code == 403
+    assert r.status_code == 200
 
 
 @pytest.mark.django_db
@@ -411,11 +412,12 @@ def test_retention_report_permissions_and_data():
     c = APIClient()
     c.force_authenticate(user_basic)
 
+    # BE-PLANS-01 (#481): Basic absorveu retention e advanced (ex-Pro)
     r = c.get("/api/reports/retention/")
-    assert r.status_code == 403
+    assert r.status_code == 200
 
     r = c.get("/api/reports/advanced/")
-    assert r.status_code == 403
+    assert r.status_code == 200
 
     # --- 2. Test Data Logic (Pro User) ---
     tenant_pro = Tenant.objects.create(

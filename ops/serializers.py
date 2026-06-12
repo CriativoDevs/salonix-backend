@@ -356,6 +356,14 @@ class OpsTenantPlanUpdateSerializer(serializers.Serializer):
     addons_enabled = serializers.JSONField(required=False)
     force = serializers.BooleanField(required=False, default=False)
 
+    def validate_plan_tier(self, value):
+        # BE-PLANS-01 (#481): plano bloqueado não pode ser atribuído nem via OPS.
+        if Tenant.is_plan_blocked(value):
+            raise serializers.ValidationError(
+                "Este plano está bloqueado e não pode ser atribuído."
+            )
+        return value
+
 
 class OpsAlertSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source="tenant.name", read_only=True)

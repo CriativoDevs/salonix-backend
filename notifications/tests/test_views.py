@@ -280,10 +280,10 @@ class TestNotificationViews:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_notification_list_admin_app_denied_for_basic_tenant(
+    def test_notification_list_admin_app_allowed_for_basic_tenant(
         self, tenant_fixture, user_fixture
     ):
-        """Tenant Basic não deve acessar notificações pelo Admin App."""
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; Admin App liberado."""
         tenant_fixture.plan_tier = "basic"
         tenant_fixture.rn_admin_enabled = False
         tenant_fixture.save(
@@ -294,11 +294,7 @@ class TestNotificationViews:
         url = reverse("notification-list")
         response = self.client.get(url, HTTP_X_APP_TYPE="admin")
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.data["error"]["code"] == "E004"
-        assert response.data["error"]["details"]["code"] == "PLAN_UPGRADE_REQUIRED"
-        assert response.data["error"]["details"]["current_plan"] == "basic"
-        assert "Admin App" in response.data["error"]["message"]
+        assert response.status_code == status.HTTP_200_OK
 
     def test_register_device_client_app_allowed_for_pro_tenant(
         self, tenant_fixture, user_fixture
@@ -319,10 +315,10 @@ class TestNotificationViews:
         assert response.data["device_type"] == "mobile"
         assert response.data["token"] == "test-mobile-token-allowed"
 
-    def test_register_device_client_app_denied_for_basic_tenant(
+    def test_register_device_client_app_allowed_for_basic_tenant(
         self, tenant_fixture, user_fixture
     ):
-        """Tenant Basic não deve registrar device com X-App-Type: client."""
+        """BE-PLANS-01 (#481): Basic absorveu apps nativos; Client App liberado."""
         tenant_fixture.plan_tier = "basic"
         tenant_fixture.rn_client_enabled = False
         tenant_fixture.save(
@@ -334,14 +330,10 @@ class TestNotificationViews:
         url = reverse("notification-register-device")
         data = {
             "device_type": "mobile",
-            "token": "test-mobile-token-denied",
+            "token": "test-mobile-token-now-allowed",
             "is_active": True,
         }
 
         response = self.client.post(url, data, HTTP_X_APP_TYPE="client")
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert response.data["error"]["code"] == "E004"
-        assert response.data["error"]["details"]["code"] == "PLAN_UPGRADE_REQUIRED"
-        assert response.data["error"]["details"]["current_plan"] == "basic"
-        assert "Client App" in response.data["error"]["message"]
+        assert response.status_code == status.HTTP_201_CREATED

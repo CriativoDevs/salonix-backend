@@ -342,7 +342,9 @@ class CeleryTasksTest(APITestCase):
             name="Test Salon",
             slug="test-salon",
             status=Tenant.STATUS_CANCELLED,
-            cancelled_at=timezone.now() - timedelta(days=61),
+            # BE-PLANS-01 (#481): retenção do Basic passou a 90 dias;
+            # 95 dias garante que o período de reativação já expirou.
+            cancelled_at=timezone.now() - timedelta(days=95),
             scheduled_deletion_at=timezone.now() - timedelta(days=1),
         )
 

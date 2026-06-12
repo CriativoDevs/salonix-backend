@@ -29,16 +29,18 @@ class TestTenantFeatureFlags:
             plan_tier=Tenant.PLAN_BASIC,
         )
 
-        # Basic: PWA Admin/Client habilitado e Relatórios Básicos
+        # BE-PLANS-01 (#481): Basic absorveu todas as features ex-Pro
         assert tenant.can_use_reports()  # Basic reports
         assert tenant.can_use_basic_reports()
-        assert not tenant.can_use_standard_reports()
-        assert not tenant.can_use_advanced_reports()
+        assert tenant.can_use_standard_reports()
+        assert tenant.can_use_advanced_reports()
 
         assert tenant.can_use_pwa_client()
-        assert not tenant.can_use_white_label()
-        assert not tenant.can_use_native_apps()
-        assert not tenant.can_use_advanced_notifications()
+        assert tenant.can_use_white_label()
+        assert tenant.can_use_native_apps()
+        # sms_enabled tem default True; com canal habilitado e plano ativo,
+        # notificações avançadas ficam disponíveis (feature ex-Pro absorvida)
+        assert tenant.can_use_advanced_notifications()
 
         # PWA Admin sempre habilitado
         assert tenant.pwa_admin_enabled
@@ -93,7 +95,9 @@ class TestTenantFeatureFlags:
         tenant.comm_credit_eur = 0
         tenant.save()
 
-        assert tenant.can_use_advanced_notifications() is False
+        # BE-PLANS-01 (#481): Basic absorveu notificações avançadas por plano;
+        # com canal habilitado, não depende mais de créditos extras.
+        assert tenant.can_use_advanced_notifications() is True
 
     def test_feature_flags_override(self):
         """Teste que feature flags específicas sobrescrevem lógica de plano."""
@@ -252,10 +256,14 @@ class TestRequiresFeatureFlagPermission:
         assert permission.has_permission(request, None) is True
 
     def test_permission_without_feature(self, tenant_fixture, user_fixture):
-        """Teste permission com feature desabilitada (usando white_label que Basic não tem)."""
-        # Tenant básico não tem white_label
+        """Teste permission com feature desabilitada.
+
+        BE-PLANS-01 (#481): white_label passou a ser permitido para todos os
+        planos ativos; usamos push_mobile com flag desabilitada para validar
+        o caminho de negação.
+        """
         tenant_fixture.plan_tier = Tenant.PLAN_BASIC
-        # white_label não tem flag booleana direta no model (depende do plano), mas o check verifica o plano
+        tenant_fixture.push_mobile_enabled = False
         tenant_fixture.save()
 
         user_fixture.tenant = tenant_fixture
@@ -266,8 +274,7 @@ class TestRequiresFeatureFlagPermission:
         request = Mock()
         request.user = user_fixture
 
-        # Basic não tem white_label
-        permission = RequiresFeatureFlag("white_label")
+        permission = RequiresFeatureFlag("push_mobile")
         assert permission.has_permission(request, None) is False
 
     def test_permission_without_tenant(self):
@@ -442,26 +449,21 @@ class TestPlanUpgradeScenarios:
     """Testes para cenários de upgrade de plano."""
 
     def test_basic_to_pro_upgrade(self):
-        """Teste upgrade de Basic para Pro."""
+        """BE-PLANS-01 (#481): Basic já possui todas as features ex-Pro;
+        upgrade para Pro está bloqueado e não é mais necessário."""
         tenant = Tenant.objects.create(
             name="Upgrade Salon",
             slug="upgrade-salon",
             plan_tier=Tenant.PLAN_BASIC,
         )
 
-        # Antes do upgrade
+        # Basic já tem tudo que era do Pro
         assert tenant.can_use_reports()
         assert tenant.can_use_basic_reports()
-        assert not tenant.can_use_standard_reports()
-        assert tenant.can_use_pwa_client()
-
-        # Simular upgrade
-        tenant.plan_tier = Tenant.PLAN_PRO
-        tenant.save()
-
-        # Depois do upgrade
-        assert tenant.can_use_reports()
         assert tenant.can_use_standard_reports()
         assert tenant.can_use_advanced_reports()
         assert tenant.can_use_pwa_client()
-        assert tenant.can_use_white_label()  # Pro tem white-label
+        assert tenant.can_use_white_label()
+
+        # E o plano Pro está bloqueado para novas atribuições
+        assert Tenant.is_plan_blocked(Tenant.PLAN_PRO) is True

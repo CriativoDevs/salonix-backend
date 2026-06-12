@@ -146,6 +146,7 @@ def test_checkout_trial_suppressed_for_existing_subscription(
 ):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -174,11 +175,11 @@ def test_checkout_trial_suppressed_for_existing_subscription(
     )
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "pro"}, format="json")
+    resp = c.post(url, {"plan": "basic"}, format="json")
     assert resp.status_code == 200
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
-    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
+    assert created_kwargs["line_items"][0]["price"] == "price_basic_123"
     assert "trial_period_days" not in created_kwargs["subscription_data"]
 
 
@@ -188,6 +189,7 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
 ):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -223,11 +225,11 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
     )
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "pro"}, format="json")
+    resp = c.post(url, {"plan": "basic"}, format="json")
     assert resp.status_code == 200
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
-    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
+    assert created_kwargs["line_items"][0]["price"] == "price_basic_123"
     assert "trial_period_days" not in created_kwargs["subscription_data"]
     assert created_kwargs["subscription_data"].get("trial_from_plan") is False
 
@@ -236,6 +238,7 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
 def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_client):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -257,11 +260,11 @@ def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_cli
         status=TenantStaffMember.Status.ACTIVE,
     )
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "pro"}, format="json")
+    resp = c.post(url, {"plan": "basic"}, format="json")
     assert resp.status_code == 200
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
-    assert created_kwargs["line_items"][0]["price"] == "price_pro_123"
+    assert created_kwargs["line_items"][0]["price"] == "price_basic_123"
     assert created_kwargs["subscription_data"].get("trial_period_days") == 14
 
 
@@ -466,6 +469,7 @@ def test_webhook_checkout_session_completed_creates_subscription(
     settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
     settings.STRIPE_API_VERSION = "2024-06-20"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
 
     # constrói customer local
     c, user = auth_client()
@@ -550,6 +554,7 @@ def test_webhook_checkout_session_completed_creates_subscription(
 def test_checkout_requires_owner_role(monkeypatch, settings):
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
     settings.STRIPE_TRIAL_PERIOD_DAYS = 14
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
@@ -579,7 +584,7 @@ def test_checkout_requires_owner_role(monkeypatch, settings):
     c.force_authenticate(user=user)
 
     url = "/api/payments/stripe/create-checkout-session/"
-    resp = c.post(url, {"plan": "pro"}, format="json")
+    resp = c.post(url, {"plan": "basic"}, format="json")
     assert resp.status_code == 403
     assert "OWNER ativo" in _error_message(resp)
 
@@ -629,6 +634,7 @@ def test_webhook_invoice_payment_succeeded_applies_included_credits(
     settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
     settings.STRIPE_API_VERSION = "2024-06-20"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
+    settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
 
     from payments import views as payments_views
     from payments import stripe_utils as payments_stripe_utils
@@ -741,9 +747,8 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
     assert basic_plan["comm_auto_renew"] is False
     assert basic_plan["credits_included"] == 5
 
-    assert pro_plan is not None
-    assert pro_plan["comm_auto_renew"] is True
-    assert pro_plan["credits_included"] == 15
+    # BE-PLANS-01 (#481): Pro bloqueado não aparece na listagem pública
+    assert pro_plan is None
 
     assert founder_plan is not None
     assert founder_plan["comm_auto_renew"] is False

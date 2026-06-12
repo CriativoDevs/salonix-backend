@@ -81,12 +81,13 @@ def test_create_job_invalid_type_returns_400():
 
 
 @pytest.mark.django_db
-def test_create_job_pro_only_type_denied_for_basic_tenant():
+def test_create_job_advanced_type_allowed_for_basic_tenant():
+    # BE-PLANS-01 (#481): Basic absorveu relatórios avançados (ex-Pro).
     tenant = _make_tenant(plan=Tenant.PLAN_BASIC)
     user = _make_user(tenant, is_pro=False)
     with patch("reports.views_export.generate_csv_export.delay"):
         r = _client(user).post("/api/reports/exports/", {"report_type": "advanced"}, format="json")
-    assert r.status_code == 403
+    assert r.status_code == 202
 
 
 @pytest.mark.django_db

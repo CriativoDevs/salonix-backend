@@ -2050,12 +2050,18 @@ class TenantNotificationsSettingsView(APIView):
             tenant.whatsapp_enabled = bool(v["whatsapp_enabled"])
             updates.add("whatsapp_enabled")
         if "push_mobile_enabled" in v:
+            # BE-PLANS-01 (#481): push mobile era exclusivo do Pro; feature
+            # absorvida por todos os planos ativos.
             desired = bool(v["push_mobile_enabled"])
-            if desired and tenant.plan_tier != Tenant.PLAN_PRO:
+            if desired and tenant.plan_tier not in (
+                Tenant.PLAN_BASIC,
+                Tenant.PLAN_PRO,
+                Tenant.PLAN_FOUNDER,
+            ):
                 return Response(
                     {
                         "detail": (
-                            "Push Mobile só disponível para plano Pro. "
+                            "Push Mobile disponível a partir do plano Basic. "
                             "Atualize seu plano para ativar."
                         )
                     },

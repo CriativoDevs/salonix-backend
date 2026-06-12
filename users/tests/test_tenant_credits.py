@@ -30,20 +30,17 @@ class TestTenantInitialCredits:
         assert ledger_entry.balance_after == Decimal("5.00")
 
     def test_pro_plan_initial_credits(self):
-        """Testa se o plano Pro recebe 15€ de crédito inicial."""
+        """BE-PLANS-01 (#481): Pro bloqueado não recebe crédito inicial."""
         tenant = Tenant.objects.create(
             name="Tenant Pro",
             slug="tenant-pro-credits",
             plan_tier=Tenant.PLAN_PRO
         )
-        
+
         tenant.refresh_from_db()
-        
-        assert tenant.comm_credit_eur == Decimal("15.00")
-        
-        ledger_entry = CommLedger.objects.get(tenant=tenant)
-        assert ledger_entry.amount_eur == Decimal("15.00")
-        assert ledger_entry.balance_after == Decimal("15.00")
+
+        assert tenant.comm_credit_eur == Decimal("0.00")
+        assert CommLedger.objects.filter(tenant=tenant).count() == 0
 
     def test_update_does_not_trigger_credits(self):
         """Testa se atualizações subsequentes não duplicam créditos."""
