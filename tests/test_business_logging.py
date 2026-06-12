@@ -471,7 +471,8 @@ class TestBusinessLogging:
 
     @patch("stripe.Customer.create")
     @patch("stripe.checkout.Session.create")
-    @override_settings(STRIPE_PRICE_PRO_MONTHLY_ID="price_test_pro_123")
+    # BE-PLANS-01 (#481): checkout usa Basic; override garante o price ID no CI.
+    @override_settings(STRIPE_PRICE_BASIC_MONTHLY_ID="price_test_basic_123")
     def test_checkout_session_logs(
         self,
         mock_stripe_session,

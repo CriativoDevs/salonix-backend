@@ -9,7 +9,9 @@ from payments.models import Subscription, PaymentCustomer
 
 @override_settings(
     STRIPE_TRIAL_PERIOD_DAYS=14,
-    STRIPE_PRICE_PRO_MONTHLY_ID="price_pro_test",
+    # BE-PLANS-01 (#481): checkout de teste usa Basic (Pro bloqueado);
+    # override garante o price ID independente do ambiente (CI não tem .env).
+    STRIPE_PRICE_BASIC_MONTHLY_ID="price_basic_test",
 )
 class CheckoutTrialTestCase(APITestCase):
     def setUp(self):
