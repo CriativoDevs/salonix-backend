@@ -79,6 +79,14 @@ class CommunicationCreditService:
             result["reason"] = "WhatsApp não habilitado para este tenant"
             return result
 
+        # BE-PLANS-02: SMS fica bloqueado durante o período de teste (trial) para
+        # evitar custo de comunicação em contas que ainda não pagaram. Apenas o canal
+        # SMS é afetado; Email e Web Push (que não passam por aqui) e WhatsApp seguem
+        # livres. Liberação é automática quando a subscrição deixa de ser `trialing`.
+        if communication_type == "sms" and tenant.is_in_trial():
+            result["reason"] = "SMS disponível após o período de teste"
+            return result
+
         # Verificar saldo suficiente
         if current_balance >= cost:
             result["can_send"] = True
