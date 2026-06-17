@@ -364,9 +364,13 @@ class SubscriptionService:
         customer_id = get_or_create_customer(user)
 
         try:
-            has_existing = Subscription.objects.filter(
-                user__tenant=user.tenant
-            ).exists()
+            # BE-PLANS-02: subscrições `incomplete` (checkout abandonado) não consomem
+            # o trial — alinhado com o checkout legado (payments/views.py) e a overview.
+            has_existing = (
+                Subscription.objects.filter(user__tenant=user.tenant)
+                .exclude(status__in=["incomplete", "incomplete_expired"])
+                .exists()
+            )
             trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
             if trial_days is None:
                 trial_days = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
@@ -838,9 +842,13 @@ class BillingService:
         trial_days_cfg = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
         if trial_days_cfg is None:
             trial_days_cfg = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
-        has_any_subscription = Subscription.objects.filter(
-            user__tenant=user.tenant
-        ).exists()
+        # BE-PLANS-02: subscrições `incomplete` (checkout abandonado) não consomem o
+        # trial — alinhado com o checkout legado e o checkout v2.
+        has_any_subscription = (
+            Subscription.objects.filter(user__tenant=user.tenant)
+            .exclude(status__in=["incomplete", "incomplete_expired"])
+            .exists()
+        )
         trial_eligible = bool(trial_days_cfg) and not has_any_subscription
         trial_exhausted = bool(has_any_subscription) and not (
             current_subscription and current_subscription.get("status") == "trialing"

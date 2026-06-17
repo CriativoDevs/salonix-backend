@@ -407,6 +407,28 @@ class Tenant(models.Model):
         """Indica renovação automática de créditos; depende somente de comm_auto_renew."""
         return self.comm_auto_renew
 
+    def is_in_trial(self) -> bool:
+        """BE-PLANS-02: True se a subscrição do owner está em período de teste.
+
+        A fonte da verdade é UserFeatureFlags.pro_status do owner (sincronizado a
+        partir do Stripe). Usado para bloquear o envio de SMS durante o trial,
+        evitando custo de comunicação em contas que ainda não pagaram.
+        """
+        owner = (
+            self.staff_members.filter(
+                role=TenantStaffMember.Role.OWNER,
+                status=TenantStaffMember.Status.ACTIVE,
+            )
+            .select_related("user__featureflags")
+            .first()
+        )
+        if not owner or not owner.user_id:
+            return False
+        ff = getattr(owner.user, "featureflags", None)
+        if ff is None:
+            return False
+        return ff.pro_status == UserFeatureFlags.STATUS_TRIALING
+
     def can_use_native_admin(self):
         """Verifica se pode usar app nativo Admin.
 
