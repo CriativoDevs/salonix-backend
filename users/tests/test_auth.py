@@ -206,6 +206,48 @@ class TestAuthEndpoints:
         )
         assert refresh_resp.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_token_refresh_rotates_refresh_token(self):
+        """ROTATE_REFRESH_TOKENS: o refresh devolve um NOVO refresh (sessao deslizante).
+
+        Com a rotacao ativa, cada refresh renova a janela do refresh token, pelo
+        que um utilizador ativo nao e forcado a re-login ao fim de 7 dias do login.
+        """
+        user = User.objects.create_user(
+            username="refresh_rotate",
+            email="refresh_rotate@example.com",
+            password="StrongPass123",
+        )
+
+        login_resp = self.client.post(
+            self.token_url,
+            {"email": user.email, "password": "StrongPass123"},
+            format="json",
+        )
+        assert login_resp.status_code == status.HTTP_200_OK
+        original_refresh = login_resp.data["refresh"]
+
+        refresh_resp = self.client.post(
+            self.token_refresh_url,
+            {"refresh": original_refresh},
+            format="json",
+        )
+        assert refresh_resp.status_code == status.HTTP_200_OK
+        assert "access" in refresh_resp.data
+
+        # Rotacao: devolve um novo refresh, diferente do original
+        assert "refresh" in refresh_resp.data
+        new_refresh = refresh_resp.data["refresh"]
+        assert new_refresh != original_refresh
+
+        old = RefreshToken(original_refresh)
+        new = RefreshToken(new_refresh)
+        # Novo jti e expiracao renovada (>= a original, pois set_exp = agora + lifetime)
+        assert new["jti"] != old["jti"]
+        assert new["exp"] >= old["exp"]
+        # Claims de sessao preservados
+        assert new.get("jwt_version") == old.get("jwt_version")
+        assert new.get("scope") == old.get("scope")
+
     def test_me_profile_admin_app_allowed_for_basic_tenant(
         self, user_fixture, tenant_fixture
     ):

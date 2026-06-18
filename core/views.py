@@ -2837,6 +2837,14 @@ class ClientTokenRefreshView(APIView):
             except (Tenant.DoesNotExist, SalonCustomer.DoesNotExist):
                 raise ValidationError("Tenant ou cliente inválido")
 
+            # Sessao deslizante: rotaciona o refresh (novo jti + janela de
+            # REFRESH_TOKEN_LIFETIME renovada), preservando os claims de cliente
+            # (scope/tenant_id/customer_id). Espelha o comportamento do staff
+            # (ROTATE_REFRESH_TOKENS) e do Ops, que tambem rodam a cada refresh.
+            refresh.set_jti()
+            refresh.set_exp()
+            refresh.set_iat()
+
             # Gerar novo access token
             access_token = refresh.access_token
             access_token["scope"] = "client"
