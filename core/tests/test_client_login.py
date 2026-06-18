@@ -141,6 +141,44 @@ class TestClientLoginFlow:
         assert "access" in response.data
         assert "refresh" in response.data
 
+    def test_client_token_refresh_rotates_refresh_token(self):
+        """Sessao deslizante para cliente: o refresh devolve um NOVO refresh,
+        com a janela renovada e os claims de cliente preservados."""
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        self.customer.set_password("securepass123")
+        self.customer.save()
+
+        login = self.client.post(
+            reverse("clients_login"),
+            {
+                "email": "client@test.com",
+                "password": "securepass123",
+                "tenant_slug": "test-salon",
+            },
+            format="json",
+        )
+        assert login.status_code == status.HTTP_200_OK
+        original_refresh = login.data["refresh"]
+
+        resp = self.client.post(
+            reverse("clients_token_refresh"),
+            {"refresh": original_refresh},
+            format="json",
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        new_refresh = resp.data["refresh"]
+        assert new_refresh != original_refresh
+
+        old = RefreshToken(original_refresh)
+        new = RefreshToken(new_refresh)
+        assert new["jti"] != old["jti"]
+        assert new["exp"] >= old["exp"]
+        # Claims de cliente preservados
+        assert new.get("scope") == "client"
+        assert new.get("tenant_id") == old.get("tenant_id")
+        assert new.get("customer_id") == old.get("customer_id")
+
     def test_client_token_refresh_invalid_token(self):
         """Test refresh com token inválido"""
         url = reverse("clients_token_refresh")

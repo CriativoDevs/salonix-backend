@@ -516,6 +516,14 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("JWT_ACCESS_MIN", 60)),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("JWT_REFRESH_DAYS", 7)),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Sessao deslizante: cada refresh devolve um novo refresh com a janela de
+    # REFRESH_TOKEN_LIFETIME renovada, para que um utilizador ativo nao seja
+    # forcado a re-login ao fim de 7 dias do login. Afeta o refresh de staff
+    # (EmailTokenRefreshSerializer -> super().validate()). O refresh de client
+    # (ClientTokenRefreshView) e o de Ops fazem rotacao propria e nao dependem
+    # desta flag. BLACKLIST_AFTER_ROTATION fica off (o app token_blacklist nao
+    # esta instalado); invalidar refresh antigos seria um hardening separado.
+    "ROTATE_REFRESH_TOKENS": True,
 }
 
 AUTH_USER_MODEL = "users.CustomUser"
