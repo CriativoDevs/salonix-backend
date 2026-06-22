@@ -9,6 +9,7 @@ Tasks principais:
 
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -232,6 +233,105 @@ def create_tenant_backup(tenant: Tenant) -> dict:
 
     logger.info(f"[BACKUP] Backup criado com sucesso: {len(backup['data'])} modelos")
     return backup
+
+
+def build_tenant_data_export(tenant: Tenant) -> dict:
+    """
+    BE-RGPD-01: monta a exportacao de dados pessoais do tenant (Art. 15/20).
+
+    Inclui os dados do titular e do seu salao: tenant, utilizadores, staff,
+    clientes (PII), series/agendamentos, consentimentos de comunicacao e
+    referencias de faturacao (IDs Stripe — **nunca** dados de cartao, que nao
+    armazenamos). Reutiliza o padrao de serializacao do create_tenant_backup,
+    mas com o conjunto completo exigido pelo direito de acesso/portabilidade.
+    """
+    from core.models import (
+        Appointment,
+        AppointmentSeries,
+        CustomerCommunicationConsent,
+        SalonCustomer,
+    )
+    from payments.models import Subscription
+    from users.models import CustomUser, TenantStaffMember
+
+    export = {
+        "metadata": {
+            "tenant_id": tenant.id,
+            "tenant_slug": tenant.slug,
+            "tenant_name": tenant.name,
+            "plan_tier": tenant.plan_tier,
+            "exported_at": timezone.now().isoformat(),
+            "export_version": "1.0",
+            "note": (
+                "Faturacao: apenas referencias/IDs Stripe; sem dados de cartao."
+            ),
+        },
+        "data": {},
+    }
+
+    models_to_export = [
+        ("tenant", [tenant]),
+        ("users", CustomUser.objects.filter(tenant=tenant)),
+        ("staff_members", TenantStaffMember.objects.filter(tenant=tenant)),
+        ("customers", SalonCustomer.objects.filter(tenant=tenant)),
+        ("appointment_series", AppointmentSeries.objects.filter(tenant=tenant)),
+        ("appointments", Appointment.objects.filter(tenant=tenant)),
+        (
+            "communication_consents",
+            CustomerCommunicationConsent.objects.filter(tenant=tenant),
+        ),
+        ("subscriptions", Subscription.objects.filter(user__tenant=tenant)),
+    ]
+
+    for model_name, queryset in models_to_export:
+        try:
+            if not hasattr(queryset, "__iter__"):
+                queryset = [queryset]
+            serialized = serialize("json", queryset)
+            export["data"][model_name] = json.loads(serialized)
+        except Exception as e:
+            logger.warning(f"[DATA_EXPORT] Erro ao serializar {model_name}: {e}")
+            export["data"][model_name] = []
+
+    return export
+
+
+def purge_old_tenant_backups(retention_days: int = 90) -> dict:
+    """
+    BE-RGPD-01 / Art. 17: remove backups de tenant antigos do BACKUP_ROOT.
+
+    Os backups gerados no hard-delete (`BACKUP_ROOT/tenants/{slug}/backup_*.json`)
+    contem PII e nao devem ficar indefinidamente. Apaga os ficheiros cujo mtime
+    e mais antigo que `retention_days`.
+    """
+    root = Path(settings.BACKUP_ROOT) / "tenants"
+    if not root.exists():
+        return {"removed": 0, "kept": 0}
+
+    cutoff = time.time() - retention_days * 86400
+    removed = 0
+    kept = 0
+    for path in root.glob("*/backup_*.json"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+            else:
+                kept += 1
+        except OSError as e:
+            logger.warning(f"[BACKUP_PURGE] Erro ao remover {path}: {e}")
+
+    logger.info(
+        f"[BACKUP_PURGE] removidos={removed} mantidos={kept} "
+        f"(retencao={retention_days}d)"
+    )
+    return {"removed": removed, "kept": kept}
+
+
+@shared_task(name="core.purge_old_tenant_backups")
+def purge_old_tenant_backups_task(retention_days: int = 90):
+    """Task Celery para purga periodica dos backups (ver purge_old_tenant_backups)."""
+    return purge_old_tenant_backups(retention_days)
 
 
 def save_backup_locally(tenant: Tenant, backup_data: dict) -> Path:

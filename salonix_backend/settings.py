@@ -396,6 +396,15 @@ REST_FRAMEWORK = {
         # escopo específico para exportação CSV
         "anon": "1000/day",  # Padrão para anônimos (captcha)
         "export_csv": REPORTS_THROTTLE_EXPORT_CSV,
+        # BE-RGPD-01: exportacao de dados pessoais (operacao pesada e rara)
+        "data_export": env_get(
+            "DATA_EXPORT_RATE",
+            (
+                "1000/min"
+                if ("test" in sys.argv or "pytest" in sys.modules or ENV == "dev")
+                else "5/hour"
+            ),
+        ),
         # escopo específico para reports
         "reports": REPORTS_THROTTLE_REPORTS,
         # password reset self-service
@@ -611,6 +620,11 @@ CELERY_BEAT_SCHEDULE = {
     "update-daily-report-aggregates": {
         "task": "reports.update_daily_aggregates",
         "schedule": crontab(hour=2, minute=0),  # 2:00 AM diário
+    },
+    # BE-RGPD-01 / Art. 17: purga dos backups de tenant antigos (PII)
+    "purge-old-tenant-backups-daily": {
+        "task": "core.purge_old_tenant_backups",
+        "schedule": crontab(hour=4, minute=0),  # 4:00 AM diário
     },
 }
 

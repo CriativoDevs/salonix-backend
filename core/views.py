@@ -6341,6 +6341,39 @@ class TenantCancelView(APIView):
         )
 
 
+class TenantDataExportView(APIView):
+    """
+    GET /api/tenants/data-export/
+
+    BE-RGPD-01: exporta os dados pessoais do tenant do utilizador autenticado
+    como ficheiro JSON (download). Direito de acesso/portabilidade (Art. 15/20).
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "data_export"
+
+    def get(self, request):
+        import json as _json
+
+        from rest_framework.exceptions import PermissionDenied
+
+        from core.permissions import IsOwner
+        from core.tasks import build_tenant_data_export
+
+        # Apenas o owner pode exportar os dados do tenant.
+        if not IsOwner().has_permission(request, self):
+            raise PermissionDenied("Somente o owner pode exportar os dados.")
+
+        tenant = request.user.tenant
+        export = build_tenant_data_export(tenant)
+        body = _json.dumps(export, ensure_ascii=False, indent=2)
+        filename = f"timelyone-data-export-{tenant.slug}.json"
+        resp = HttpResponse(body, content_type="application/json; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+
 class TenantReactivateView(APIView):
     """
     POST /api/tenants/reactivate/
