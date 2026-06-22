@@ -48,6 +48,7 @@ from core.views import (
     ExportServicesCSVView,
     ExportStaffCSVView,
     TenantCancelView,
+    TenantDataExportView,
     TenantReactivateView,
 )
 
@@ -226,5 +227,11 @@ urlpatterns = [
         "tenants/reactivate/",
         TenantReactivateView.as_view(),
         name="tenant-reactivate",
+    ),
+    # Exportacao de dados pessoais (BE-RGPD-01, Art. 15/20)
+    path(
+        "tenants/data-export/",
+        TenantDataExportView.as_view(),
+        name="tenant-data-export",
     ),
 ]
