@@ -36,6 +36,12 @@ def _send_email_safe(
     if isinstance(to_emails, str):
         to_emails = [to_emails]
 
+    # Reply-To padrão (no-reply respondível) quando o chamador não especifica um.
+    if reply_to is None:
+        default_reply_to = getattr(settings, "EMAIL_REPLY_TO", "") or ""
+        if default_reply_to:
+            reply_to = [default_reply_to]
+
     def send_action():
         # Máximo de tentativas para lidar com erros intermitentes de rede (Errno 101)
         max_retries = 3

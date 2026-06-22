@@ -568,7 +568,11 @@ EMAIL_USE_SSL = str(env_get("EMAIL_USE_SSL", "false")).lower() in {
 }
 EMAIL_HOST_USER = env_get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env_get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = env_get("DEFAULT_FROM_EMAIL", "TimelyOne <no-reply@timelyone.com>")
+DEFAULT_FROM_EMAIL = env_get(
+    "DEFAULT_FROM_EMAIL", "TimelyOne <timelyone@timelyone.today>"
+)
+# Endereço de resposta dos emails (no-reply respondível). Mailbox já existe.
+EMAIL_REPLY_TO = env_get("EMAIL_REPLY_TO", "support@timelyone.today")
 
 # Base para geração de links públicos de download de ICS
 # Ex.: http://api.timelyone.com
