@@ -581,6 +581,18 @@ ICS_BASE_URL = env_get("ICS_BASE_URL", "")
 # Frontend URL (para redirects Stripe e links em e-mails)
 FRONTEND_BASE_URL = env_get("FRONTEND_BASE_URL", "http://localhost:5173")
 
+# Links das stores (app nativa TimelyOne) — usados nos emails. Override por env.
+STORE_IOS_URL = env_get("STORE_IOS_URL", "https://apps.apple.com/app/id6760429848")
+STORE_ANDROID_URL = env_get(
+    "STORE_ANDROID_URL",
+    "https://play.google.com/store/apps/details?id=com.timelyone.app",
+)
+# Base publica (absoluta) dos PNG dos badges, servidos pelos estaticos do BE (WhiteNoise).
+# Em producao: https://salonix-backend-production.up.railway.app/static/email/badges
+STORE_BADGES_BASE_URL = env_get(
+    "STORE_BADGES_BASE_URL", "http://localhost:8000/static/email/badges"
+)
+
 # Stripe
 STRIPE_API_KEY = env_get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = env_get("STRIPE_WEBHOOK_SECRET", "")
