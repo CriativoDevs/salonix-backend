@@ -361,6 +361,43 @@ def send_marketing_email(
     _send_email_safe(subject, body_plain, body_html, to_email)
 
 
+def _store_links() -> tuple[str, str]:
+    """URLs canonicos das stores (iOS, Android)."""
+    return (
+        getattr(settings, "STORE_IOS_URL", ""),
+        getattr(settings, "STORE_ANDROID_URL", ""),
+    )
+
+
+def store_badges_html() -> str:
+    """Bloco HTML com os 2 badges das stores (PNG via URL absoluto)."""
+    ios_url, android_url = _store_links()
+    base = getattr(settings, "STORE_BADGES_BASE_URL", "").rstrip("/")
+    ios_alt = _("Transferir na App Store")
+    android_alt = _("Disponível no Google Play")
+    return f"""
+        <div style="margin-top:24px;">
+          <p style="font-size:13px;color:#555;margin:0 0 8px;">{_("Instala a app TimelyOne:")}</p>
+          <a href="{ios_url}" target="_blank" rel="noopener" style="text-decoration:none;margin-right:8px;">
+            <img src="{base}/app-store-pt.png" alt="{ios_alt}" height="40" style="height:40px;border:0;" />
+          </a>
+          <a href="{android_url}" target="_blank" rel="noopener" style="text-decoration:none;">
+            <img src="{base}/google-play-pt.png" alt="{android_alt}" height="40" style="height:40px;border:0;" />
+          </a>
+        </div>
+    """
+
+
+def store_badges_text() -> str:
+    """Variante texto-plano: os 2 URLs como links de texto (fallback)."""
+    ios_url, android_url = _store_links()
+    return (
+        f"\n{_('Instala a app TimelyOne:')}\n"
+        f"- {_('App Store')}: {ios_url}\n"
+        f"- {_('Google Play')}: {android_url}\n"
+    )
+
+
 def send_staff_invite_email(
     to_email: str,
     accept_url: str,
@@ -387,7 +424,7 @@ Se você não esperava este convite, ignore este e-mail.
 
 Obrigado,
 Equipe {salon_name}
-"""
+{store_badges_text()}"""
 
     body_html = f"""
         <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
@@ -397,6 +434,42 @@ Equipe {salon_name}
           <p><a href="{accept_url}" target="_blank" rel="noopener">{_("Ativar acesso")}</a></p>
           <p style="font-size:12px;color:#555">{_("Se você não esperava este convite, ignore este e-mail.")}</p>
           <p>{_("Obrigado,")}<br/>{_("Equipe %(salon_name)s") % {"salon_name": salon_name}}</p>
+          {store_badges_html()}
+        </div>
+    """
+
+    return _send_email_safe(subject, body_plain, body_html, to_email)
+
+
+def send_tenant_welcome_email(
+    to_email: str,
+    owner_name: str | None = None,
+    salon_name: str = "TimelyOne",
+):
+    """Email de boas-vindas no registo do tenant, com badges das stores."""
+    subject = _("Bem-vindo ao TimelyOne")
+    greeting = (
+        _("Olá %(name)s,") % {"name": owner_name} if owner_name else _("Olá,")
+    )
+
+    body_plain = f"""
+{greeting}
+
+{_("A tua conta %(salon_name)s foi criada com sucesso. Bem-vindo ao TimelyOne!") % {"salon_name": salon_name}}
+
+{_("Primeiros passos: configura os teus serviços, a tua equipa e o horário de funcionamento, e começa a receber agendamentos.")}
+{store_badges_text()}
+{_("Obrigado,")}
+{_("Equipe TimelyOne")}
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+          <p>{greeting}</p>
+          <p>{_("A tua conta %(salon_name)s foi criada com sucesso. Bem-vindo ao TimelyOne!") % {"salon_name": salon_name}}</p>
+          <p>{_("Primeiros passos: configura os teus serviços, a tua equipa e o horário de funcionamento, e começa a receber agendamentos.")}</p>
+          {store_badges_html()}
+          <p>{_("Obrigado,")}<br/>{_("Equipe TimelyOne")}</p>
         </div>
     """
 

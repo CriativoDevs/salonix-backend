@@ -87,7 +87,7 @@ from .observability import (
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.email_utils import send_staff_invite_email
+from core.email_utils import send_staff_invite_email, send_tenant_welcome_email
 from .serializers import StaffContactUpdateSerializer
 from .throttling import UsersPasswordResetThrottle as _UsersPasswordResetThrottle
 from .throttling import (
@@ -162,6 +162,23 @@ class UserRegistrationView(generics.CreateAPIView):
                     "status_code": resp.status_code,
                 },
             )
+            # Email de boas-vindas (best-effort: falha nao bloqueia o registo)
+            try:
+                data = resp.data or {}
+                to_email = data.get("email") or request.data.get("email")
+                if to_email:
+                    send_tenant_welcome_email(
+                        to_email,
+                        owner_name=data.get("username")
+                        or request.data.get("username"),
+                        salon_name=data.get("salon_name")
+                        or request.data.get("salon_name")
+                        or "TimelyOne",
+                    )
+            except Exception:  # noqa: BLE001 — best-effort, nao deve afetar o registo
+                logger.warning(
+                    "Falha ao enviar welcome email no registo", exc_info=True
+                )
         else:
             USERS_AUTH_EVENTS_TOTAL.labels(event="register", result="failure").inc()
             logger.warning(
