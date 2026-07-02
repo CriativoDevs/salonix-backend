@@ -574,9 +574,21 @@ DEFAULT_FROM_EMAIL = env_get(
 # Endereço de resposta dos emails (no-reply respondível). Mailbox já existe.
 EMAIL_REPLY_TO = env_get("EMAIL_REPLY_TO", "support@timelyone.today")
 
+def first_csv_value(raw: str) -> str:
+    """Primeira entrada não vazia de uma string separada por vírgulas (ex.: env vars
+    que aceitam múltiplos domínios, mas só um valor é usado)."""
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if part:
+            return part
+    return ""
+
+
 # Base para geração de links públicos de download de ICS
 # Ex.: http://api.timelyone.com
-ICS_BASE_URL = env_get("ICS_BASE_URL", "")
+# Aceita múltiplos domínios separados por vírgula (ex.: Railway + domínio próprio),
+# mas só a primeira entrada é usada — é uma URL única, não uma allowlist.
+ICS_BASE_URL = first_csv_value(env_get("ICS_BASE_URL", ""))
 
 # Frontend URL (para redirects Stripe e links em e-mails)
 FRONTEND_BASE_URL = env_get("FRONTEND_BASE_URL", "http://localhost:5173")
