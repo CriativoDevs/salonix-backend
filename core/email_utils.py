@@ -101,13 +101,38 @@ def _send_email_safe(
 
 
 def send_appointment_confirmation_email(
-    to_email, client_name, service_name, date_time, salon_name="TimelyOne"
+    to_email,
+    client_name,
+    service_name,
+    date_time,
+    salon_name="TimelyOne",
+    appointment_id=None,
 ):
     """
     Envia e-mail de confirmação de agendamento.
     """
     subject = _("Confirmação do seu agendamento")
     formatted_date = date_time.strftime("%d/%m/%Y às %H:%M")
+
+    # Link ICS (público, com token), mesmo padrão usado na confirmação em massa.
+    ics_link = None
+    try:
+        base = getattr(settings, "ICS_BASE_URL", "")
+        if base and appointment_id:
+            base = base.rstrip("/")
+            token = compute_public_ics_token(appointment_id, date_time)
+            rid = secrets.token_urlsafe(18)
+            rid_ttl_seconds = int(
+                getattr(settings, "ICS_EMAIL_RID_TTL_SECONDS", 7 * 24 * 60 * 60)
+            )
+            cache.set(
+                f"ics:rid:{rid}",
+                {"appointment_id": int(appointment_id), "token": token},
+                timeout=rid_ttl_seconds,
+            )
+            ics_link = f"{base}/api/public/appointments/{appointment_id}/ics/?rid={rid}"
+    except Exception:
+        ics_link = None
 
     body = (
         _("Olá %(client_name)s,") % {"client_name": client_name}
@@ -118,7 +143,11 @@ def send_appointment_confirmation_email(
         % {"service_name": service_name}
         + "\n\n"
         + _("📅 Data e hora: %(formatted_date)s") % {"formatted_date": formatted_date}
-        + "\n\n"
+    )
+    if ics_link:
+        body += "\n\n" + _("Adicionar ao calendário: %(link)s") % {"link": ics_link}
+    body += (
+        "\n\n"
         + _(
             "Caso precise remarcar ou cancelar, entre em contato conosco com antecedência."
         )
@@ -126,11 +155,26 @@ def send_appointment_confirmation_email(
         + _("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}
     )
 
-    # Opcional: Adicionar versão HTML simples se desejado, mas mantendo compatibilidade com texto plano
-    # Por enquanto mantemos texto plano como principal, mas podemos enriquecer depois.
-    # O código original tinha MIMEText(body, "plain"), então vamos manter assim.
+    calendar_html = (
+        f'<p><a href="{ics_link}">{_("Adicionar ao calendário")}</a></p>'
+        if ics_link
+        else ""
+    )
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+          <p>{_("Olá %(client_name)s,") % {"client_name": client_name}}</p>
+          <p>{
+        _('Seu agendamento para o serviço "%(service_name)s" foi confirmado com sucesso!')
+        % {"service_name": service_name}
+    }</p>
+          <p>{_("📅 Data e hora: %(formatted_date)s") % {"formatted_date": formatted_date}}</p>
+          {calendar_html}
+          <p>{_("Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.")}</p>
+          <p>{_("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}}</p>
+        </div>
+        """
 
-    _send_email_safe(subject, body, None, to_email)
+    _send_email_safe(subject, body, body_html, to_email)
 
 
 def send_appointment_cancellation_email(

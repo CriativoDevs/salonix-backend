@@ -659,6 +659,7 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
                     service_name=appointment.service.name,
                     date_time=appointment.slot.start_time,
                     salon_name=salon_name,
+                    appointment_id=appointment.id,
                 )
         except Exception:  # pragma: no cover - apenas logging
             logger.error("Falha ao enviar e-mail de confirmação", exc_info=True)
@@ -3053,6 +3054,7 @@ class ClientsMeAppointmentCreateView(APIView):
                     service_name=service.name,
                     date_time=slot.start_time,
                     salon_name=salon_name,
+                    appointment_id=appointment.id,
                 )
         except Exception as e:
             logger.warning(
