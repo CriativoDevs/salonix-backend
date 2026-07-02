@@ -54,3 +54,5 @@ def test_send_email_on_appointment_creation(mock_send_email, user_fixture):
     assert kwargs["to_email"] == user_fixture.email
     assert "Corte" in kwargs["service_name"]
     assert kwargs["date_time"] == start_time
+    # BE-MARKETING-04: precisa do appointment_id para gerar o link do calendário (.ics)
+    assert kwargs["appointment_id"] == response.data["id"]

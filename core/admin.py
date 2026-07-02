@@ -313,6 +313,7 @@ class AppointmentAdmin(admin.ModelAdmin):
                     service_name=obj.service.name,
                     date_time=obj.slot.start_time,
                     salon_name=salon_name,
+                    appointment_id=obj.id,
                 )
             elif previous_status != "cancelled" and obj.status == "cancelled":
                 salon_email = obj.professional.user.email if obj.professional else ""
