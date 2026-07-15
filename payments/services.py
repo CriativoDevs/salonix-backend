@@ -302,7 +302,11 @@ class SubscriptionService:
                     "comm_auto_renew": bool(plan_info.get("comm_auto_renew", False)),
                     "is_current": plan_code == current_plan,
                     "can_upgrade": i > current_index,
-                    "is_available": True,  # Planos padrão sempre disponíveis
+                    "is_available": (
+                        not FounderService.is_basic_blocked(tenant=tenant)
+                        if plan_code == "basic"
+                        else True
+                    ),
                 }
             )
 
@@ -807,7 +811,8 @@ class BillingService:
         """Retorna visão geral completa do billing do usuário."""
         current_subscription = SubscriptionService.get_current_subscription(user)
         available_plans = SubscriptionService.get_available_plans(
-            current_subscription["plan_code"] if current_subscription else None
+            current_subscription["plan_code"] if current_subscription else None,
+            tenant=getattr(user, "tenant", None),
         )
 
         # Obter saldo de créditos

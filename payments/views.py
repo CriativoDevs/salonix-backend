@@ -118,6 +118,13 @@ class CreateCheckoutSession(APIView):
                     {"detail": "O plano Founder não está mais disponível para você."},
                     status=400,
                 )
+
+        if requested_plan == "basic" and FounderService.is_basic_blocked(tenant=tenant):
+            return Response(
+                {"detail": "O plano Basic ainda não está disponível — restam vagas Founder."},
+                status=400,
+            )
+
         price_id = stripe_utils.get_price_id_for_plan(
             requested_plan, interval=requested_interval
         )

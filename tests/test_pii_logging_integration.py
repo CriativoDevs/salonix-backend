@@ -71,6 +71,7 @@ class UserAuthLoggingIntegrationTest(TestCase):
                 "email": test_email,
                 "password": "TestPass123!@",
                 "salon_name": "Salon Mask Test",
+                "plan": "founder",
             },
             content_type="application/json",
         )

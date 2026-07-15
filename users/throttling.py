@@ -66,6 +66,20 @@ class UsersClientAccessLinkThrottle(_BaseUsersThrottle):
         return super().get_cache_key(request, view)
 
 
+class UsersClientRegistrationThrottle(_BaseUsersThrottle):
+    scope = "clients_registration"
+
+    def get_cache_key(self, request, view):
+        # Per tenant (do slug na URL), para não penalizar outros tenants
+        tenant_slug = (
+            view.kwargs.get("tenant_slug") if hasattr(view, "kwargs") else None
+        )
+        if tenant_slug:
+            ident = str(tenant_slug).lower()
+            return self.cache_format % {"scope": self.scope, "ident": ident}
+        return super().get_cache_key(request, view)
+
+
 class FeedbackCreateThrottle(_BaseUsersThrottle):
     scope = "feedback_create"
 

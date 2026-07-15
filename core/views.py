@@ -60,6 +60,7 @@ from core.serializers import (
     ClientAccessLinkRequestSerializer,
     ClientAccessAcceptSerializer,
     PublicClientAccessLinkRequestSerializer,
+    PublicClientRegistrationSerializer,
     FeedbackSerializer,
     ClientLoginSerializer,
     ClientSetPasswordSerializer,
@@ -87,7 +88,11 @@ import csv
 import io
 from typing import Any, Dict, List, Optional, cast
 
-from users.throttling import UsersClientAccessLinkThrottle, FeedbackCreateThrottle
+from users.throttling import (
+    UsersClientAccessLinkThrottle,
+    UsersClientRegistrationThrottle,
+    FeedbackCreateThrottle,
+)
 from users.security import enforce_captcha_or_raise
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -534,6 +539,93 @@ class PublicTenantDetailView(APIView):
 
         serializer = TenantPublicSerializer(tenant)
         return Response(serializer.data, status=drf_status.HTTP_200_OK)
+
+
+class PublicClientRegistrationView(APIView):
+    """
+    POST /api/public/<tenant_slug>/clients/register/
+
+    Endpoint PÚBLICO (sem autenticação) para auto-cadastro de clientes via
+    link partilhado pelo tenant (BE-MARKETING-03).
+
+    Reaproveita a criação de SalonCustomer + o mesmo magic link de acesso
+    (send_customer_pwa_invite) já usado quando staff adiciona um cliente
+    manualmente. Não coleta senha no formulário — o cliente define a senha
+    depois, ao seguir o link recebido por email.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [UsersClientRegistrationThrottle]
+    throttle_scope = "clients_registration"
+
+    @extend_schema(
+        request=PublicClientRegistrationSerializer,
+        responses={
+            201: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            400: OpenApiResponse(response=OpenApiTypes.OBJECT),
+            404: OpenApiResponse(response=OpenApiTypes.OBJECT),
+        },
+        description="Auto-cadastro público de cliente via link do tenant.",
+    )
+    def post(self, request, tenant_slug):
+        try:
+            enforce_captcha_or_raise(request)
+        except ValidationError:
+            return Response(
+                {"detail": "Captcha inválido."}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+        except Tenant.DoesNotExist:
+            return Response(
+                {"detail": "Tenant não encontrado."},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+
+        if not tenant.pwa_client_enabled:
+            return Response(
+                {"detail": "Tenant não encontrado."},
+                status=drf_status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = PublicClientRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        email = data.get("email")
+        if email and SalonCustomer.objects.filter(
+            tenant=tenant, email__iexact=email
+        ).exists():
+            return Response(
+                {"detail": "Este email já está registado."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        customer = SalonCustomer.objects.create(
+            tenant=tenant,
+            name=data["name"],
+            email=email or None,
+            phone_number=data.get("phone_number") or None,
+            marketing_opt_in=data.get("marketing_opt_in", False),
+        )
+
+        try:
+            send_customer_pwa_invite(tenant=tenant, customer=customer, invited_by=None)
+        except Exception:  # pragma: no cover
+            logger.error(
+                "Public client registration invite dispatch failed",
+                exc_info=True,
+                extra={"tenant_id": tenant.id, "customer_id": customer.id},
+            )
+
+        return Response(
+            {
+                "customer_id": customer.id,
+                "message": "Cadastro realizado. Verifique o seu email para aceder.",
+            },
+            status=drf_status.HTTP_201_CREATED,
+        )
 
 
 class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
