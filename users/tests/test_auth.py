@@ -26,6 +26,7 @@ class TestAuthEndpoints:
             "username": "lucas",
             "email": "lucas@salonix.com",
             "password": "strongpassword123",
+            "plan": "founder",
         }
         response = self.client.post(self.register_url, data=payload)
         assert response.status_code == status.HTTP_201_CREATED
@@ -73,12 +74,14 @@ class TestAuthEndpoints:
             "email": "ana@example.com",
             "password": "strongpass123",
             "salon_name": "Studio Glam",
+            "plan": "founder",
         }
         second_payload = {
             "username": "carla",
             "email": "carla@example.com",
             "password": "anotherpass123",
             "salon_name": "Studio Glam",
+            "plan": "founder",
         }
 
         first_response = self.client.post(self.register_url, data=first_payload)

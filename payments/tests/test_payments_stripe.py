@@ -102,6 +102,10 @@ class _StripeSDK:
 # ---------- testes ----------
 @pytest.mark.django_db
 def test_create_checkout_session_basic_plan(monkeypatch, settings, auth_client):
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
     # configura settings mínimos
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
@@ -144,6 +148,10 @@ def test_create_checkout_session_basic_plan(monkeypatch, settings, auth_client):
 def test_checkout_trial_suppressed_for_existing_subscription(
     monkeypatch, settings, auth_client
 ):
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
@@ -187,6 +195,10 @@ def test_checkout_trial_suppressed_for_existing_subscription(
 def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
     monkeypatch, settings, auth_client
 ):
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
@@ -236,6 +248,10 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
 
 @pytest.mark.django_db
 def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_client):
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
     settings.STRIPE_API_KEY = "sk_test_xxx"
     settings.STRIPE_PRICE_PRO_MONTHLY_ID = "price_pro_123"
     settings.STRIPE_PRICE_BASIC_MONTHLY_ID = "price_basic_123"
@@ -729,6 +745,14 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
         def can_assign_founder(tenant=None):
             return True
 
+        @staticmethod
+        def get_availability():
+            return {"total_limit": 500, "used_count": 0, "remaining_count": 500}
+
+        @staticmethod
+        def is_basic_blocked(tenant=None):
+            return False
+
     monkeypatch.setattr("users.services.FounderService", MockFounderService)
 
     tenant = Tenant.objects.create(name="Test Tenant", slug="test-tenant-plans")
@@ -753,3 +777,71 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
     assert founder_plan is not None
     assert founder_plan["comm_auto_renew"] is False
     assert founder_plan["credits_included"] == 2
+
+
+@pytest.mark.django_db
+def test_get_available_plans_basic_unavailable_when_founder_has_vacancies(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Fresh Tenant Plans", slug="fresh-tenant-plans", is_founder=False
+    )
+
+    available_plans = SubscriptionService.get_available_plans(tenant=tenant)
+    basic_plan = next((p for p in available_plans if p["plan_code"] == "basic"), None)
+
+    assert basic_plan is not None
+    assert basic_plan["is_available"] is False
+
+
+@pytest.mark.django_db
+def test_get_available_plans_basic_available_when_founder_exhausted(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Fresh Tenant Plans 2", slug="fresh-tenant-plans-2", is_founder=False
+    )
+
+    available_plans = SubscriptionService.get_available_plans(tenant=tenant)
+    basic_plan = next((p for p in available_plans if p["plan_code"] == "basic"), None)
+
+    assert basic_plan is not None
+    assert basic_plan["is_available"] is True
+
+
+@pytest.mark.django_db
+def test_billing_overview_passes_tenant_to_available_plans(monkeypatch, auth_client):
+    from payments.services import BillingService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(
+        name="Billing Overview Tenant", slug="billing-overview-tenant", is_founder=False
+    )
+    user.tenant = tenant
+    user.save()
+
+    overview = BillingService.get_billing_overview(user)
+    basic_plan = next(
+        (p for p in overview["available_plans"] if p["plan_code"] == "basic"), None
+    )
+
+    assert basic_plan is not None
+    assert basic_plan["is_available"] is False

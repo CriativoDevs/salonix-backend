@@ -20,6 +20,7 @@ def test_register_returns_tenant_meta():
         "email": "newuser@example.com",
         "password": "Password123!",
         "salon_name": "New Salon",
+        "plan": "founder",
     }
 
     response = client.post(url, payload)

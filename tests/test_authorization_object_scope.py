@@ -74,6 +74,11 @@ def test_billing_checkout_requires_owner_of_target_tenant(
     settings.FRONTEND_BASE_URL = "http://localhost:5173"
     settings.STRIPE_API_VERSION = "2024-06-20"
 
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
+
     from payments import stripe_utils
 
     class FakeStripeCheckout:

@@ -366,6 +366,30 @@ class FounderService:
         # Sem tenant: apenas validação de limite global
         return True
 
+    @classmethod
+    def is_basic_blocked(cls, tenant: Optional[Tenant] = None) -> bool:
+        """
+        Retorna True se o plano Basic NÃO deve estar disponível porque ainda
+        há vagas Founder (das 500) e o tenant nunca teve Founder (nem é
+        Founder atualmente).
+
+        Regra de negócio: enquanto houver vagas Founder, só Founder é
+        oferecido a tenants novos; Basic só aparece depois de esgotar as
+        vagas. Um tenant que já é (ou já foi) Founder pode sempre escolher
+        Basic livremente — essa transição nunca é bloqueada.
+        """
+        availability = cls.get_availability()
+        if availability["remaining_count"] <= 0:
+            return False
+
+        if tenant is None:
+            return True
+
+        if tenant.is_founder:
+            return False
+
+        return cls.can_assign_founder(tenant=tenant)
+
 
 class SMSRateLimiter:
 

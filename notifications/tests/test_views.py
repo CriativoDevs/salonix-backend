@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
 from notifications.models import Notification, NotificationDevice
+from users.models import Tenant
 
 User = get_user_model()
 
@@ -202,6 +203,63 @@ class TestNotificationViews:
         # Verificar que status foi atualizado
         existing_device.refresh_from_db()
         assert existing_device.is_active is True
+
+    def test_register_device_same_token_different_tenants(
+        self, tenant_fixture, user_fixture
+    ):
+        """
+        Bug de produção (confirmado nos logs): quando já existe um registo de
+        NotificationDevice para o mesmo (user, device_type, token) associado
+        a OUTRO tenant (ex.: dados históricos de uma reatribuição de tenant,
+        ou reutilização do mesmo device/token), a busca em perform_create é
+        escopada ao tenant atual e não encontra esse registo. O código então
+        tenta criar um novo NotificationDevice, o que colide com o índice
+        único (user, device_type, token) ao nível da BD e levanta um
+        IntegrityError não tratado (500 em produção).
+
+        Cada tenant deve poder ter o seu próprio registo isolado para o mesmo
+        (user, device_type, token).
+        """
+        other_tenant = Tenant.objects.create(
+            slug="other-notif-tenant", name="Other Notif Tenant"
+        )
+        shared_token = "shared-cross-tenant-token"
+
+        # Registo pré-existente do MESMO user sob um tenant DIFERENTE
+        # (simula dados legados / reatribuição de tenant do usuário).
+        NotificationDevice.objects.create(
+            tenant=other_tenant,
+            user=user_fixture,
+            device_type="mobile",
+            token=shared_token,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=user_fixture)
+        url = reverse("notification-register-device")
+        data = {"device_type": "mobile", "token": shared_token, "is_active": True}
+
+        response = self.client.post(url, data)
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Cada tenant tem o seu próprio device, ambos com o mesmo token
+        device_tenant_1 = NotificationDevice.objects.get(
+            tenant=tenant_fixture, user=user_fixture, device_type="mobile"
+        )
+        device_tenant_2 = NotificationDevice.objects.get(
+            tenant=other_tenant, user=user_fixture, device_type="mobile"
+        )
+        assert device_tenant_1.token == shared_token
+        assert device_tenant_2.token == shared_token
+        assert device_tenant_1.id != device_tenant_2.id
+
+        assert (
+            NotificationDevice.objects.filter(
+                user=user_fixture, device_type="mobile", token=shared_token
+            ).count()
+            == 2
+        )
 
     def test_notification_test_channel(self, tenant_fixture, user_fixture):
         """Teste endpoint de teste de canal"""

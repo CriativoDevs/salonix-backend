@@ -173,3 +173,119 @@ class TestFounderPlan:
             availability = FounderService.get_availability()
             assert availability["used_count"] == 4
             assert availability["remaining_count"] == 0
+
+
+class TestFounderIsBasicBlocked:
+    @pytest.mark.django_db
+    def test_blocked_when_vacancies_remain_and_tenant_has_no_history(self):
+        tenant = Tenant.objects.create(
+            name="Fresh Tenant", slug="fresh-tenant", is_founder=False
+        )
+        with patch.object(FounderService, "FOUNDER_LIMIT", 500):
+            assert FounderService.is_basic_blocked(tenant=tenant) is True
+
+    @pytest.mark.django_db
+    def test_not_blocked_when_tenant_is_active_founder(self):
+        tenant = Tenant.objects.create(
+            name="Founder Tenant", slug="founder-tenant", is_founder=True
+        )
+        assert FounderService.is_basic_blocked(tenant=tenant) is False
+
+    @pytest.mark.django_db
+    @patch("payments.stripe_utils.get_plan_code_from_price")
+    def test_not_blocked_when_tenant_left_founder_before(self, mock_get_plan):
+        mock_get_plan.return_value = "founder"
+        from payments.models import Subscription
+
+        tenant = Tenant.objects.create(
+            name="Ex Founder", slug="ex-founder", is_founder=False
+        )
+        owner = CustomUser.objects.create_user(
+            username="ex_founder_owner",
+            email="exfounder@example.com",
+            password="pass",
+            tenant=tenant,
+        )
+        Subscription.objects.create(
+            user=owner,
+            stripe_subscription_id="sub_ex_founder",
+            price_id="price_founder_old",
+            status="canceled",
+        )
+        assert FounderService.is_basic_blocked(tenant=tenant) is False
+
+    @pytest.mark.django_db
+    def test_not_blocked_when_founder_vacancies_exhausted(self):
+        tenant = Tenant.objects.create(
+            name="Fresh Tenant 2", slug="fresh-tenant-2", is_founder=False
+        )
+        with patch.object(FounderService, "FOUNDER_LIMIT", 0):
+            assert FounderService.is_basic_blocked(tenant=tenant) is False
+
+    @pytest.mark.django_db
+    def test_blocked_with_no_tenant_and_vacancies_remain(self):
+        with patch.object(FounderService, "FOUNDER_LIMIT", 500):
+            assert FounderService.is_basic_blocked(tenant=None) is True
+
+    @pytest.mark.django_db
+    def test_not_blocked_with_no_tenant_and_vacancies_exhausted(self):
+        with patch.object(FounderService, "FOUNDER_LIMIT", 0):
+            assert FounderService.is_basic_blocked(tenant=None) is False
+
+
+@pytest.mark.django_db
+class TestRegistrationBasicBlockedByFounder:
+    def test_registration_blocked_when_plan_omitted_and_founder_available(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        url = reverse("register")
+        response = client.post(
+            url,
+            {
+                "username": "newowner",
+                "email": "newowner@example.com",
+                "password": "StrongPass123",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_registration_allowed_with_explicit_founder_plan(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        url = reverse("register")
+        response = client.post(
+            url,
+            {
+                "username": "newfounder",
+                "email": "newfounder@example.com",
+                "password": "StrongPass123",
+                "plan": "founder",
+            },
+        )
+        assert response.status_code == 201
+
+    def test_registration_allowed_with_basic_when_founder_exhausted(self):
+        from unittest.mock import patch
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        url = reverse("register")
+        with patch(
+            "users.services.FounderService.get_availability",
+            return_value={"total_limit": 500, "used_count": 500, "remaining_count": 0},
+        ):
+            response = client.post(
+                url,
+                {
+                    "username": "newbasic",
+                    "email": "newbasic@example.com",
+                    "password": "StrongPass123",
+                    "plan": "basic",
+                },
+            )
+        assert response.status_code == 201

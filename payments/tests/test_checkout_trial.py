@@ -52,8 +52,17 @@ class CheckoutTrialTestCase(APITestCase):
         # Mock customer create
         self.mock_stripe.Customer.create.return_value = {"id": "cus_test_123"}
 
+        # BE-MARKETING-03: simula vagas Founder esgotadas para não bloquear
+        # os testes de trial, que usam plan="basic" sem relação com Founder.
+        self.founder_patcher = patch(
+            "users.services.FounderService.get_availability",
+            return_value={"total_limit": 500, "used_count": 500, "remaining_count": 0},
+        )
+        self.founder_patcher.start()
+
     def tearDown(self):
         self.patcher.stop()
+        self.founder_patcher.stop()
 
     def test_new_customer_gets_trial(self):
         """User with no subscription history should get trial days."""

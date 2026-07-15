@@ -106,6 +106,78 @@ class FounderCheckoutTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("não está mais disponível", response.data["detail"])
 
+    @patch("payments.views.stripe_utils.get_stripe")
+    @patch("payments.views.stripe_utils.get_price_id_for_plan")
+    @patch("users.services.FounderService.get_availability")
+    def test_create_checkout_session_basic_blocked_when_founder_available(
+        self, mock_availability, mock_get_price, mock_get_stripe
+    ):
+        mock_availability.return_value = {
+            "total_limit": 500,
+            "used_count": 0,
+            "remaining_count": 500,
+        }
+
+        url = reverse("payments:create_checkout_session")
+        response = self.client.post(url, {"plan": "basic"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Founder", response.data["detail"])
+        mock_get_price.assert_not_called()
+
+    @patch("payments.views.stripe_utils.get_stripe")
+    @patch("payments.views.stripe_utils.get_price_id_for_plan")
+    @patch("users.services.FounderService.get_availability")
+    def test_create_checkout_session_basic_allowed_when_founder_exhausted(
+        self, mock_availability, mock_get_price, mock_get_stripe
+    ):
+        mock_availability.return_value = {
+            "total_limit": 500,
+            "used_count": 500,
+            "remaining_count": 0,
+        }
+        mock_get_price.return_value = "price_basic_123"
+
+        mock_stripe = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "http://checkout.url"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
+
+        url = reverse("payments:create_checkout_session")
+        response = self.client.post(url, {"plan": "basic"})
+
+        self.assertEqual(response.status_code, 200)
+
+    @patch("payments.views.stripe_utils.get_stripe")
+    @patch("payments.views.stripe_utils.get_price_id_for_plan")
+    @patch("users.services.FounderService.get_availability")
+    def test_create_checkout_session_basic_allowed_for_active_founder_tenant(
+        self, mock_availability, mock_get_price, mock_get_stripe
+    ):
+        # Vagas Founder ainda existem, mas o tenant JÁ É founder — deve poder
+        # fazer downgrade voluntário para Basic sem bloqueio.
+        mock_availability.return_value = {
+            "total_limit": 500,
+            "used_count": 1,
+            "remaining_count": 499,
+        }
+        mock_get_price.return_value = "price_basic_123"
+
+        self.tenant.is_founder = True
+        self.tenant.save()
+
+        mock_stripe = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "http://checkout.url"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
+
+        url = reverse("payments:create_checkout_session")
+        response = self.client.post(url, {"plan": "basic"})
+
+        self.assertEqual(response.status_code, 200)
+
     @patch("payments.views.stripe.Subscription.retrieve")
     @patch("payments.views.stripe.Webhook.construct_event")
     @patch("payments.views.stripe_utils.get_stripe")

@@ -74,6 +74,7 @@ def test_registration_triggers_welcome_email():
             "email": "welcome@example.com",
             "password": "Password123!",
             "salon_name": "Welcome Salon",
+            "plan": "founder",
         }
         resp = client.post(url, payload)
 
@@ -99,6 +100,7 @@ def test_welcome_email_failure_does_not_break_registration():
             "email": "resilient@example.com",
             "password": "Password123!",
             "salon_name": "Resilient Salon",
+            "plan": "founder",
         }
         resp = client.post(url, payload)
 

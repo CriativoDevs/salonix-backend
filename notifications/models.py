@@ -68,7 +68,7 @@ class NotificationDevice(models.Model):
             models.Index(fields=["tenant", "user", "device_type"]),
             models.Index(fields=["tenant", "is_active"]),
         ]
-        unique_together = [["user", "device_type", "token"]]
+        unique_together = [["tenant", "user", "device_type", "token"]]
 
     def __str__(self):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"

@@ -84,13 +84,28 @@ def test_login_is_throttled():
 def test_register_is_throttled():
     client = APIClient()
     url = reverse("register")
-    p = {"username": "x", "email": "x1@example.com", "password": "StrongPass123"}
+    p = {
+        "username": "x",
+        "email": "x1@example.com",
+        "password": "StrongPass123",
+        "plan": "founder",
+    }
     r1 = client.post(url, data=p)
     assert r1.status_code == status.HTTP_201_CREATED
-    p2 = {"username": "y", "email": "x2@example.com", "password": "StrongPass123"}
+    p2 = {
+        "username": "y",
+        "email": "x2@example.com",
+        "password": "StrongPass123",
+        "plan": "founder",
+    }
     r2 = client.post(url, data=p2)
     assert r2.status_code == status.HTTP_201_CREATED
-    p3 = {"username": "z", "email": "x3@example.com", "password": "StrongPass123"}
+    p3 = {
+        "username": "z",
+        "email": "x3@example.com",
+        "password": "StrongPass123",
+        "plan": "founder",
+    }
     r3 = client.post(url, data=p3)
     assert r3.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 

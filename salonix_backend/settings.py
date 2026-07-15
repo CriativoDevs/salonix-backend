@@ -470,6 +470,18 @@ REST_FRAMEWORK = {
                 else "10/hour"
             ),
         ),
+        "clients_registration": env_get(
+            "CLIENTS_REGISTRATION_RATE",
+            (
+                "50/hour"
+                if (
+                    "test" in sys.argv
+                    or "pytest" in sys.modules
+                    or ENV in ("dev", "staging", "uat")
+                )
+                else "10/hour"
+            ),
+        ),
         "clients_me_appointments_create": env_get(
             "CLIENTS_ME_APPOINTMENTS_CREATE_RATE",
             (

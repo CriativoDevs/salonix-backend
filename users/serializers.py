@@ -273,12 +273,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
         # Verifica plano Founder
         is_founder = False
-        if data.get("plan") == "founder":
+        requested_plan = data.get("plan", "basic")
+        if requested_plan == "founder":
             if not FounderService.can_assign_founder():
                 raise serializers.ValidationError(
                     {"plan": "O plano Founder não está mais disponível."}
                 )
             is_founder = True
+        elif requested_plan == "basic" and FounderService.is_basic_blocked():
+            raise serializers.ValidationError(
+                {"plan": "O plano Basic ainda não está disponível — restam vagas Founder."}
+            )
 
         tenant = Tenant.objects.create(
             name=sanitized_display_name or data["username"],

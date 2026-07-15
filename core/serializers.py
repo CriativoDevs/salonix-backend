@@ -293,6 +293,53 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
         return data
 
 
+class PublicClientRegistrationSerializer(serializers.Serializer):
+    """
+    Serializer para auto-cadastro público de clientes (BE-MARKETING-03).
+    Não é um ModelSerializer porque não expõe/aceita todos os campos de
+    SalonCustomer (ex.: is_active, notes) — só os campos do formulário público.
+    """
+
+    name = serializers.CharField(max_length=120)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=32, required=False, allow_blank=True
+    )
+    marketing_opt_in = serializers.BooleanField(required=False, default=False)
+
+    def validate_name(self, value):
+        sanitized = sanitize_text_input(value, max_length=120)
+        if not sanitized:
+            raise serializers.ValidationError("Nome do cliente é obrigatório.")
+        return sanitized
+
+    def validate_email(self, value):
+        if value:
+            return value.strip().lower()
+        return value
+
+    def validate_phone_number(self, value):
+        if not value:
+            return value
+        sanitized = sanitize_text_input(value, max_length=32)
+        if not sanitized:
+            return value
+        try:
+            validate_phone_number(sanitized)
+        except Exception as exc:  # pragma: no cover
+            raise serializers.ValidationError(str(exc)) from exc
+        return sanitized
+
+    def validate(self, data):
+        email = data.get("email")
+        phone = data.get("phone_number")
+        if not email and not phone:
+            raise serializers.ValidationError(
+                "Informe pelo menos email ou telefone para o cliente."
+            )
+        return data
+
+
 class ScheduleSlotSerializer(serializers.ModelSerializer):
     start_time = serializers.DateTimeField(format=cast(Any, "%Y-%m-%d %H:%M"))
     end_time = serializers.DateTimeField(format=cast(Any, "%Y-%m-%d %H:%M"))

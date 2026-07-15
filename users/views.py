@@ -2037,6 +2037,25 @@ class TenantNotificationsSettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        description="Retorna os toggles atuais de canais de notificação do tenant.",
+        responses={200: OpenApiResponse(description="ok")},
+    )
+    def get(self, request):
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None:
+            raise AuthenticationFailed("tenant_required")
+
+        return Response(
+            {
+                "sms_enabled": tenant.sms_enabled,
+                "whatsapp_enabled": tenant.whatsapp_enabled,
+                "push_mobile_enabled": tenant.push_mobile_enabled,
+                "push_web_enabled": tenant.push_web_enabled,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
         description=(
             "Atualiza toggles de canais de notificação (SMS, WhatsApp, Push Mobile). "
             "Push Mobile só pode ser ativado no plano Enterprise."
