@@ -1184,9 +1184,14 @@ class AvailablePlansView(APIView):
             current_plan = (
                 current_subscription["plan_code"] if current_subscription else None
             )
+            subscription_status = (
+                current_subscription["status"] if current_subscription else None
+            )
 
             tenant = getattr(request.user, "tenant", None)
-            plans = SubscriptionService.get_available_plans(current_plan, tenant=tenant)
+            plans = SubscriptionService.get_available_plans(
+                current_plan, tenant=tenant, subscription_status=subscription_status
+            )
 
             return Response(plans, status=200)
 
