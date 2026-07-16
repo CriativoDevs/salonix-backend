@@ -305,6 +305,14 @@ class FounderService:
         Returns:
             bool: True se há vagas E (sem tenant ou tenant é elegível)
         """
+        # Se já é founder ativo, mantém elegibilidade para renovação,
+        # independentemente do limite global já ter sido atingido.
+        if tenant and tenant.is_founder:
+            print(
+                f"[FounderService.can_assign_founder] {tenant.slug} é Founder ativo - mantém elegibilidade"
+            )
+            return True
+
         availability = cls.get_availability()
 
         if availability["remaining_count"] <= 0:
@@ -315,13 +323,6 @@ class FounderService:
             print(
                 f"[FounderService.can_assign_founder] Validando tenant: {tenant.slug}, is_founder={tenant.is_founder}"
             )
-
-            # Se já é founder ativo, mantém elegibilidade para renovação
-            if tenant.is_founder:
-                print(
-                    f"[FounderService.can_assign_founder] {tenant.slug} é Founder ativo - mantém elegibilidade"
-                )
-                return True
 
             # Verificar se já teve assinatura Founder no passado
             # Se sim, nega o direito de volta (oferta única por tenant)

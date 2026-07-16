@@ -780,6 +780,40 @@ def test_get_available_plans_returns_correct_auto_renew_and_credits(monkeypatch)
 
 
 @pytest.mark.django_db
+def test_get_available_plans_uses_public_plan_names(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    class MockFounderService:
+        @staticmethod
+        def can_assign_founder(tenant=None):
+            return True
+
+        @staticmethod
+        def get_availability():
+            return {"total_limit": 500, "used_count": 0, "remaining_count": 500}
+
+        @staticmethod
+        def is_basic_blocked(tenant=None):
+            return False
+
+    monkeypatch.setattr("users.services.FounderService", MockFounderService)
+
+    tenant = Tenant.objects.create(name="Naming Tenant", slug="naming-tenant")
+
+    available_plans = SubscriptionService.get_available_plans(tenant=tenant)
+    basic_plan = next((p for p in available_plans if p["plan_code"] == "basic"), None)
+    founder_plan = next(
+        (p for p in available_plans if p["plan_code"] == "founder"), None
+    )
+
+    assert basic_plan is not None
+    assert basic_plan["name"] == "TimelyOne"
+    assert founder_plan is not None
+    assert founder_plan["name"] == "TimelyOne Founder"
+
+
+@pytest.mark.django_db
 def test_get_available_plans_basic_unavailable_when_founder_has_vacancies(monkeypatch):
     from payments.services import SubscriptionService
     from users.models import Tenant
@@ -822,6 +856,128 @@ def test_get_available_plans_basic_available_when_founder_exhausted(monkeypatch)
 
 
 @pytest.mark.django_db
+def test_get_available_plans_shows_only_current_when_active(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Active Basic Tenant", slug="active-basic-tenant", is_founder=False
+    )
+
+    available_plans = SubscriptionService.get_available_plans(
+        current_plan="basic", tenant=tenant, subscription_status="active"
+    )
+
+    assert len(available_plans) == 1
+    assert available_plans[0]["plan_code"] == "basic"
+    assert available_plans[0]["is_current"] is True
+
+
+@pytest.mark.django_db
+def test_get_available_plans_shows_only_current_when_past_due(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Past Due Founder Tenant",
+        slug="past-due-founder-tenant",
+        is_founder=True,
+    )
+
+    available_plans = SubscriptionService.get_available_plans(
+        current_plan="founder", tenant=tenant, subscription_status="past_due"
+    )
+
+    assert len(available_plans) == 1
+    assert available_plans[0]["plan_code"] == "founder"
+    assert available_plans[0]["is_current"] is True
+
+
+@pytest.mark.django_db
+def test_get_available_plans_shows_all_when_trialing(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Trialing Tenant", slug="trialing-tenant", is_founder=False
+    )
+
+    available_plans = SubscriptionService.get_available_plans(
+        current_plan="basic", tenant=tenant, subscription_status="trialing"
+    )
+
+    plan_codes = {p["plan_code"] for p in available_plans}
+    assert "basic" in plan_codes
+    assert "founder" in plan_codes
+
+
+@pytest.mark.django_db
+def test_get_available_plans_shows_all_when_no_subscription(monkeypatch):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Fresh Tenant No Sub", slug="fresh-tenant-no-sub", is_founder=False
+    )
+
+    available_plans = SubscriptionService.get_available_plans(
+        current_plan=None, tenant=tenant, subscription_status=None
+    )
+
+    plan_codes = {p["plan_code"] for p in available_plans}
+    assert "basic" in plan_codes
+    assert "founder" in plan_codes
+
+
+@pytest.mark.django_db
+def test_get_available_plans_active_founder_not_empty_when_slots_exhausted(
+    monkeypatch,
+):
+    from payments.services import SubscriptionService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
+    )
+
+    tenant = Tenant.objects.create(
+        name="Active Founder Tenant Full Slots",
+        slug="active-founder-tenant-full-slots",
+        is_founder=True,
+    )
+
+    available_plans = SubscriptionService.get_available_plans(
+        current_plan="founder", tenant=tenant, subscription_status="active"
+    )
+
+    assert len(available_plans) > 0
+    assert len(available_plans) == 1
+    assert available_plans[0]["plan_code"] == "founder"
+    assert available_plans[0]["is_current"] is True
+
+
+@pytest.mark.django_db
 def test_billing_overview_passes_tenant_to_available_plans(monkeypatch, auth_client):
     from payments.services import BillingService
     from users.models import Tenant
@@ -845,3 +1001,83 @@ def test_billing_overview_passes_tenant_to_available_plans(monkeypatch, auth_cli
 
     assert basic_plan is not None
     assert basic_plan["is_available"] is False
+
+
+@pytest.mark.django_db
+def test_billing_overview_shows_only_current_plan_when_active(monkeypatch, auth_client):
+    from payments.services import BillingService
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(
+        name="Overview Active Tenant", slug="overview-active-tenant", is_founder=False
+    )
+    user.tenant = tenant
+    user.save()
+
+    monkeypatch.setattr(
+        "payments.services.SubscriptionService.get_current_subscription",
+        lambda u: {
+            "plan_code": "basic",
+            "plan_name": "TimelyOne",
+            "status": "active",
+            "status_label": "Ativo",
+            "current_period_end": None,
+            "cancel_at_period_end": False,
+            "next_billing_date": None,
+            "price_monthly": Decimal("29.00"),
+        },
+    )
+
+    overview = BillingService.get_billing_overview(user)
+
+    assert len(overview["available_plans"]) == 1
+    assert overview["available_plans"][0]["plan_code"] == "basic"
+
+
+@pytest.mark.django_db
+def test_available_plans_view_shows_only_current_plan_when_active(
+    monkeypatch, auth_client
+):
+    from django.urls import reverse
+    from users.models import Tenant
+
+    monkeypatch.setattr(
+        "users.services.FounderService.get_availability",
+        lambda: {"total_limit": 500, "used_count": 0, "remaining_count": 500},
+    )
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(
+        name="Available Plans View Tenant",
+        slug="available-plans-view-tenant",
+        is_founder=False,
+    )
+    user.tenant = tenant
+    user.save()
+
+    monkeypatch.setattr(
+        "payments.views.SubscriptionService.get_current_subscription",
+        lambda u: {
+            "plan_code": "basic",
+            "plan_name": "TimelyOne",
+            "status": "active",
+            "status_label": "Ativo",
+            "current_period_end": None,
+            "cancel_at_period_end": False,
+            "next_billing_date": None,
+            "price_monthly": Decimal("29.00"),
+        },
+    )
+
+    url = reverse("payments:available_plans")
+    response = c.get(url)
+
+    assert response.status_code == 200
+    assert len(response.data) == 1
+    assert response.data[0]["plan_code"] == "basic"

@@ -233,7 +233,7 @@ class SubscriptionService:
     # aparece em listagens públicas nem pode ser contratado.
     AVAILABLE_PLANS = {
         "basic": {
-            "name": "Basic",
+            "name": "TimelyOne",
             "price_monthly": Decimal("29.00"),
             "features": [
                 "PWA Admin/Manager/Staff/Client",
@@ -263,7 +263,10 @@ class SubscriptionService:
 
     @classmethod
     def get_available_plans(
-        cls, current_plan: Optional[str] = None, tenant: Optional["Tenant"] = None
+        cls,
+        current_plan: Optional[str] = None,
+        tenant: Optional["Tenant"] = None,
+        subscription_status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retorna lista de planos disponíveis com informações de upgrade.
@@ -271,6 +274,13 @@ class SubscriptionService:
         Args:
             current_plan: Código do plano atual do usuário
             tenant: Tenant do usuário para verificar elegibilidade (esp. para Founder)
+            subscription_status: Status da subscrição atual (ex.: "active",
+                "trialing", "past_due"). Quando "active" ou "past_due", a
+                lista devolvida contém apenas o plano atual — trocar de
+                plano pago para outro plano pago não é uma operação
+                suportada nesta tela (usar o portal do Stripe / cancelar +
+                reativar). Quando None ou "trialing", devolve a lista
+                completa, para permitir a escolha inicial.
 
         Returns:
             Lista de planos com informações de disponibilidade
@@ -317,7 +327,7 @@ class SubscriptionService:
                 0,
                 {
                     "plan_code": "founder",
-                    "name": "Founder",
+                    "name": "TimelyOne Founder",
                     "price_monthly": Decimal("15.00"),
                     "features": [
                         "Preço Vitalício",
@@ -342,6 +352,14 @@ class SubscriptionService:
                 "plans": [p["plan_code"] for p in plans],
             },
         )
+
+        only_current = current_plan is not None and subscription_status in (
+            "active",
+            "past_due",
+        )
+        if only_current:
+            plans = [p for p in plans if p["is_current"]]
+
         return plans
 
     @classmethod
@@ -813,6 +831,9 @@ class BillingService:
         available_plans = SubscriptionService.get_available_plans(
             current_subscription["plan_code"] if current_subscription else None,
             tenant=getattr(user, "tenant", None),
+            subscription_status=(
+                current_subscription["status"] if current_subscription else None
+            ),
         )
 
         # Obter saldo de créditos

@@ -27,7 +27,7 @@ class TestFounderPlan:
         ledger_entry = CommLedger.objects.filter(tenant=tenant).first()
         assert ledger_entry is not None
         assert ledger_entry.amount_eur == Decimal("2.00")
-        assert ledger_entry.description == "Crédito inicial do plano Founder"
+        assert ledger_entry.description == "Crédito inicial do plano TimelyOne Founder"
 
     def test_founder_cancellation_resets_status(self):
         """Testa se o cancelamento remove o status de Founder."""
@@ -231,6 +231,18 @@ class TestFounderIsBasicBlocked:
     def test_not_blocked_with_no_tenant_and_vacancies_exhausted(self):
         with patch.object(FounderService, "FOUNDER_LIMIT", 0):
             assert FounderService.is_basic_blocked(tenant=None) is False
+
+
+class TestFounderCanAssignFounderActiveRenewal:
+    @pytest.mark.django_db
+    def test_active_founder_tenant_can_assign_even_when_slots_exhausted(self):
+        tenant = Tenant.objects.create(
+            name="Active Founder Tenant No Slots",
+            slug="active-founder-tenant-no-slots",
+            is_founder=True,
+        )
+        with patch.object(FounderService, "FOUNDER_LIMIT", 0):
+            assert FounderService.can_assign_founder(tenant=tenant) is True
 
 
 @pytest.mark.django_db
