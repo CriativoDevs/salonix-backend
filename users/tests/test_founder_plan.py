@@ -289,3 +289,92 @@ class TestRegistrationBasicBlockedByFounder:
                 },
             )
         assert response.status_code == 201
+
+
+@pytest.mark.django_db
+class TestFounderAvailabilityEndpointTenantAware:
+    def test_anonymous_request_returns_global_availability_only(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        url = reverse("founder_availability")
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.data["remaining_count"] == 500
+
+    def test_authenticated_ex_founder_sees_zero_remaining(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+        from payments.models import Subscription
+
+        tenant = Tenant.objects.create(
+            name="Ex Founder Avail", slug="ex-founder-avail", is_founder=False
+        )
+        owner = CustomUser.objects.create_user(
+            username="ex_founder_avail_owner",
+            email="exfounderavail@example.com",
+            password="pass",
+            tenant=tenant,
+        )
+        with patch("payments.stripe_utils.get_plan_code_from_price") as mock_get_plan:
+            mock_get_plan.return_value = "founder"
+            Subscription.objects.create(
+                user=owner,
+                stripe_subscription_id="sub_ex_founder_avail",
+                price_id="price_founder_old_avail",
+                status="canceled",
+            )
+
+            client = APIClient()
+            client.force_authenticate(user=owner)
+            url = reverse("founder_availability")
+            response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.data["remaining_count"] == 0
+
+    def test_authenticated_active_founder_tenant_still_sees_remaining(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        tenant = Tenant.objects.create(
+            name="Active Founder Avail", slug="active-founder-avail", is_founder=True
+        )
+        owner = CustomUser.objects.create_user(
+            username="active_founder_avail_owner",
+            email="activefounderavail@example.com",
+            password="pass",
+            tenant=tenant,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=owner)
+        url = reverse("founder_availability")
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.data["remaining_count"] == 500
+
+    def test_authenticated_fresh_tenant_sees_global_remaining(self):
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+
+        tenant = Tenant.objects.create(
+            name="Fresh Avail", slug="fresh-avail", is_founder=False
+        )
+        owner = CustomUser.objects.create_user(
+            username="fresh_avail_owner",
+            email="freshavail@example.com",
+            password="pass",
+            tenant=tenant,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=owner)
+        url = reverse("founder_availability")
+        response = client.get(url)
+
+        assert response.status_code == 200
+        assert response.data["remaining_count"] == 500
