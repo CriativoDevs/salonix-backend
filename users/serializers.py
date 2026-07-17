@@ -271,19 +271,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
         tenant_slug = _generate_unique_tenant_slug(sanitized_display_name)
 
-        # Verifica plano Founder
-        is_founder = False
-        requested_plan = data.get("plan", "basic")
-        if requested_plan == "founder":
-            if not FounderService.can_assign_founder():
-                raise serializers.ValidationError(
-                    {"plan": "O plano Founder não está mais disponível."}
-                )
-            is_founder = True
-        elif requested_plan == "basic" and FounderService.is_basic_blocked():
-            raise serializers.ValidationError(
-                {"plan": "O plano Basic ainda não está disponível — restam vagas Founder."}
-            )
+        # O servidor decide sozinho se o tenant é Founder, com base apenas
+        # na disponibilidade de vagas — o `plan` enviado pelo cliente é
+        # aceite (não quebra o contrato da API) mas não influencia esta
+        # decisão.
+        is_founder = FounderService.can_assign_founder()
 
         tenant = Tenant.objects.create(
             name=sanitized_display_name or data["username"],

@@ -88,23 +88,16 @@ class CreateCheckoutSession(APIView):
         """Cria uma Checkout Session apontando para o plano escolhido."""
         stripe_utils.get_stripe()
 
-        requested_plan = (request.data.get("plan") or "basic").lower()
         requested_interval = (request.data.get("interval") or "monthly").lower()
-
-        # BE-PLANS-01 (#481): plano Pro bloqueado para novas subscrições.
-        allowed_plans = {
-            "basic",
-            "founder",
-        }
-
-        if requested_plan not in allowed_plans:
-            return Response({"detail": "Plano inválido."}, status=400)
 
         # 3) Permissão: somente OWNER ativo do tenant pode criar checkout
         tenant = _require_active_billing_owner(request.user)
 
-        # Validar elegibilidade do Founder para este tenant específico
+        # O plano é sempre derivado do tenant (atribuído no registo), nunca
+        # do payload do cliente — evita "downgrade"/"upgrade" via checkout.
+        requested_plan = "founder" if tenant.is_founder else tenant.plan_tier
 
+        # Validar elegibilidade do Founder para este tenant específico
         if requested_plan == "founder":
             print(
                 f"[CreateCheckoutSession] Tentativa de checkout Founder para tenant {tenant.slug}"
@@ -118,12 +111,6 @@ class CreateCheckoutSession(APIView):
                     {"detail": "O plano Founder não está mais disponível para você."},
                     status=400,
                 )
-
-        if requested_plan == "basic" and FounderService.is_basic_blocked(tenant=tenant):
-            return Response(
-                {"detail": "O plano Basic ainda não está disponível — restam vagas Founder."},
-                status=400,
-            )
 
         price_id = stripe_utils.get_price_id_for_plan(
             requested_plan, interval=requested_interval
@@ -1184,14 +1171,9 @@ class AvailablePlansView(APIView):
             current_plan = (
                 current_subscription["plan_code"] if current_subscription else None
             )
-            subscription_status = (
-                current_subscription["status"] if current_subscription else None
-            )
 
             tenant = getattr(request.user, "tenant", None)
-            plans = SubscriptionService.get_available_plans(
-                current_plan, tenant=tenant, subscription_status=subscription_status
-            )
+            plans = SubscriptionService.get_available_plans(current_plan, tenant=tenant)
 
             return Response(plans, status=200)
 

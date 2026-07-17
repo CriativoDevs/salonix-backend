@@ -247,9 +247,25 @@ class TestFounderCanAssignFounderActiveRenewal:
 
 @pytest.mark.django_db
 class TestRegistrationBasicBlockedByFounder:
-    def test_registration_blocked_when_plan_omitted_and_founder_available(self):
+    """
+    O servidor decide sozinho se o tenant registado é Founder, com base
+    apenas na disponibilidade de vagas (FounderService.can_assign_founder).
+    O campo `plan` enviado pelo cliente nunca influencia essa decisão —
+    ele é aceite na request (não quebra o contrato da API), mas é ignorado
+    para efeitos de is_founder.
+    """
+
+    def setup_method(self):
+        # Evita interferência de throttling entre testes consecutivos
+        # (mesmo padrão usado em users/tests/test_auth.py)
+        from django.core.cache import cache
+
+        cache.clear()
+
+    def test_registration_defaults_to_founder_when_plan_omitted_and_available(self):
         from django.urls import reverse
         from rest_framework.test import APIClient
+        from users.models import CustomUser
 
         client = APIClient()
         url = reverse("register")
@@ -261,11 +277,36 @@ class TestRegistrationBasicBlockedByFounder:
                 "password": "StrongPass123",
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == 201
+        user = CustomUser.objects.get(username="newowner")
+        assert user.tenant.is_founder is True
+
+    def test_registration_is_founder_even_when_client_requests_basic(self):
+        """O cliente pede 'basic' explicitamente, mas há vagas Founder —
+        o servidor ignora o pedido e atribui Founder mesmo assim."""
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+        from users.models import CustomUser
+
+        client = APIClient()
+        url = reverse("register")
+        response = client.post(
+            url,
+            {
+                "username": "newbasicrequest",
+                "email": "newbasicrequest@example.com",
+                "password": "StrongPass123",
+                "plan": "basic",
+            },
+        )
+        assert response.status_code == 201
+        user = CustomUser.objects.get(username="newbasicrequest")
+        assert user.tenant.is_founder is True
 
     def test_registration_allowed_with_explicit_founder_plan(self):
         from django.urls import reverse
         from rest_framework.test import APIClient
+        from users.models import CustomUser
 
         client = APIClient()
         url = reverse("register")
@@ -279,11 +320,14 @@ class TestRegistrationBasicBlockedByFounder:
             },
         )
         assert response.status_code == 201
+        user = CustomUser.objects.get(username="newfounder")
+        assert user.tenant.is_founder is True
 
     def test_registration_allowed_with_basic_when_founder_exhausted(self):
         from unittest.mock import patch
         from django.urls import reverse
         from rest_framework.test import APIClient
+        from users.models import CustomUser
 
         client = APIClient()
         url = reverse("register")
@@ -301,6 +345,36 @@ class TestRegistrationBasicBlockedByFounder:
                 },
             )
         assert response.status_code == 201
+        user = CustomUser.objects.get(username="newbasic")
+        assert user.tenant.is_founder is False
+
+    def test_registration_not_founder_when_client_requests_founder_but_exhausted(self):
+        """O cliente pede 'founder' explicitamente, mas as vagas acabaram —
+        o servidor ignora o pedido e não gera erro de validação, apenas
+        atribui Basic (is_founder=False)."""
+        from unittest.mock import patch
+        from django.urls import reverse
+        from rest_framework.test import APIClient
+        from users.models import CustomUser
+
+        client = APIClient()
+        url = reverse("register")
+        with patch(
+            "users.services.FounderService.get_availability",
+            return_value={"total_limit": 500, "used_count": 500, "remaining_count": 0},
+        ):
+            response = client.post(
+                url,
+                {
+                    "username": "newfounderrequestexhausted",
+                    "email": "newfounderrequestexhausted@example.com",
+                    "password": "StrongPass123",
+                    "plan": "founder",
+                },
+            )
+        assert response.status_code == 201
+        user = CustomUser.objects.get(username="newfounderrequestexhausted")
+        assert user.tenant.is_founder is False
 
 
 @pytest.mark.django_db
