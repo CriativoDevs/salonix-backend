@@ -491,6 +491,14 @@ class TestBusinessLogging:
         # Use existing tenant and staff from fixtures
         tenant = tenant_fixture
 
+        # O plano do checkout é sempre derivado do tenant (nunca do
+        # payload do cliente) — força Basic explicitamente para exercer
+        # o cenário que este teste pretende cobrir (o fixture padrão usa
+        # plan_tier="pro" para outros testes).
+        tenant.is_founder = False
+        tenant.plan_tier = Tenant.PLAN_BASIC
+        tenant.save()
+
         # Ensure user has OWNER role
         staff = user_fixture.staff_member
         staff.role = TenantStaffMember.Role.OWNER

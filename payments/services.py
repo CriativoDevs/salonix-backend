@@ -266,21 +266,19 @@ class SubscriptionService:
         cls,
         current_plan: Optional[str] = None,
         tenant: Optional["Tenant"] = None,
-        subscription_status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retorna lista de planos disponíveis com informações de upgrade.
 
         Args:
             current_plan: Código do plano atual do usuário
-            tenant: Tenant do usuário para verificar elegibilidade (esp. para Founder)
-            subscription_status: Status da subscrição atual (ex.: "active",
-                "trialing", "past_due"). Quando "active" ou "past_due", a
-                lista devolvida contém apenas o plano atual — trocar de
-                plano pago para outro plano pago não é uma operação
-                suportada nesta tela (usar o portal do Stripe / cancelar +
-                reativar). Quando None ou "trialing", devolve a lista
-                completa, para permitir a escolha inicial.
+            tenant: Tenant do usuário. Quando presente, a lista devolvida é
+                sempre filtrada para conter apenas o plano já atribuído ao
+                tenant ("founder" se tenant.is_founder, senão
+                tenant.plan_tier) — independentemente de haver ou não uma
+                subscrição Stripe ativa. Quando None (ainda não existe
+                tenant, ex.: pré-registo), devolve a lista completa de
+                planos elegíveis.
 
         Returns:
             Lista de planos com informações de disponibilidade
@@ -353,12 +351,14 @@ class SubscriptionService:
             },
         )
 
-        only_current = current_plan is not None and subscription_status in (
-            "active",
-            "past_due",
-        )
-        if only_current:
-            plans = [p for p in plans if p["is_current"]]
+        if tenant is not None:
+            assigned_plan = "founder" if tenant.is_founder else tenant.plan_tier
+            # Legacy tenants with plan_tier="pro" (blocked, never in `plans`)
+            # would filter to an empty list — fall back to the full list
+            # instead of showing nothing.
+            filtered = [p for p in plans if p["plan_code"] == assigned_plan]
+            if filtered:
+                plans = filtered
 
         return plans
 
@@ -831,9 +831,6 @@ class BillingService:
         available_plans = SubscriptionService.get_available_plans(
             current_subscription["plan_code"] if current_subscription else None,
             tenant=getattr(user, "tenant", None),
-            subscription_status=(
-                current_subscription["status"] if current_subscription else None
-            ),
         )
 
         # Obter saldo de créditos

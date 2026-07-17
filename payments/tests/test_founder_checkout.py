@@ -44,6 +44,11 @@ class FounderCheckoutTest(TestCase):
     def test_create_checkout_session_founder_allowed(
         self, mock_can_assign, mock_get_price, mock_get_stripe
     ):
+        # O plano é derivado do tenant (assinado no servidor), não do
+        # payload do cliente — tenant já é Founder.
+        self.tenant.is_founder = True
+        self.tenant.save()
+
         mock_can_assign.return_value = True
         mock_get_price.return_value = "price_founder_123"
 
@@ -54,14 +59,16 @@ class FounderCheckoutTest(TestCase):
         mock_get_stripe.return_value = mock_stripe
 
         url = reverse("payments:create_checkout_session")
-        data = {"plan": "founder"}
+        # "plan" no payload é ignorado pelo servidor.
+        data = {"plan": "basic"}
 
         response = self.client.post(url, data)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["checkout_url"], "http://checkout.url")
 
-        # Verify metadata
+        # Verify metadata reflects the tenant's assigned plan (founder),
+        # not the client-supplied "basic".
         args, kwargs = mock_stripe.checkout.Session.create.call_args
         self.assertEqual(kwargs["metadata"]["plan_code"], "founder")
 
@@ -71,6 +78,9 @@ class FounderCheckoutTest(TestCase):
     def test_create_checkout_session_founder_annual(
         self, mock_can_assign, mock_get_price, mock_get_stripe
     ):
+        self.tenant.is_founder = True
+        self.tenant.save()
+
         mock_can_assign.return_value = True
         mock_get_price.return_value = "price_founder_yearly_123"
 
@@ -81,7 +91,8 @@ class FounderCheckoutTest(TestCase):
         mock_get_stripe.return_value = mock_stripe
 
         url = reverse("payments:create_checkout_session")
-        data = {"plan": "founder", "interval": "annual"}
+        # "interval" continua vindo do cliente; "plan" é ignorado.
+        data = {"interval": "annual"}
 
         response = self.client.post(url, data)
 
@@ -89,6 +100,7 @@ class FounderCheckoutTest(TestCase):
         self.assertEqual(response.data["checkout_url"], "http://checkout.url")
 
         # Verify get_price_id_for_plan was called with interval='annual'
+        # and the tenant's assigned plan ("founder").
         mock_get_price.assert_called_with("founder", interval="annual")
 
     @patch("payments.views.stripe_utils.get_stripe")
@@ -96,34 +108,50 @@ class FounderCheckoutTest(TestCase):
     def test_create_checkout_session_founder_denied(
         self, mock_can_assign, mock_get_stripe
     ):
+        # Tenant já é Founder (plano derivado = "founder"), mas o serviço
+        # nega elegibilidade (ex.: regra futura) — checkout deve ser
+        # bloqueado independentemente do payload do cliente.
+        self.tenant.is_founder = True
+        self.tenant.save()
+
         mock_can_assign.return_value = False
 
         url = reverse("payments:create_checkout_session")
-        data = {"plan": "founder"}
 
-        response = self.client.post(url, data)
+        response = self.client.post(url, {})
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("não está mais disponível", response.data["detail"])
 
     @patch("payments.views.stripe_utils.get_stripe")
     @patch("payments.views.stripe_utils.get_price_id_for_plan")
-    @patch("users.services.FounderService.get_availability")
-    def test_create_checkout_session_basic_blocked_when_founder_available(
-        self, mock_availability, mock_get_price, mock_get_stripe
+    def test_create_checkout_session_ignores_client_plan_override(
+        self, mock_get_price, mock_get_stripe
     ):
-        mock_availability.return_value = {
-            "total_limit": 500,
-            "used_count": 0,
-            "remaining_count": 500,
-        }
+        """
+        Tenant Basic (is_founder=False) envia plan="founder" no payload —
+        o servidor deve ignorar o valor do cliente e usar o plano
+        efetivamente atribuído ao tenant (basic).
+        """
+        self.assertFalse(self.tenant.is_founder)
+        self.assertEqual(self.tenant.plan_tier, "basic")
+
+        mock_get_price.return_value = "price_basic_123"
+
+        mock_stripe = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "http://checkout.url"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
 
         url = reverse("payments:create_checkout_session")
-        response = self.client.post(url, {"plan": "basic"})
+        response = self.client.post(url, {"plan": "founder"})
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Founder", response.data["detail"])
-        mock_get_price.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+
+        mock_get_price.assert_called_with("basic", interval="monthly")
+        args, kwargs = mock_stripe.checkout.Session.create.call_args
+        self.assertEqual(kwargs["metadata"]["plan_code"], "basic")
 
     @patch("payments.views.stripe_utils.get_stripe")
     @patch("payments.views.stripe_utils.get_price_id_for_plan")
@@ -137,35 +165,6 @@ class FounderCheckoutTest(TestCase):
             "remaining_count": 0,
         }
         mock_get_price.return_value = "price_basic_123"
-
-        mock_stripe = MagicMock()
-        mock_session = MagicMock()
-        mock_session.url = "http://checkout.url"
-        mock_stripe.checkout.Session.create.return_value = mock_session
-        mock_get_stripe.return_value = mock_stripe
-
-        url = reverse("payments:create_checkout_session")
-        response = self.client.post(url, {"plan": "basic"})
-
-        self.assertEqual(response.status_code, 200)
-
-    @patch("payments.views.stripe_utils.get_stripe")
-    @patch("payments.views.stripe_utils.get_price_id_for_plan")
-    @patch("users.services.FounderService.get_availability")
-    def test_create_checkout_session_basic_allowed_for_active_founder_tenant(
-        self, mock_availability, mock_get_price, mock_get_stripe
-    ):
-        # Vagas Founder ainda existem, mas o tenant JÁ É founder — deve poder
-        # fazer downgrade voluntário para Basic sem bloqueio.
-        mock_availability.return_value = {
-            "total_limit": 500,
-            "used_count": 1,
-            "remaining_count": 499,
-        }
-        mock_get_price.return_value = "price_basic_123"
-
-        self.tenant.is_founder = True
-        self.tenant.save()
 
         mock_stripe = MagicMock()
         mock_session = MagicMock()

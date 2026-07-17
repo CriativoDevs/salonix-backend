@@ -67,8 +67,20 @@ class FounderAvailabilityTest(TestCase):
     @patch("payments.stripe_utils.get_plan_code_from_price")
     def test_founder_plan_marked_unavailable_when_ineligible(self, mock_get_plan):
         """
-        Testa que o plano Founder é marcado como indisponível (is_available=False)
-        quando o tenant já teve e saiu.
+        Testa que o plano Founder é indisponível para um tenant que já teve
+        Founder e saiu.
+
+        Nota (BE-PLANS-04): com a nova filtragem de `get_available_plans`
+        (quando `tenant` é passado, a lista é sempre restrita ao plano já
+        atribuído a esse tenant), "founder" nunca aparece na lista de um
+        tenant não-founder — independentemente de `is_available`. A antiga
+        asserção `if founder_plan: assertFalse(...)` ficou vazia (o `if`
+        nunca é satisfeito), então passava a sempre passar sem testar nada.
+        Ajustado para: (1) confirmar que "founder" de facto não aparece na
+        lista deste tenant, e (2) confirmar diretamente via
+        `FounderService.can_assign_founder` que a inelegibilidade é
+        calculada corretamente a partir do histórico — preservando a
+        intenção original do teste.
         """
         mock_get_plan.return_value = "founder"
 
@@ -89,39 +101,50 @@ class FounderAvailabilityTest(TestCase):
             current_plan=None, tenant=self.tenant
         )
 
-        # Verificar que Founder não está na lista ou está marcado como indisponível
+        # Founder não deve aparecer na lista deste tenant (não é o plano atribuído)
         founder_plan = next((p for p in plans if p["plan_code"] == "founder"), None)
+        self.assertIsNone(
+            founder_plan,
+            "Founder não deve aparecer na lista de planos deste tenant",
+        )
 
-        if founder_plan:
-            # Se estiver na lista, deve estar marcado como indisponível
-            self.assertFalse(
-                founder_plan["is_available"],
-                "Founder deve estar marcado como indisponível para este tenant",
-            )
+        # E a inelegibilidade em si deve estar correta (histórico de Founder)
+        self.assertFalse(
+            FounderService.can_assign_founder(tenant=self.tenant),
+            "Tenant com histórico de Founder não deve ser elegível para reaplicar",
+        )
 
     @patch("payments.stripe_utils.get_plan_code_from_price")
-    def test_founder_plan_available_for_new_tenant(self, mock_get_plan):
+    def test_founder_plan_available_before_tenant_exists(self, mock_get_plan):
         """
-        Testa que um novo tenant (sem histórico Founder) consegue ver Founder como disponível.
+        Testa que o plano Founder aparece como disponível na listagem de
+        pré-registo (sem tenant ainda associado) quando há vagas remanescentes.
+
+        Nota (BE-PLANS-04): quando um `tenant` é passado, `get_available_plans`
+        agora filtra sempre a lista para apenas o plano já atribuído a esse
+        tenant (ver `SubscriptionService.get_available_plans`), então este
+        teste não pode mais passar `tenant=self.tenant` para verificar a
+        disponibilidade do Founder — um tenant não-founder existente nunca
+        veria "founder" na lista. A lógica de cálculo de vagas do Founder é
+        testada aqui via chamada sem tenant, simulando a página pública de
+        planos/pré-registo.
         """
         mock_get_plan.return_value = None  # Sem histórico
 
-        # Obter planos disponíveis para novo tenant
-        plans = SubscriptionService.get_available_plans(
-            current_plan=None, tenant=self.tenant
-        )
+        # Obter planos disponíveis para um visitante sem tenant ainda (pré-registo)
+        plans = SubscriptionService.get_available_plans(current_plan=None, tenant=None)
 
         # Founder deve estar disponível
         founder_plan = next((p for p in plans if p["plan_code"] == "founder"), None)
 
         self.assertIsNotNone(
             founder_plan,
-            "Founder deve estar na lista para novo tenant",
+            "Founder deve estar na lista quando ainda não há tenant associado",
         )
         assert founder_plan is not None  # Type narrowing for type checker
         self.assertTrue(
             founder_plan["is_available"],
-            "Founder deve estar marcado como disponível para novo tenant",
+            "Founder deve estar marcado como disponível quando há vagas remanescentes",
         )
 
     def test_active_founder_tenant_keeps_elegibility(self):

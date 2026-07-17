@@ -4,6 +4,7 @@ features pelos planos Basic e Founder.
 """
 
 from io import StringIO
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.management import call_command
@@ -65,20 +66,41 @@ class TestPlanBlocked:
         assert "basic" in plan_codes
 
     @pytest.mark.django_db
-    def test_checkout_with_pro_rejected(self, basic_tenant):
+    @patch("payments.views.stripe_utils.get_or_create_customer")
+    @patch("payments.views.stripe_utils.get_price_id_for_plan")
+    @patch("payments.views.stripe_utils.get_stripe")
+    def test_checkout_with_pro_rejected(
+        self, mock_get_stripe, mock_get_price, mock_get_customer, basic_tenant
+    ):
+        """
+        Plano Pro continua inalcançável via checkout. Na view legada, o
+        plano é sempre derivado do tenant (nunca do payload do cliente) —
+        um tenant Basic que envie plan="pro" simplesmente faz checkout
+        como Basic, o payload é ignorado. Na view v2, o serializer ainda
+        valida e rejeita "pro" explicitamente com 400.
+        """
         owner = _make_owner(basic_tenant, "owner-basic")
         client = APIClient()
         client.force_authenticate(user=owner)
 
-        # View legada de checkout
+        mock_get_customer.return_value = "cus_123"
+        mock_get_price.return_value = "price_basic_123"
+        mock_stripe = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "http://checkout.url"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
+
+        # View legada de checkout: payload "pro" é ignorado, deriva "basic"
         resp = client.post(
             "/api/payments/stripe/create-checkout-session/",
             {"plan": "pro"},
             format="json",
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        mock_get_price.assert_called_with("basic", interval="monthly")
 
-        # View v2 (serializer com validate_plan)
+        # View v2 (serializer com validate_plan) continua a rejeitar "pro"
         resp_v2 = client.post(
             "/api/payments/stripe/v2/checkout/", {"plan": "pro"}, format="json"
         )
