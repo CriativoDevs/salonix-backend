@@ -429,6 +429,34 @@ class Tenant(models.Model):
             return False
         return ff.pro_status == UserFeatureFlags.STATUS_TRIALING
 
+    def has_active_paid_subscription(self) -> bool:
+        """BE-INFRA-01: True se o owner tem uma subscrição Stripe paga confirmada
+        (active ou past_due).
+
+        Complementar a is_in_trial(): tenants promocionais (billing_mode=promotional)
+        ou sem nenhuma subscrição Stripe real nunca têm isto True, mesmo que
+        is_in_trial() também seja False para eles — usado para bloquear SMS fora de
+        uma cobrança real confirmada (evita o caso de tenants "não em trial mas também
+        não pagantes" nunca serem bloqueados).
+        """
+        owner = (
+            self.staff_members.filter(
+                role=TenantStaffMember.Role.OWNER,
+                status=TenantStaffMember.Status.ACTIVE,
+            )
+            .select_related("user__featureflags")
+            .first()
+        )
+        if not owner or not owner.user_id:
+            return False
+        ff = getattr(owner.user, "featureflags", None)
+        if ff is None:
+            return False
+        return ff.pro_status in (
+            UserFeatureFlags.STATUS_ACTIVE,
+            UserFeatureFlags.STATUS_PAST_DUE,
+        )
+
     def can_use_native_admin(self):
         """Verifica se pode usar app nativo Admin.
 

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from users.models import Tenant, CommLedger
+from users.models import Tenant, CommLedger, TenantStaffMember, UserFeatureFlags
 from notifications.credit_service import CommunicationCreditService
 
 User = get_user_model()
@@ -30,6 +30,17 @@ class CommunicationCreditServiceTest(TestCase):
             phone_number="+351912345678",
             tenant=self.tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            role=TenantStaffMember.Role.OWNER,
+            status=TenantStaffMember.Status.ACTIVE,
+        )
+        # Testes de SMS neste ficheiro assumem tenant pagante fora do trial —
+        # BE-INFRA-01 passou a exigir subscrição Stripe confirmada (active/past_due)
+        # para permitir SMS, não só "fora do trial".
+        self.user.featureflags.pro_status = UserFeatureFlags.STATUS_ACTIVE
+        self.user.featureflags.save(update_fields=["pro_status"])
 
         self.credit_service = CommunicationCreditService()
 

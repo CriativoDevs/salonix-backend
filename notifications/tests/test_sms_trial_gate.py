@@ -58,3 +58,42 @@ def test_sms_allowed_after_trial(tenant_fixture, user_fixture):
     result = credit_service.can_send_message(tenant_fixture, "sms")
 
     assert result["can_send"] is True
+
+
+@pytest.mark.django_db
+def test_sms_blocked_for_promotional_tenant_without_stripe(tenant_fixture, user_fixture):
+    """Caso real que causou custo indevido: tenant billing_mode=promotional nunca
+    passa pelo Stripe, então is_in_trial() é sempre False — mas o tenant também não é
+    um cliente pagante real, então o SMS deve continuar bloqueado."""
+    tenant_fixture.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
+    tenant_fixture.save(update_fields=["billing_mode"])
+    _set_owner_status(user_fixture, UserFeatureFlags.STATUS_INCOMPLETE)
+    _fund_tenant(tenant_fixture)
+
+    result = credit_service.can_send_message(tenant_fixture, "sms")
+
+    assert result["can_send"] is False
+
+
+@pytest.mark.django_db
+def test_sms_blocked_when_no_owner_featureflags(tenant_fixture, user_fixture):
+    """Tenant sem qualquer subscrição Stripe confirmada (status default 'incomplete')
+    também não deve poder enviar SMS, mesmo fora do trial."""
+    _set_owner_status(user_fixture, UserFeatureFlags.STATUS_INCOMPLETE)
+    _fund_tenant(tenant_fixture)
+
+    result = credit_service.can_send_message(tenant_fixture, "sms")
+
+    assert result["can_send"] is False
+
+
+@pytest.mark.django_db
+def test_sms_allowed_for_past_due_paid_tenant(tenant_fixture, user_fixture):
+    """past_due ainda conta como 'já pagou pelo menos uma vez' — não deve ser tratado
+    como não-pagante (a cobrança pode estar só temporariamente em falha)."""
+    _set_owner_status(user_fixture, UserFeatureFlags.STATUS_PAST_DUE)
+    _fund_tenant(tenant_fixture)
+
+    result = credit_service.can_send_message(tenant_fixture, "sms")
+
+    assert result["can_send"] is True

@@ -5,6 +5,14 @@ Tasks principais:
 - check_expired_cancellations: Verifica cancelamentos expirados e dispara hard delete
 - hard_delete_tenant: Remove definitivamente um tenant após criar backup
 - create_tenant_backup: Cria backup JSON com todos os dados do tenant
+
+NOTA (BE-INFRA-01, 2026-07-20): check_expired_cancellations já tem management command
+(core/management/commands/check_expired_tenants.py) mas não está agendado em lado
+nenhum hoje — execução manual apenas. send_deletion_reminders não tem management
+command nem agendamento nenhum — nunca é invocada em produção. Nenhuma das duas fazia
+parte do escopo original desta tarefa (não estavam em CELERY_BEAT_SCHEDULE); ficam
+documentadas aqui para decisão futura do Pablo sobre se devem ganhar Cron Jobs
+próprios.
 """
 
 import json
