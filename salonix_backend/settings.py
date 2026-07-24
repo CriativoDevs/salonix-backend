@@ -648,6 +648,14 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos max por task
 # Celery Beat Schedule (Agendamento de Tasks Periódicas)
 from celery.schedules import crontab
 
+# NOTA (BE-INFRA-01, 2026-07-20): este schedule NÃO está em uso em produção — o Celery
+# Beat nunca chegou a arrancar contra a base de dados de produção (auditoria confirmou
+# django_celery_beat_periodictask vazia, sem processo worker/beat, sem Redis
+# configurado). As 4 tarefas abaixo rodam hoje via Cron Jobs nativos do Railway,
+# chamando management commands equivalentes (ver notifications/reports/core
+# management/commands/). Este bloco fica só como referência/preparação para uma
+# eventual migração real para Celery+Redis, se um dia fizer sentido — não apagar, mas
+# não assumir que está ativo.
 CELERY_BEAT_SCHEDULE = {
     "send-appointment-reminders-hourly": {
         "task": "notifications.tasks.send_appointment_reminders",
