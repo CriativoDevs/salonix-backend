@@ -2,6 +2,7 @@ import logging
 from decimal import Decimal
 from typing import Dict
 from django.db import transaction
+from django.utils import timezone
 from users.models import Tenant, CommLedger
 
 logger = logging.getLogger(__name__)
@@ -96,10 +97,33 @@ class CommunicationCreditService:
         if current_balance >= cost:
             result["can_send"] = True
             result["reason"] = "Saldo suficiente"
-        else:
-            result["reason"] = (
-                f"Saldo insuficiente. Necessário: €{cost}, Disponível: €{current_balance}"
-            )
+            return result
+
+        # BE-CREDITS-02: saldo insuficiente + renovação automática ativa tenta
+        # comprar mais crédito (cartão já salvo, sem interação do tenant) antes
+        # de bloquear o envio. Limite de 1 tentativa/dia evita loop de cobrança
+        # em caso de erro (cartão recusado etc.) — falha silenciosa nesta v1.
+        if tenant.comm_auto_renew and tenant.comm_auto_renew_price_id:
+            today = timezone.now().date()
+            if tenant.comm_auto_renew_last_purchase_at != today:
+                from payments.services import CreditPurchaseService
+
+                CreditPurchaseService.charge_auto_renewal(tenant)
+
+                tenant.comm_auto_renew_last_purchase_at = today
+                tenant.save(update_fields=["comm_auto_renew_last_purchase_at"])
+
+                current_balance = tenant.comm_credit_eur
+                if current_balance >= cost:
+                    result["can_send"] = True
+                    result["reason"] = "Saldo suficiente"
+                    result["balance"] = current_balance
+                    return result
+
+        result["reason"] = (
+            f"Saldo insuficiente. Necessário: €{cost}, Disponível: €{current_balance}"
+        )
+        result["balance"] = current_balance
 
         return result
 

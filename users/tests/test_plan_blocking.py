@@ -156,13 +156,17 @@ class TestBasicAbsorbsProFeatures:
         assert basic_tenant.can_use_custom_domain() is True
 
     @pytest.mark.django_db
-    def test_basic_owner_can_enable_auto_renewal(self, basic_tenant):
+    def test_basic_owner_can_enable_auto_renewal(self, basic_tenant, settings):
+        settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
         owner = _make_owner(basic_tenant, "owner-renew")
         client = APIClient()
         client.force_authenticate(user=owner)
 
         resp = client.patch(
-            "/api/payments/stripe/settings/", {"auto_renewal": True}, format="json"
+            "/api/payments/stripe/settings/",
+            {"auto_renewal": True, "auto_renewal_price_id": "price_credits_10_test"},
+            format="json",
         )
         assert resp.status_code == 200
         assert resp.data["auto_renewal"] is True

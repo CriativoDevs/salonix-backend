@@ -186,6 +186,42 @@ class StripeSettingsUpdateRequestSerializer(serializers.Serializer):
     auto_renewal = serializers.BooleanField(
         help_text="Ativa/desativa renovação automática de créditos de comunicação"
     )
+    auto_renewal_price_id = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text=(
+            "Stripe price_id do pacote de crédito a comprar automaticamente. "
+            "Obrigatório quando auto_renewal=true."
+        ),
+    )
+
+    def validate(self, attrs):
+        from django.conf import settings as django_settings
+
+        if attrs.get("auto_renewal"):
+            price_id = attrs.get("auto_renewal_price_id")
+            if not price_id:
+                raise serializers.ValidationError(
+                    {
+                        "auto_renewal_price_id": (
+                            "Obrigatório escolher um pacote de crédito para "
+                            "ativar a renovação automática."
+                        )
+                    }
+                )
+            valid_price_ids = {
+                django_settings.STRIPE_PRICE_CREDITS_5_ID,
+                django_settings.STRIPE_PRICE_CREDITS_10_ID,
+                django_settings.STRIPE_PRICE_CREDITS_25_ID,
+                django_settings.STRIPE_PRICE_CREDITS_50_ID,
+                django_settings.STRIPE_PRICE_CREDITS_100_ID,
+            }
+            if price_id not in valid_price_ids:
+                raise serializers.ValidationError(
+                    {"auto_renewal_price_id": "Pacote de crédito inválido."}
+                )
+        return attrs
 
 
 class StripeSettingsResponseSerializer(serializers.Serializer):

@@ -1547,6 +1547,7 @@ class StripeSettingsView(APIView):
             return Response(serializer.errors, status=400)
 
         auto_renewal = serializer.validated_data["auto_renewal"]
+        auto_renewal_price_id = serializer.validated_data.get("auto_renewal_price_id")
         old_value = bool(getattr(tenant, "comm_auto_renew", False))
 
         # BE-PLANS-01 (#481): auto-renovação era exclusiva do Pro; feature absorvida
@@ -1554,7 +1555,16 @@ class StripeSettingsView(APIView):
 
         try:
             setattr(tenant, "comm_auto_renew", auto_renewal)
-            tenant.save(update_fields=["comm_auto_renew", "updated_at"])
+            tenant.comm_auto_renew_price_id = (
+                auto_renewal_price_id if auto_renewal else None
+            )
+            tenant.save(
+                update_fields=[
+                    "comm_auto_renew",
+                    "comm_auto_renew_price_id",
+                    "updated_at",
+                ]
+            )
 
             logger.info(
                 "payments.settings.update",

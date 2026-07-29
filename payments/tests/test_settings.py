@@ -41,7 +41,11 @@ def manager_user(db):
 
 
 @pytest.mark.django_db
-def test_settings_patch_owner_success_updates_comm_auto_renew_and_metric(owner_user):
+def test_settings_patch_owner_success_updates_comm_auto_renew_and_metric(
+    owner_user, settings
+):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
     c = APIClient()
     c.force_authenticate(user=owner_user)
 
@@ -53,7 +57,9 @@ def test_settings_patch_owner_success_updates_comm_auto_renew_and_metric(owner_u
     owner_user.tenant.save(update_fields=["comm_auto_renew"])
 
     resp = c.patch(
-        "/api/payments/stripe/settings/", {"auto_renewal": True}, format="json"
+        "/api/payments/stripe/settings/",
+        {"auto_renewal": True, "auto_renewal_price_id": "price_credits_10_test"},
+        format="json",
     )
     assert resp.status_code == 200
     assert resp.data["auto_renewal"] is True
@@ -118,7 +124,9 @@ def test_settings_patch_forbidden_when_user_without_tenant_increments_metric(db)
 
 
 @pytest.mark.django_db
-def test_billing_overview_reflects_auto_renewal_after_update(owner_user):
+def test_billing_overview_reflects_auto_renewal_after_update(owner_user, settings):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
     c = APIClient()
     c.force_authenticate(user=owner_user)
 
@@ -127,7 +135,9 @@ def test_billing_overview_reflects_auto_renewal_after_update(owner_user):
     owner_user.tenant.save(update_fields=["comm_auto_renew"])
 
     resp_patch = c.patch(
-        "/api/payments/stripe/settings/", {"auto_renewal": True}, format="json"
+        "/api/payments/stripe/settings/",
+        {"auto_renewal": True, "auto_renewal_price_id": "price_credits_10_test"},
+        format="json",
     )
     assert resp_patch.status_code == 200
 
@@ -137,7 +147,9 @@ def test_billing_overview_reflects_auto_renewal_after_update(owner_user):
 
 
 @pytest.mark.django_db
-def test_settings_patch_emits_audit_log_on_change(owner_user, monkeypatch):
+def test_settings_patch_emits_audit_log_on_change(owner_user, monkeypatch, settings):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
     c = APIClient()
     c.force_authenticate(user=owner_user)
 
@@ -167,7 +179,9 @@ def test_settings_patch_emits_audit_log_on_change(owner_user, monkeypatch):
     )
 
     resp = c.patch(
-        "/api/payments/stripe/settings/", {"auto_renewal": True}, format="json"
+        "/api/payments/stripe/settings/",
+        {"auto_renewal": True, "auto_renewal_price_id": "price_credits_10_test"},
+        format="json",
     )
     assert resp.status_code == 200
     assert captured["msg"] == "payments.settings.update"
@@ -179,3 +193,81 @@ def test_settings_patch_emits_audit_log_on_change(owner_user, monkeypatch):
         "old_value",
         "new_value",
     }.issubset(set(captured["extra"].keys()))
+
+
+@pytest.mark.django_db
+def test_settings_patch_requires_price_id_when_enabling_auto_renewal(
+    owner_user, settings
+):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
+    c = APIClient()
+    c.force_authenticate(user=owner_user)
+
+    resp = c.patch(
+        "/api/payments/stripe/settings/", {"auto_renewal": True}, format="json"
+    )
+    assert resp.status_code == 400
+    assert "auto_renewal_price_id" in resp.data
+
+
+@pytest.mark.django_db
+def test_settings_patch_rejects_unknown_price_id(owner_user, settings):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
+    c = APIClient()
+    c.force_authenticate(user=owner_user)
+
+    resp = c.patch(
+        "/api/payments/stripe/settings/",
+        {"auto_renewal": True, "auto_renewal_price_id": "price_unknown"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "auto_renewal_price_id" in resp.data
+
+
+@pytest.mark.django_db
+def test_settings_patch_saves_price_id_when_enabling_auto_renewal(
+    owner_user, settings
+):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
+    c = APIClient()
+    c.force_authenticate(user=owner_user)
+
+    resp = c.patch(
+        "/api/payments/stripe/settings/",
+        {"auto_renewal": True, "auto_renewal_price_id": "price_credits_10_test"},
+        format="json",
+    )
+    assert resp.status_code == 200
+
+    owner_user.tenant.refresh_from_db()
+    assert owner_user.tenant.comm_auto_renew is True
+    assert owner_user.tenant.comm_auto_renew_price_id == "price_credits_10_test"
+
+
+@pytest.mark.django_db
+def test_settings_patch_clears_price_id_when_disabling_auto_renewal(
+    owner_user, settings
+):
+    settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
+
+    owner_user.tenant.comm_auto_renew = True
+    owner_user.tenant.comm_auto_renew_price_id = "price_credits_10_test"
+    owner_user.tenant.save(
+        update_fields=["comm_auto_renew", "comm_auto_renew_price_id"]
+    )
+
+    c = APIClient()
+    c.force_authenticate(user=owner_user)
+
+    resp = c.patch(
+        "/api/payments/stripe/settings/", {"auto_renewal": False}, format="json"
+    )
+    assert resp.status_code == 200
+
+    owner_user.tenant.refresh_from_db()
+    assert owner_user.tenant.comm_auto_renew is False
+    assert owner_user.tenant.comm_auto_renew_price_id is None
