@@ -258,6 +258,17 @@ class Tenant(models.Model):
         default=cast(Any, False),
         help_text="Renovação automática de crédito mensal (Pro+)",
     )
+    comm_auto_renew_price_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Stripe price_id do pacote de crédito escolhido para a renovação automática",
+    )
+    comm_auto_renew_last_purchase_at = models.DateField(
+        blank=True,
+        null=True,
+        help_text="Data da última compra automática de crédito (limite de 1x/dia)",
+    )
 
     # Plano Founder (Promoção Limitada)
     is_founder = models.BooleanField(

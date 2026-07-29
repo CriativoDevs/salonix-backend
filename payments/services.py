@@ -222,6 +222,126 @@ class CreditPurchaseService:
             user=user, tenant=tenant, credits_amount=credits_amount, price_id=price_id
         )
 
+    @classmethod
+    def charge_auto_renewal(cls, tenant: Tenant) -> Dict[str, Any]:
+        """
+        Cobra automaticamente (off-session, sem interação do tenant) o pacote de
+        crédito escolhido em tenant.comm_auto_renew_price_id, usando o cartão já
+        salvo no Stripe. Nunca levanta exceção: qualquer falha (sem owner, sem
+        cartão salvo, cobrança recusada) retorna {"success": False, "reason": ...}
+        e o chamador decide o que fazer (BE-CREDITS-02: v1 falha silenciosamente,
+        mensagem fica bloqueada normalmente).
+        """
+        from users.models import TenantStaffMember
+        from users.services import CreditService
+
+        owner_membership = (
+            tenant.staff_members.filter(
+                role=TenantStaffMember.Role.OWNER,
+                status=TenantStaffMember.Status.ACTIVE,
+            )
+            .select_related("user")
+            .first()
+        )
+        if not owner_membership or not owner_membership.user_id:
+            return {"success": False, "reason": "no_owner"}
+
+        owner = owner_membership.user
+
+        payment_customer = PaymentCustomer.objects.filter(user=owner).first()
+        if not payment_customer:
+            return {"success": False, "reason": "no_payment_customer"}
+
+        price_id = tenant.comm_auto_renew_price_id
+        credits_amount = cls.get_credits_from_price_id(price_id)
+        if not price_id or credits_amount == Decimal("0.00"):
+            return {"success": False, "reason": "invalid_price_id"}
+
+        customer_id = payment_customer.stripe_customer_id
+        try:
+            stripe_customer = stripe.Customer.retrieve(customer_id)
+        except stripe.error.StripeError:
+            logger.exception(
+                "charge_auto_renewal: falha ao buscar customer no Stripe",
+                extra={"tenant_id": tenant.id, "customer_id": customer_id},
+            )
+            return {"success": False, "reason": "no_payment_method"}
+
+        invoice_settings = (
+            stripe_customer.get("invoice_settings", {})
+            if hasattr(stripe_customer, "get")
+            else getattr(stripe_customer, "invoice_settings", {})
+        )
+        payment_method_id = (
+            invoice_settings.get("default_payment_method")
+            if invoice_settings
+            else None
+        )
+        if not payment_method_id:
+            return {"success": False, "reason": "no_payment_method"}
+
+        amount_cents = int(credits_amount * 100)
+
+        try:
+            intent = stripe.PaymentIntent.create(
+                amount=amount_cents,
+                currency="eur",
+                customer=customer_id,
+                payment_method=payment_method_id,
+                off_session=True,
+                confirm=True,
+                metadata={
+                    "user_id": owner.id,
+                    "tenant_id": tenant.id,
+                    "credits_amount": str(credits_amount),
+                    "price_id": price_id,
+                    "type": "credit_purchase_auto_renewal",
+                },
+            )
+        except stripe.error.CardError as e:
+            logger.warning(
+                "charge_auto_renewal: cobrança recusada",
+                extra={"tenant_id": tenant.id, "error": str(e)},
+            )
+            return {"success": False, "reason": "charge_failed"}
+        except stripe.error.StripeError as e:
+            logger.exception(
+                "charge_auto_renewal: erro do Stripe",
+                extra={"tenant_id": tenant.id, "error": str(e)},
+            )
+            return {"success": False, "reason": "charge_failed"}
+
+        payment = CreditPayment.objects.create(
+            user=owner,
+            tenant=tenant,
+            stripe_payment_intent_id=intent.id,
+            stripe_customer_id=customer_id,
+            stripe_price_id=price_id,
+            amount=credits_amount,
+            currency="EUR",
+            status=getattr(intent, "status", "pending"),
+            credits_purchased=credits_amount,
+            metadata={
+                "stripe_payment_intent": intent.id,
+                "created_via": "auto_renewal",
+            },
+        )
+
+        if getattr(intent, "status", None) != "succeeded":
+            return {"success": False, "reason": "charge_failed"}
+
+        CreditService(tenant).add_credits(
+            amount=credits_amount,
+            transaction_type="purchase",
+            description="Renovação automática de crédito de comunicação",
+            reference_id=intent.id,
+            created_by=owner,
+        )
+        payment.credits_applied = True
+        payment.save(update_fields=["credits_applied"])
+
+        return {"success": True, "credits_purchased": credits_amount}
+
 
 class SubscriptionService:
     """Serviço para gerenciar assinaturas Stripe."""

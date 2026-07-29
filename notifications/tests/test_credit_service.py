@@ -1,5 +1,7 @@
 from decimal import Decimal
+from unittest.mock import patch
 from django.test import TestCase
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from users.models import Tenant, CommLedger, TenantStaffMember, UserFeatureFlags
 from notifications.credit_service import CommunicationCreditService
@@ -219,3 +221,91 @@ class CommunicationCreditServiceTest(TestCase):
             self.assertEqual(
                 transaction.transaction_type, CommLedger.TransactionType.CONSUMPTION
             )
+
+    def _prep_insufficient_balance_with_auto_renew(self, price_id="price_test_10"):
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.comm_credit_eur = Decimal("0.05")
+        self.tenant.comm_auto_renew = True
+        self.tenant.comm_auto_renew_price_id = price_id
+        self.tenant.save()
+
+    @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
+    def test_can_send_message_triggers_auto_renewal_when_insufficient(
+        self, mock_charge
+    ):
+        """Saldo insuficiente + comm_auto_renew=True dispara a auto-compra e,
+        se bem-sucedida, o envio passa a ser permitido."""
+        self._prep_insufficient_balance_with_auto_renew()
+
+        def _fake_charge(tenant):
+            Tenant.objects.filter(pk=tenant.pk).update(
+                comm_credit_eur=Decimal("10.05")
+            )
+            tenant.comm_credit_eur = Decimal("10.05")
+            return {"success": True, "credits_purchased": Decimal("10.00")}
+
+        mock_charge.side_effect = _fake_charge
+
+        result = self.credit_service.can_send_message(self.tenant, "sms")
+
+        mock_charge.assert_called_once_with(self.tenant)
+        self.assertTrue(result["can_send"])
+
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date())
+
+    @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
+    def test_can_send_message_auto_renewal_failure_falls_back_to_insufficient(
+        self, mock_charge
+    ):
+        """Cobrança automática recusada: envio continua bloqueado normalmente,
+        sem levantar exceção, e a data de hoje fica marcada (evita retry em loop)."""
+        self._prep_insufficient_balance_with_auto_renew()
+        mock_charge.return_value = {"success": False, "reason": "charge_failed"}
+
+        result = self.credit_service.can_send_message(self.tenant, "sms")
+
+        mock_charge.assert_called_once_with(self.tenant)
+        self.assertFalse(result["can_send"])
+        self.assertIn("Saldo insuficiente", result["reason"])
+
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date())
+
+    @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
+    def test_can_send_message_does_not_auto_renew_twice_same_day(self, mock_charge):
+        """Se já houve auto-compra hoje, não tenta de novo (limite de 1x/dia)."""
+        self._prep_insufficient_balance_with_auto_renew()
+        self.tenant.comm_auto_renew_last_purchase_at = timezone.now().date()
+        self.tenant.save(update_fields=["comm_auto_renew_last_purchase_at"])
+
+        result = self.credit_service.can_send_message(self.tenant, "sms")
+
+        mock_charge.assert_not_called()
+        self.assertFalse(result["can_send"])
+        self.assertIn("Saldo insuficiente", result["reason"])
+
+    @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
+    def test_can_send_message_no_trigger_when_auto_renew_disabled(self, mock_charge):
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.comm_credit_eur = Decimal("0.05")
+        self.tenant.comm_auto_renew = False
+        self.tenant.save()
+
+        result = self.credit_service.can_send_message(self.tenant, "sms")
+
+        mock_charge.assert_not_called()
+        self.assertFalse(result["can_send"])
+
+    @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
+    def test_can_send_message_no_trigger_when_no_price_id(self, mock_charge):
+        self.tenant.plan_tier = Tenant.PLAN_BASIC
+        self.tenant.comm_credit_eur = Decimal("0.05")
+        self.tenant.comm_auto_renew = True
+        self.tenant.comm_auto_renew_price_id = None
+        self.tenant.save()
+
+        result = self.credit_service.can_send_message(self.tenant, "sms")
+
+        mock_charge.assert_not_called()
+        self.assertFalse(result["can_send"])
