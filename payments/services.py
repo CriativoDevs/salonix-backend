@@ -841,18 +841,10 @@ class BillingService:
             user.tenant.can_purchase_extra_credits() if user.tenant else False
         )
 
-        # Verificar renovação automática de créditos (usar regra correta do Tenant)
-        # NOTA: O frontend espera 'has_auto_renewal' como status da assinatura, mas aqui
-        # estamos retornando a renovação automática de créditos.
-        # Vamos ajustar para retornar também o status da assinatura se existir.
-        has_auto_renewal = False
-        if current_subscription:
-            has_auto_renewal = not current_subscription.get(
-                "cancel_at_period_end", False
-            )
-        elif user.tenant:
-            # Fallback para créditos se não houver assinatura ativa
-            has_auto_renewal = user.tenant.has_auto_credit_renewal()
+        # has_auto_renewal e sempre sobre a renovacao automatica de credito de
+        # comunicacao (Tenant.comm_auto_renew), nunca sobre o status da assinatura.
+        # O cancelamento/reativacao da assinatura tem fluxo proprio (aba Conta).
+        has_auto_renewal = user.tenant.has_auto_credit_renewal() if user.tenant else False
 
         # Próximo valor de cobrança
         next_billing_amount = None
