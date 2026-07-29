@@ -1073,3 +1073,40 @@ def test_available_plans_view_shows_only_assigned_plan_for_promotional_tenant(
     assert response.status_code == 200
     assert len(response.data) == 1
     assert response.data[0]["plan_code"] == "basic"
+
+
+@pytest.mark.django_db
+def test_billing_overview_has_auto_renewal_reflects_comm_credit_even_with_active_subscription(
+    monkeypatch, auth_client
+):
+    """has_auto_renewal deve refletir sempre comm_auto_renew (credito),
+    nunca o cancel_at_period_end da subscricao Stripe. O toggle de
+    'Renovacao Automatica' em Settings e sobre credito de comunicacao,
+    nao sobre a assinatura (que tem pagina/fluxo proprio de cancelamento)."""
+    from payments.services import BillingService, SubscriptionService
+    from users.models import Tenant
+
+    c, user = auth_client()
+    tenant = Tenant.objects.create(
+        name="Auto Renewal Overview Tenant",
+        slug="auto-renewal-overview-tenant",
+        is_founder=False,
+    )
+    tenant.comm_auto_renew = False
+    tenant.save(update_fields=["comm_auto_renew"])
+    user.tenant = tenant
+    user.save()
+
+    monkeypatch.setattr(
+        SubscriptionService,
+        "get_current_subscription",
+        lambda _user: {
+            "plan_code": "basic",
+            "status": "active",
+            "cancel_at_period_end": False,
+        },
+    )
+
+    overview = BillingService.get_billing_overview(user)
+
+    assert overview["has_auto_renewal"] is False
