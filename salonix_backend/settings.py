@@ -121,6 +121,7 @@ INSTALLED_APPS = [
     "reports",
     "captcha",
     "cms",
+    "platform_comms",
 ]
 
 # Silenciar warnings de URLField default em Django 6
