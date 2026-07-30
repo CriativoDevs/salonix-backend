@@ -2416,18 +2416,14 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        # Endpoint autenticado: o tenant vem sempre de request.tenant/user.tenant.
+        # Nunca de header/query-param client-supplied (X-Tenant-Slug) sem checar
+        # membership — permitiria a um staff de um tenant criar serviços em
+        # outro tenant só trocando o header (achado em revisão de segurança,
+        # mesma falha corrigida em InventoryItemViewSet).
         tenant = getattr(self.request, "tenant", None) or getattr(
             self.request.user, "tenant", None
         )
-        if tenant is None:
-            slug = self.request.headers.get(
-                "X-Tenant-Slug"
-            ) or self.request.query_params.get("tenant")
-            if slug:
-                try:
-                    tenant = Tenant.objects.get(slug=slug, is_active=True)
-                except Tenant.DoesNotExist:
-                    tenant = None
         if tenant is None and not self.request.user.is_superuser:
             from rest_framework.exceptions import ValidationError
 
