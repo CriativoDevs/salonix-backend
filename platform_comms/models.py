@@ -230,3 +230,82 @@ class PlatformAnnouncement(models.Model):
         if self.expire_at and self.expire_at < now:
             return False
         return True
+
+
+class PlatformAnnouncementReceipt(models.Model):
+    """Estado de entrega/leitura de um `PlatformAnnouncement` por usuário (BE-PLATFORM-02).
+
+    Populada de forma "lazy": um registro é criado (status=delivered) na
+    primeira vez que o usuário lista os comunicados ativos (ver
+    `PlatformAnnouncementListView`), não no momento da publicação. Isso evita
+    criar milhares de linhas para usuários que nunca abrem o inbox e mantém a
+    tabela proporcional a "usuários que efetivamente viram algo", que é o
+    volume relevante para suporte/OPS.
+
+    `tenant` é denormalizado a partir do usuário no momento da criação do
+    receipt: garante que a auditoria/isolamento por tenant não dependa de
+    `user.tenant` permanecer o mesmo indefinidamente (ex.: troca de tenant de
+    um staff) e permite filtrar por tenant sem join adicional.
+    """
+
+    STATUS_DELIVERED = "delivered"
+    STATUS_READ = "read"
+    STATUS_DISMISSED = "dismissed"
+    STATUS_CHOICES = [
+        (STATUS_DELIVERED, "Entregue"),
+        (STATUS_READ, "Lido"),
+        (STATUS_DISMISSED, "Dispensado"),
+    ]
+
+    announcement = models.ForeignKey(
+        PlatformAnnouncement,
+        on_delete=models.CASCADE,
+        related_name="receipts",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="platform_announcement_receipts",
+    )
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        on_delete=models.CASCADE,
+        related_name="platform_announcement_receipts",
+    )
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_DELIVERED, db_index=True
+    )
+    delivered_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["announcement", "user"],
+                name="pc_receipt_unique_announcement_user",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "status"], name="pc_receipt_user_status_idx"),
+            models.Index(fields=["tenant"], name="pc_receipt_tenant_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.announcement_id} -> {self.user_id} ({self.status})"
+
+    def mark_read(self):
+        self.status = self.STATUS_READ
+        self.read_at = timezone.now()
+        self.save(update_fields=["status", "read_at", "updated_at"])
+
+    def mark_unread(self):
+        self.status = self.STATUS_DELIVERED
+        self.read_at = None
+        self.save(update_fields=["status", "read_at", "updated_at"])
+
+    def mark_dismissed(self):
+        self.status = self.STATUS_DISMISSED
+        self.dismissed_at = timezone.now()
+        self.save(update_fields=["status", "dismissed_at", "updated_at"])

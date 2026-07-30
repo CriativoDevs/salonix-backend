@@ -1,10 +1,11 @@
 import pytest
 from datetime import timedelta
 
+from django.db import IntegrityError
 from django.utils import timezone
 
-from platform_comms.models import PlatformAnnouncement
-from users.models import Tenant
+from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementReceipt
+from users.models import CustomUser, Tenant
 
 
 @pytest.fixture
@@ -165,3 +166,79 @@ class TestPlatformAnnouncementManagerActiveForTenant:
             tenant_fixture, environment="dev"
         )
         assert list(result) == [announcement]
+
+
+@pytest.mark.django_db
+class TestPlatformAnnouncementReceiptModel:
+    def test_defaults_to_delivered(self, tenant_fixture, user_fixture):
+        announcement = make_announcement()
+        receipt = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        assert receipt.status == PlatformAnnouncementReceipt.STATUS_DELIVERED
+        assert receipt.delivered_at is not None
+        assert receipt.read_at is None
+        assert receipt.dismissed_at is None
+
+    def test_mark_read_sets_status_and_timestamp(self, tenant_fixture, user_fixture):
+        announcement = make_announcement()
+        receipt = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        receipt.mark_read()
+        receipt.refresh_from_db()
+        assert receipt.status == PlatformAnnouncementReceipt.STATUS_READ
+        assert receipt.read_at is not None
+
+    def test_mark_unread_clears_read_at(self, tenant_fixture, user_fixture):
+        announcement = make_announcement()
+        receipt = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        receipt.mark_read()
+        receipt.mark_unread()
+        receipt.refresh_from_db()
+        assert receipt.status == PlatformAnnouncementReceipt.STATUS_DELIVERED
+        assert receipt.read_at is None
+
+    def test_mark_dismissed_sets_status_and_timestamp(
+        self, tenant_fixture, user_fixture
+    ):
+        announcement = make_announcement()
+        receipt = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        receipt.mark_dismissed()
+        receipt.refresh_from_db()
+        assert receipt.status == PlatformAnnouncementReceipt.STATUS_DISMISSED
+        assert receipt.dismissed_at is not None
+
+    def test_unique_per_announcement_and_user(self, tenant_fixture, user_fixture):
+        announcement = make_announcement()
+        PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        with pytest.raises(IntegrityError):
+            PlatformAnnouncementReceipt.objects.create(
+                announcement=announcement, user=user_fixture, tenant=tenant_fixture
+            )
+
+    def test_same_announcement_different_users_independent(
+        self, tenant_fixture, user_fixture, other_tenant
+    ):
+        other_user = CustomUser.objects.create_user(
+            username="other-receipt-user",
+            email="other-receipt-user@example.com",
+            password="testpass",
+        )
+        announcement = make_announcement()
+        receipt_a = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=user_fixture, tenant=tenant_fixture
+        )
+        receipt_b = PlatformAnnouncementReceipt.objects.create(
+            announcement=announcement, user=other_user, tenant=other_tenant
+        )
+        receipt_a.mark_read()
+
+        receipt_b.refresh_from_db()
+        assert receipt_b.status == PlatformAnnouncementReceipt.STATUS_DELIVERED

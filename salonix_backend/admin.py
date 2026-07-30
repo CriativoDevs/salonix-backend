@@ -48,6 +48,8 @@ from reports.models import ExportJob, DailyReportAggregate
 from reports.admin import ExportJobAdmin, DailyReportAggregateAdmin
 from cms.models import PublicPage, PageSEO, RoadmapItem
 from cms.admin import PublicPageAdmin, RoadmapItemAdmin
+from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementReceipt
+from platform_comms.admin import PlatformAnnouncementAdmin, PlatformAnnouncementReceiptAdmin
 from datetime import datetime, timedelta
 
 
@@ -331,3 +333,6 @@ admin_site.register(DailyReportAggregate, DailyReportAggregateAdmin)
 
 admin_site.register(PublicPage, PublicPageAdmin)
 admin_site.register(RoadmapItem, RoadmapItemAdmin)
+
+admin_site.register(PlatformAnnouncement, PlatformAnnouncementAdmin)
+admin_site.register(PlatformAnnouncementReceipt, PlatformAnnouncementReceiptAdmin)
