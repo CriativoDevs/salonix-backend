@@ -22,6 +22,7 @@ def test_admin_exposes_expected_list_display():
     assert isinstance(model_admin, InventoryItemAdmin)
     assert "tenant" in model_admin.list_display
     assert "quantity" in model_admin.list_display
+    assert "minimum_quantity" in model_admin.list_display
 
 
 def test_stock_movement_is_registered_in_default_admin_site():

@@ -1,7 +1,9 @@
 import logging
 
+from django.db.models import F
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.generics import ListAPIView
 from rest_framework.mixins import CreateModelMixin, ListModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
@@ -95,6 +97,33 @@ class InventoryItemViewSet(TenantIsolatedMixin, ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         return get_object_or_404(
             queryset, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
+
+
+class InventoryAlertListView(TenantIsolatedMixin, ListAPIView):
+    """Itens de estoque abaixo do mínimo configurado (BE-STOCK-04, #467).
+
+    Retorna apenas itens do tenant autenticado com `minimum_quantity`
+    definido (não nulo) e maior que zero, cuja `quantity` atual está no
+    mínimo ou abaixo dele. Itens sem mínimo configurado (0 ou null) nunca
+    aparecem — não há como "alertar" sobre um limite que não foi definido.
+
+    Endpoint de leitura, disponível a qualquer staff autenticado do tenant
+    (mesmo padrão de `list` em `InventoryItemViewSet`). Sem gate de plano —
+    decisão de escopo revisada em relação à issue original (que previa
+    exclusividade do plano Pro, hoje bloqueado/não vendável).
+    """
+
+    queryset = InventoryItem.objects.all()
+    serializer_class = InventoryItemSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return queryset.filter(
+            minimum_quantity__isnull=False,
+            minimum_quantity__gt=0,
+            quantity__lte=F("minimum_quantity"),
         )
 
 

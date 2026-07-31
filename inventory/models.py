@@ -22,6 +22,17 @@ class InventoryItem(models.Model):
         help_text="Unidade de medida (ex.: unidade, cx, frasco).",
     )
     quantity = models.PositiveIntegerField(default=0)
+    minimum_quantity = models.PositiveIntegerField(
+        default=0,
+        null=True,
+        blank=True,
+        help_text=(
+            "Estoque mínimo desejado. Usado pelo endpoint de alertas "
+            "(BE-STOCK-04, #467): um item só entra em alerta quando este "
+            "valor está definido (não nulo) e maior que zero, e a "
+            "quantidade atual está no mínimo ou abaixo dele."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

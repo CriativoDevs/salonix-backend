@@ -137,6 +137,23 @@ class TestInventoryItemListCreate:
         assert item.tenant == tenant_fixture
         assert item.name == "Tinta preta"
 
+    def test_owner_can_create_item_with_minimum_quantity(self, api_client, owner_user):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url,
+            {
+                "name": "Esmalte",
+                "unit": "frasco",
+                "quantity": 3,
+                "minimum_quantity": 5,
+            },
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["minimum_quantity"] == 5
+        item = InventoryItem.objects.get(id=data["id"])
+        assert item.minimum_quantity == 5
+
     def test_manager_can_create_item(self, api_client, manager_user):
         api_client.force_authenticate(user=manager_user)
         response = api_client.post(
@@ -174,6 +191,13 @@ class TestInventoryItemRetrieveUpdate:
         assert response.status_code == status.HTTP_200_OK
         item_fixture.refresh_from_db()
         assert item_fixture.quantity == 25
+
+    def test_staff_can_update_minimum_quantity(self, api_client, staff_user, item_fixture):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.patch(self.url(item_fixture), {"minimum_quantity": 4})
+        assert response.status_code == status.HTTP_200_OK
+        item_fixture.refresh_from_db()
+        assert item_fixture.minimum_quantity == 4
 
     def test_owner_can_update_item(self, api_client, owner_user, item_fixture):
         api_client.force_authenticate(user=owner_user)
