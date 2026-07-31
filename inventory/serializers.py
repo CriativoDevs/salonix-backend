@@ -13,7 +13,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InventoryItem
-        fields = ["id", "name", "unit", "quantity"]
+        fields = ["id", "name", "unit", "quantity", "minimum_quantity"]
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

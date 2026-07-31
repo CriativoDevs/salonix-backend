@@ -81,3 +81,15 @@ class TestInventoryItemModel:
             "name", flat=True
         ))
         assert names == ["Algodão", "Zinco"]
+
+    def test_minimum_quantity_defaults_to_zero(self, tenant_fixture):
+        item = make_item(tenant_fixture)
+        assert item.minimum_quantity == 0
+
+    def test_minimum_quantity_accepts_null(self, tenant_fixture):
+        item = make_item(tenant_fixture, minimum_quantity=None)
+        assert item.minimum_quantity is None
+
+    def test_minimum_quantity_can_be_set(self, tenant_fixture):
+        item = make_item(tenant_fixture, minimum_quantity=5)
+        assert item.minimum_quantity == 5
