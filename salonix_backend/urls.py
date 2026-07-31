@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/cms/", include("cms.urls")),
     path("api/platform/", include("platform_comms.urls")),
     path("api/inventory/", include("inventory.urls")),
+    path("api/vouchers/", include("vouchers.urls")),
     path("api/captcha/", include("captcha.urls")),  # django-simple-captcha
     path(
         "api/public/unsubscribe",

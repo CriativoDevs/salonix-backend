@@ -123,6 +123,7 @@ INSTALLED_APPS = [
     "cms",
     "platform_comms",
     "inventory",
+    "vouchers.apps.VouchersConfig",
 ]
 
 # Silenciar warnings de URLField default em Django 6

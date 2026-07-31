@@ -52,6 +52,8 @@ from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementRece
 from platform_comms.admin import PlatformAnnouncementAdmin, PlatformAnnouncementReceiptAdmin
 from inventory.models import InventoryItem, StockMovement
 from inventory.admin import InventoryItemAdmin, StockMovementAdmin
+from vouchers.models import Voucher
+from vouchers.admin import VoucherAdmin
 from datetime import datetime, timedelta
 
 
@@ -341,3 +343,5 @@ admin_site.register(PlatformAnnouncementReceipt, PlatformAnnouncementReceiptAdmi
 
 admin_site.register(InventoryItem, InventoryItemAdmin)
 admin_site.register(StockMovement, StockMovementAdmin)
+
+admin_site.register(Voucher, VoucherAdmin)
