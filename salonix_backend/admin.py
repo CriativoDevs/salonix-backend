@@ -50,8 +50,8 @@ from cms.models import PublicPage, PageSEO, RoadmapItem
 from cms.admin import PublicPageAdmin, RoadmapItemAdmin
 from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementReceipt
 from platform_comms.admin import PlatformAnnouncementAdmin, PlatformAnnouncementReceiptAdmin
-from inventory.models import InventoryItem
-from inventory.admin import InventoryItemAdmin
+from inventory.models import InventoryItem, StockMovement
+from inventory.admin import InventoryItemAdmin, StockMovementAdmin
 from datetime import datetime, timedelta
 
 
@@ -340,3 +340,4 @@ admin_site.register(PlatformAnnouncement, PlatformAnnouncementAdmin)
 admin_site.register(PlatformAnnouncementReceipt, PlatformAnnouncementReceiptAdmin)
 
 admin_site.register(InventoryItem, InventoryItemAdmin)
+admin_site.register(StockMovement, StockMovementAdmin)

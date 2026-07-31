@@ -2,12 +2,13 @@ import logging
 
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.mixins import CreateModelMixin, ListModelMixin
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
 from core.mixins import TenantIsolatedMixin
-from inventory.models import InventoryItem
-from inventory.serializers import InventoryItemSerializer
+from inventory.models import InventoryItem, StockMovement
+from inventory.serializers import InventoryItemSerializer, StockMovementSerializer
 from users.models import TenantStaffMember
 
 logger = logging.getLogger(__name__)
@@ -94,4 +95,68 @@ class InventoryItemViewSet(TenantIsolatedMixin, ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         return get_object_or_404(
             queryset, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
+
+
+class StockMovementViewSet(
+    TenantIsolatedMixin, ListModelMixin, CreateModelMixin, GenericViewSet
+):
+    """Histórico de movimentações de estoque (BE-STOCK-03, #466).
+
+    Log imutável: apenas `list` e `create` são expostos (sem update/delete),
+    para que uma movimentação já registrada nunca seja alterada. Ao criar,
+    o próprio model (`StockMovement.save`) atualiza `InventoryItem.quantity`
+    e rejeita saídas que deixariam o saldo negativo.
+
+    Permissões:
+    - list: qualquer staff autenticado do tenant.
+    - create: apenas owner ou manager (mesmo padrão de `InventoryItemViewSet`,
+      já que afeta o saldo de estoque).
+
+    Sem gate de plano: disponível a todos os tenants (decisão de escopo,
+    ver docstring de `StockMovement`).
+    """
+
+    queryset = StockMovement.objects.select_related("item").all()
+    serializer_class = StockMovementSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _resolve_tenant(self):
+        # Mesmo padrão do InventoryItemViewSet: tenant só a partir de
+        # request.tenant/request.user.tenant, nunca de header/query-param.
+        return getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+    def perform_create(self, serializer):
+        tenant = self._resolve_tenant()
+        if tenant is None and not self.request.user.is_superuser:
+            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
+
+        if not (
+            self.request.user.is_superuser
+            or self.request.user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                "Apenas owner ou manager podem registrar movimentações de estoque."
+            )
+
+        item = serializer.validated_data.get("item")
+        if item is not None and item.tenant_id != getattr(tenant, "id", None):
+            raise ValidationError({"item": ["Item não encontrado para este tenant."]})
+
+        serializer.save(tenant=tenant)
+
+        logger.info(
+            "Stock movement created successfully",
+            extra={
+                "stock_movement_id": serializer.instance.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": self.request.user.id,
+                "item_id": serializer.instance.item_id,
+                "movement_type": serializer.instance.movement_type,
+                "quantity": serializer.instance.quantity,
+            },
         )

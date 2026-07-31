@@ -1,4 +1,5 @@
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 
 
 class InventoryItem(models.Model):
@@ -38,3 +39,71 @@ class InventoryItem(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.tenant_id})"
+
+
+class StockMovement(models.Model):
+    """Movimentação (entrada/saída) de um `InventoryItem` (BE-STOCK-03, #466).
+
+    Log imutável: uma vez criada, uma movimentação não é editada nem
+    apagada via API — apenas listada e criada. Ao ser criada, atualiza
+    automaticamente `InventoryItem.quantity` (soma para entrada, subtrai
+    para saída). Disponível para todos os tenants, sem gate de plano —
+    decisão de escopo revisada em relação à issue original (que previa
+    exclusividade do plano Pro, hoje bloqueado/não vendável).
+    """
+
+    class MovementType(models.TextChoices):
+        IN = "in", "Entrada"
+        OUT = "out", "Saída"
+
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        on_delete=models.CASCADE,
+        related_name="stock_movements",
+    )
+    item = models.ForeignKey(
+        InventoryItem,
+        on_delete=models.CASCADE,
+        related_name="movements",
+    )
+    movement_type = models.CharField(max_length=3, choices=MovementType.choices)
+    quantity = models.PositiveIntegerField()
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(
+                fields=["tenant", "item", "created_at"],
+                name="stock_move_tenant_item_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_movement_type_display()} {self.quantity} - {self.item.name}"
+
+    def save(self, *args, **kwargs):
+        # Só aplica o ajuste de saldo na criação — o histórico é imutável,
+        # então não há caminho de update que deva reajustar a quantidade.
+        is_new = self._state.adding
+        if not is_new:
+            super().save(*args, **kwargs)
+            return
+
+        with transaction.atomic():
+            item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+
+            if self.movement_type == self.MovementType.OUT:
+                new_quantity = item.quantity - self.quantity
+                if new_quantity < 0:
+                    raise ValidationError(
+                        "Saída não pode deixar a quantidade do item negativa."
+                    )
+            else:
+                new_quantity = item.quantity + self.quantity
+
+            super().save(*args, **kwargs)
+
+            item.quantity = new_quantity
+            item.save(update_fields=["quantity", "updated_at"])
