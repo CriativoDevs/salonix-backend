@@ -3,8 +3,9 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from core.models import SalonCustomer
 from users.models import Tenant, TenantStaffMember
-from vouchers.models import Voucher
+from vouchers.models import ClientVoucher, Voucher
 
 User = get_user_model()
 
@@ -338,3 +339,150 @@ class TestVoucherDestroy:
             status.HTTP_403_FORBIDDEN,
         )
         assert Voucher.objects.filter(id=other_voucher_fixture.id).exists()
+
+
+@pytest.fixture
+def customer_fixture(db, tenant_fixture):
+    return SalonCustomer.objects.create(tenant=tenant_fixture, name="Cliente Teste")
+
+
+@pytest.fixture
+def other_customer_fixture(db, other_tenant):
+    return SalonCustomer.objects.create(tenant=other_tenant, name="Cliente Outro Tenant")
+
+
+@pytest.mark.django_db
+class TestVoucherAssign:
+    def url(self, voucher):
+        return f"/api/vouchers/{voucher.id}/assign/"
+
+    def test_owner_can_assign_voucher_to_client(
+        self, api_client, owner_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["voucher"] == voucher_fixture.id
+        assert data["client"] == customer_fixture.id
+        assert data["status"] == "active"
+        assert ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_fixture
+        ).exists()
+
+    def test_manager_can_assign_voucher_to_client(
+        self, api_client, manager_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=manager_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_staff_cannot_assign_voucher(
+        self, api_client, staff_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_fixture
+        ).exists()
+
+    def test_unauthenticated_cannot_assign(
+        self, api_client, voucher_fixture, customer_fixture
+    ):
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_cannot_assign_duplicate_to_same_client(
+        self, api_client, owner_user, voucher_fixture, customer_fixture
+    ):
+        ClientVoucher.objects.create(
+            tenant=voucher_fixture.tenant, voucher=voucher_fixture, client=customer_fixture
+        )
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "client_id" in response.json()["error"]["details"]
+        assert (
+            ClientVoucher.objects.filter(
+                voucher=voucher_fixture, client=customer_fixture
+            ).count()
+            == 1
+        )
+
+    def test_respects_max_uses(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        voucher = Voucher.objects.create(
+            tenant=tenant_fixture,
+            code="LIMITED1",
+            type=Voucher.VoucherType.FIXED,
+            value=5,
+            max_uses=1,
+        )
+        customer_a = SalonCustomer.objects.create(tenant=tenant_fixture, name="A")
+        customer_b = SalonCustomer.objects.create(tenant=tenant_fixture, name="B")
+
+        api_client.force_authenticate(user=owner_user)
+        first_response = api_client.post(self.url(voucher), {"client_id": customer_a.id})
+        assert first_response.status_code == status.HTTP_201_CREATED
+
+        second_response = api_client.post(self.url(voucher), {"client_id": customer_b.id})
+        assert second_response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "voucher" in second_response.json()["error"]["details"]
+        assert ClientVoucher.objects.filter(voucher=voucher).count() == 1
+
+    def test_cannot_assign_to_client_of_other_tenant(
+        self, api_client, owner_user, voucher_fixture, other_customer_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": other_customer_fixture.id}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "client_id" in response.json()["error"]["details"]
+        assert not ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=other_customer_fixture
+        ).exists()
+
+    def test_cannot_assign_other_tenant_voucher(
+        self, api_client, owner_user, other_voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(other_voucher_fixture), {"client_id": customer_fixture.id}
+        )
+        assert response.status_code in (
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_403_FORBIDDEN,
+        )
+        assert not ClientVoucher.objects.filter(
+            voucher=other_voucher_fixture, client=customer_fixture
+        ).exists()
+
+    def test_assign_requires_client_id(
+        self, api_client, owner_user, voucher_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(voucher_fixture), {})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_assign_rejects_nonexistent_client(
+        self, api_client, owner_user, voucher_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": 999999}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "client_id" in response.json()["error"]["details"]
