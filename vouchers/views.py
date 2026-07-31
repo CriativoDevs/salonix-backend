@@ -1,14 +1,22 @@
 import logging
 
 from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from core.mixins import TenantIsolatedMixin
+from core.models import SalonCustomer
 from users.models import TenantStaffMember
-from vouchers.models import Voucher
-from vouchers.serializers import VoucherSerializer
+from vouchers.models import ClientVoucher, Voucher
+from vouchers.serializers import (
+    ClientVoucherSerializer,
+    VoucherAssignSerializer,
+    VoucherSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,4 +109,61 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
         return get_object_or_404(
             queryset, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
+
+    @action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, pk=None):
+        """Atribui o voucher a um cliente do mesmo tenant (BE-VOUCHER-02, #471).
+
+        Restrito a owner/manager, como create/update — atribuição de voucher
+        afeta receita/descontos, mesmo critério já aplicado ao resto do
+        `VoucherViewSet`. Rejeita atribuição duplicada ao mesmo cliente e
+        respeita `max_uses`.
+        """
+        self._require_owner_or_manager("atribuir vouchers")
+
+        voucher = self.get_object()
+
+        input_serializer = VoucherAssignSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        client_id = input_serializer.validated_data["client_id"]
+
+        # O cliente precisa pertencer ao mesmo tenant do voucher — busca
+        # escopada ao tenant do voucher (nunca `SalonCustomer.objects.get`
+        # direto, que permitiria atribuir a cliente de outro tenant/IDOR).
+        try:
+            client = SalonCustomer.objects.get(id=client_id, tenant=voucher.tenant)
+        except SalonCustomer.DoesNotExist:
+            raise ValidationError(
+                {"client_id": ["Cliente não encontrado para este tenant."]}
+            )
+
+        if ClientVoucher.objects.filter(voucher=voucher, client=client).exists():
+            raise ValidationError(
+                {"client_id": ["Este voucher já foi atribuído a este cliente."]}
+            )
+
+        current_assignments = ClientVoucher.objects.filter(voucher=voucher).count()
+        if current_assignments >= voucher.max_uses:
+            raise ValidationError(
+                {"voucher": ["Limite de atribuições (max_uses) atingido para este voucher."]}
+            )
+
+        client_voucher = ClientVoucher.objects.create(
+            tenant=voucher.tenant, voucher=voucher, client=client
+        )
+
+        logger.info(
+            "Voucher assigned to client",
+            extra={
+                "voucher_id": voucher.id,
+                "client_id": client.id,
+                "tenant_id": voucher.tenant_id,
+                "user_id": self.request.user.id,
+            },
+        )
+
+        return Response(
+            ClientVoucherSerializer(client_voucher).data,
+            status=status.HTTP_201_CREATED,
         )

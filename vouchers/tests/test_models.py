@@ -1,9 +1,13 @@
+import datetime
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
+from django.utils import timezone
 
+from core.models import SalonCustomer
 from users.models import Tenant
-from vouchers.models import Voucher
+from vouchers.models import ClientVoucher, Voucher
 
 
 @pytest.fixture
@@ -140,3 +144,123 @@ class TestVoucherModel:
         voucher = make_voucher(tenant_fixture)
         assert voucher.valid_until is None
         assert voucher.notes == ""
+
+
+@pytest.fixture
+def customer_fixture(db, tenant_fixture):
+    return SalonCustomer.objects.create(tenant=tenant_fixture, name="Cliente Teste")
+
+
+@pytest.mark.django_db
+class TestClientVoucherModel:
+    def test_assign_voucher_to_client(self, tenant_fixture, customer_fixture):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        assert client_voucher.pk is not None
+        assert client_voucher.assigned_at is not None
+        assert client_voucher.used_at is None
+        assert client_voucher.used_in_booking is None
+
+    def test_str_representation(self, tenant_fixture, customer_fixture):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        assert voucher.code in str(client_voucher)
+
+    def test_cannot_assign_same_voucher_twice_to_same_client(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        with pytest.raises(IntegrityError):
+            ClientVoucher.objects.create(
+                tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+            )
+
+    def test_same_voucher_can_be_assigned_to_different_clients(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1", max_uses=2)
+        other_customer = SalonCustomer.objects.create(
+            tenant=tenant_fixture, name="Outro Cliente"
+        )
+        ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        second = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=other_customer
+        )
+        assert second.pk is not None
+
+    def test_status_active_by_default(self, tenant_fixture, customer_fixture):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        assert client_voucher.status == ClientVoucher.Status.ACTIVE
+
+    def test_status_used_when_used_at_set(self, tenant_fixture, customer_fixture):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture,
+            voucher=voucher,
+            client=customer_fixture,
+            used_at=timezone.now(),
+        )
+        assert client_voucher.status == ClientVoucher.Status.USED
+
+    def test_status_expired_when_voucher_valid_until_in_past(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(
+            tenant_fixture,
+            code="ASSIGNED1",
+            valid_until=timezone.localdate() - datetime.timedelta(days=1),
+        )
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        assert client_voucher.status == ClientVoucher.Status.EXPIRED
+
+    def test_status_used_takes_precedence_over_expired(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(
+            tenant_fixture,
+            code="ASSIGNED1",
+            valid_until=timezone.localdate() - datetime.timedelta(days=1),
+        )
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture,
+            voucher=voucher,
+            client=customer_fixture,
+            used_at=timezone.now(),
+        )
+        assert client_voucher.status == ClientVoucher.Status.USED
+
+    def test_deleting_voucher_cascades_client_voucher(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        voucher_id = client_voucher.pk
+        voucher.delete()
+        assert not ClientVoucher.objects.filter(pk=voucher_id).exists()
+
+    def test_deleting_client_cascades_client_voucher(
+        self, tenant_fixture, customer_fixture
+    ):
+        voucher = make_voucher(tenant_fixture, code="ASSIGNED1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        client_voucher_id = client_voucher.pk
+        customer_fixture.delete()
+        assert not ClientVoucher.objects.filter(pk=client_voucher_id).exists()

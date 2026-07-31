@@ -66,6 +66,8 @@ from core.serializers import (
     ClientSetPasswordSerializer,
 )
 from core.mixins import TenantIsolatedMixin
+from vouchers.models import ClientVoucher
+from vouchers.serializers import ClientVoucherSerializer
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -3550,6 +3552,21 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
             )
 
         return Response({"status": "queued"}, status=drf_status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["get"], url_path="vouchers")
+    def vouchers(self, request, pk=None):
+        """Lista os vouchers atribuídos ao cliente (BE-VOUCHER-02, #471).
+
+        Aberto a qualquer staff autenticado do tenant (mesmo padrão de
+        list/retrieve do `SalonCustomerViewSet`); `get_object()` já garante
+        isolamento por tenant via `TenantIsolatedMixin`.
+        """
+        customer = self.get_object()
+        client_vouchers = ClientVoucher.objects.filter(
+            client=customer
+        ).select_related("voucher")
+        serializer = ClientVoucherSerializer(client_vouchers, many=True)
+        return Response(serializer.data)
 
 
 _import_logger = logging.getLogger("core.import")

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from vouchers.models import Voucher
+from vouchers.models import ClientVoucher, Voucher
 
 
 @admin.register(Voucher)
@@ -25,3 +25,28 @@ class VoucherAdmin(admin.ModelAdmin):
     list_filter = ("type",)
     search_fields = ("code", "tenant__name", "tenant__slug")
     readonly_fields = ("created_at",)
+
+
+@admin.register(ClientVoucher)
+class ClientVoucherAdmin(admin.ModelAdmin):
+    """Admin (leitura de suporte/OPS) de atribuições de voucher a clientes
+    (BE-VOUCHER-02, #471).
+    """
+
+    list_display = (
+        "voucher",
+        "client",
+        "tenant",
+        "status",
+        "assigned_at",
+        "used_at",
+    )
+    list_filter = ("tenant",)
+    search_fields = (
+        "voucher__code",
+        "client__name",
+        "client__email",
+        "tenant__name",
+        "tenant__slug",
+    )
+    readonly_fields = ("assigned_at",)

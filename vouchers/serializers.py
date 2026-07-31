@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from core.models import Service
-from vouchers.models import Voucher
+from vouchers.models import ClientVoucher, Voucher
 
 
 class VoucherSerializer(serializers.ModelSerializer):
@@ -78,3 +78,42 @@ class VoucherSerializer(serializers.ModelSerializer):
                 )
 
         return attrs
+
+
+class ClientVoucherSerializer(serializers.ModelSerializer):
+    """Voucher atribuído a um cliente (BE-VOUCHER-02, #471).
+
+    Somente leitura: a atribuição é criada via
+    `VoucherViewSet.assign` (`POST /api/vouchers/{id}/assign/`), nunca
+    diretamente por este serializer — por isso não expõe `client_id` como
+    campo de escrita.
+    """
+
+    voucher_code = serializers.CharField(source="voucher.code", read_only=True)
+    voucher_type = serializers.CharField(source="voucher.type", read_only=True)
+    voucher_value = serializers.DecimalField(
+        source="voucher.value", max_digits=10, decimal_places=2, read_only=True
+    )
+    status = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ClientVoucher
+        fields = [
+            "id",
+            "voucher",
+            "voucher_code",
+            "voucher_type",
+            "voucher_value",
+            "client",
+            "assigned_at",
+            "used_at",
+            "used_in_booking",
+            "status",
+        ]
+        read_only_fields = fields
+
+
+class VoucherAssignSerializer(serializers.Serializer):
+    """Payload de entrada para `POST /api/vouchers/{id}/assign/`."""
+
+    client_id = serializers.IntegerField()
