@@ -117,3 +117,19 @@ class VoucherAssignSerializer(serializers.Serializer):
     """Payload de entrada para `POST /api/vouchers/{id}/assign/`."""
 
     client_id = serializers.IntegerField()
+
+
+class ApplyVoucherSerializer(serializers.Serializer):
+    """Payload de entrada para `POST /api/salon/appointments/{id}/apply-voucher/`
+    (BE-VOUCHER-03, #472).
+
+    Identifica o voucher pelo `id` do `ClientVoucher` (a atribuição já
+    existente ao cliente), não pelo `code` do `Voucher` nem por um novo
+    `client_id` — o mesmo padrão já usado em `GET
+    /api/customers/{id}/vouchers/`, que devolve esse `id` para o
+    frontend escolher qual voucher aplicar. Evita uma segunda consulta
+    por código/cliente e a ambiguidade de reaplicar um voucher expirado
+    cujo código o operador digitou de memória.
+    """
+
+    client_voucher_id = serializers.IntegerField()
