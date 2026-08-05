@@ -40,6 +40,7 @@ class ClientVoucherAdmin(admin.ModelAdmin):
         "status",
         "assigned_at",
         "used_at",
+        "sent_at",
     )
     list_filter = ("tenant",)
     search_fields = (
@@ -49,4 +50,4 @@ class ClientVoucherAdmin(admin.ModelAdmin):
         "tenant__name",
         "tenant__slug",
     )
-    readonly_fields = ("assigned_at",)
+    readonly_fields = ("assigned_at", "sent_at")

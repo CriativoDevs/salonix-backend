@@ -17,6 +17,7 @@ from vouchers.serializers import (
     VoucherAssignSerializer,
     VoucherSerializer,
 )
+from vouchers.tasks import send_voucher_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,38 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
             queryset, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
         )
 
+    def _get_client_in_tenant(self, voucher, client_id):
+        # O cliente precisa pertencer ao mesmo tenant do voucher — busca
+        # escopada ao tenant do voucher (nunca `SalonCustomer.objects.get`
+        # direto, que permitiria atribuir/enviar a cliente de outro
+        # tenant/IDOR).
+        try:
+            return SalonCustomer.objects.get(id=client_id, tenant=voucher.tenant)
+        except SalonCustomer.DoesNotExist:
+            raise ValidationError(
+                {"client_id": ["Cliente não encontrado para este tenant."]}
+            )
+
+    def _assign_voucher_to_client(self, voucher, client) -> ClientVoucher:
+        """Cria o `ClientVoucher`, respeitando duplicidade e `max_uses`
+        (BE-VOUCHER-02, #471). Reaproveitado por `assign` e por `send_email`
+        (BE-VOUCHER-04, #473) para não duplicar a lógica de atribuição.
+        """
+        if ClientVoucher.objects.filter(voucher=voucher, client=client).exists():
+            raise ValidationError(
+                {"client_id": ["Este voucher já foi atribuído a este cliente."]}
+            )
+
+        current_assignments = ClientVoucher.objects.filter(voucher=voucher).count()
+        if current_assignments >= voucher.max_uses:
+            raise ValidationError(
+                {"voucher": ["Limite de atribuições (max_uses) atingido para este voucher."]}
+            )
+
+        return ClientVoucher.objects.create(
+            tenant=voucher.tenant, voucher=voucher, client=client
+        )
+
     @action(detail=True, methods=["post"], url_path="assign")
     def assign(self, request, pk=None):
         """Atribui o voucher a um cliente do mesmo tenant (BE-VOUCHER-02, #471).
@@ -128,30 +161,8 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         input_serializer.is_valid(raise_exception=True)
         client_id = input_serializer.validated_data["client_id"]
 
-        # O cliente precisa pertencer ao mesmo tenant do voucher — busca
-        # escopada ao tenant do voucher (nunca `SalonCustomer.objects.get`
-        # direto, que permitiria atribuir a cliente de outro tenant/IDOR).
-        try:
-            client = SalonCustomer.objects.get(id=client_id, tenant=voucher.tenant)
-        except SalonCustomer.DoesNotExist:
-            raise ValidationError(
-                {"client_id": ["Cliente não encontrado para este tenant."]}
-            )
-
-        if ClientVoucher.objects.filter(voucher=voucher, client=client).exists():
-            raise ValidationError(
-                {"client_id": ["Este voucher já foi atribuído a este cliente."]}
-            )
-
-        current_assignments = ClientVoucher.objects.filter(voucher=voucher).count()
-        if current_assignments >= voucher.max_uses:
-            raise ValidationError(
-                {"voucher": ["Limite de atribuições (max_uses) atingido para este voucher."]}
-            )
-
-        client_voucher = ClientVoucher.objects.create(
-            tenant=voucher.tenant, voucher=voucher, client=client
-        )
+        client = self._get_client_in_tenant(voucher, client_id)
+        client_voucher = self._assign_voucher_to_client(voucher, client)
 
         logger.info(
             "Voucher assigned to client",
@@ -166,4 +177,58 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         return Response(
             ClientVoucherSerializer(client_voucher).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="send-email")
+    def send_email(self, request, pk=None):
+        """Envia o voucher por e-mail a um cliente do tenant (BE-VOUCHER-04, #473).
+
+        Restrito a owner/manager, mesmo critério de `assign`/`create`/
+        `update` — envolve comunicação com o cliente sobre voucher/desconto.
+
+        Atribui o voucher ao cliente (reaproveitando `_assign_voucher_to_client`,
+        a mesma lógica de `assign`) caso ainda não esteja atribuído — não
+        duplica a atribuição em reenvios. O disparo do e-mail em si é sempre
+        assíncrono (task Celery, `send_voucher_email_task`) e pode ser
+        acionado novamente deliberadamente (ex.: cliente perdeu o e-mail),
+        mesmo que `sent_at` já esteja preenchido — reenvio não é bloqueado,
+        só a atribuição duplicada é.
+        """
+        self._require_owner_or_manager("enviar vouchers por email")
+
+        voucher = self.get_object()
+
+        input_serializer = VoucherAssignSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        client_id = input_serializer.validated_data["client_id"]
+
+        client = self._get_client_in_tenant(voucher, client_id)
+
+        if not client.email:
+            raise ValidationError(
+                {"client_id": ["Cliente não tem e-mail cadastrado."]}
+            )
+
+        client_voucher = ClientVoucher.objects.filter(
+            voucher=voucher, client=client
+        ).first()
+        if client_voucher is None:
+            client_voucher = self._assign_voucher_to_client(voucher, client)
+
+        send_voucher_email_task.delay(client_voucher.id)
+
+        logger.info(
+            "Voucher email dispatched",
+            extra={
+                "voucher_id": voucher.id,
+                "client_id": client.id,
+                "client_voucher_id": client_voucher.id,
+                "tenant_id": voucher.tenant_id,
+                "user_id": self.request.user.id,
+            },
+        )
+
+        return Response(
+            ClientVoucherSerializer(client_voucher).data,
+            status=status.HTTP_202_ACCEPTED,
         )
