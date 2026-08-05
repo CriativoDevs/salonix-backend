@@ -520,6 +520,72 @@ def send_tenant_welcome_email(
     return _send_email_safe(subject, body_plain, body_html, to_email)
 
 
+def send_voucher_email(
+    to_email: str,
+    client_name: str,
+    voucher_code: str,
+    voucher_type: str,
+    voucher_value=None,
+    service_name: str | None = None,
+    valid_until=None,
+    salon_name: str = "TimelyOne",
+):
+    """
+    Envia e-mail com um voucher atribuído a um cliente (BE-VOUCHER-04, #473).
+
+    Disparado a partir de `vouchers.tasks.send_voucher_email_task`, nunca
+    diretamente pela view (envio é sempre assíncrono).
+    """
+    subject = _("Você recebeu um voucher de %(salon_name)s") % {
+        "salon_name": salon_name
+    }
+
+    if voucher_type == "percent":
+        value_line = _("Desconto: %(value)s%%") % {"value": voucher_value}
+    elif voucher_type == "fixed":
+        value_line = _("Desconto: €%(value)s") % {"value": voucher_value}
+    else:
+        value_line = _("Serviço grátis: %(service)s") % {
+            "service": service_name or ""
+        }
+
+    validity_line = (
+        _("Válido até: %(date)s") % {"date": valid_until.strftime("%d/%m/%Y")}
+        if valid_until
+        else _("Sem data de expiração")
+    )
+
+    body_plain = f"""{_("Olá %(name)s,") % {"name": client_name}}
+
+{_("Tens um voucher de %(salon_name)s à tua espera!") % {"salon_name": salon_name}}
+
+{_("Código")}: {voucher_code}
+{value_line}
+{validity_line}
+
+{_("Apresenta este código no teu próximo agendamento.")}
+
+{_("Obrigado,")}
+{_("Equipe %(salon_name)s") % {"salon_name": salon_name}}
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+          <p>{_("Olá %(name)s,") % {"name": client_name}}</p>
+          <p>{_("Tens um voucher de %(salon_name)s à tua espera!") % {"salon_name": salon_name}}</p>
+          <div style="background:#f8f9fa;border:1px dashed #999;padding:12px 16px;margin:16px 0;">
+            <p style="margin:4px 0;"><strong>{_("Código")}:</strong> {voucher_code}</p>
+            <p style="margin:4px 0;">{value_line}</p>
+            <p style="margin:4px 0;">{validity_line}</p>
+          </div>
+          <p>{_("Apresenta este código no teu próximo agendamento.")}</p>
+          <p>{_("Obrigado,")}<br/>{_("Equipe %(salon_name)s") % {"salon_name": salon_name}}</p>
+        </div>
+        """
+
+    return _send_email_safe(subject, body_plain, body_html, to_email)
+
+
 def send_account_cancellation_email(
     tenant,
     owner_user,

@@ -133,6 +133,16 @@ class ClientVoucher(models.Model):
     )
     assigned_at = models.DateTimeField(auto_now_add=True)
     used_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Última vez que o voucher foi enviado por e-mail ao cliente "
+            "(BE-VOUCHER-04, #473). Reenvios deliberados atualizam este "
+            "campo novamente — não é usado para bloquear reenvio, apenas "
+            "para auditoria/evitar disparos acidentais duplicados."
+        ),
+    )
     used_in_booking = models.ForeignKey(
         "core.Appointment",
         on_delete=models.SET_NULL,

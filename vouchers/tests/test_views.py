@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework import status
@@ -486,3 +488,218 @@ class TestVoucherAssign:
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "client_id" in response.json()["error"]["details"]
+
+
+@pytest.fixture
+def customer_with_email_fixture(db, tenant_fixture):
+    return SalonCustomer.objects.create(
+        tenant=tenant_fixture, name="Cliente Com Email", email="cliente@test.com"
+    )
+
+
+@pytest.fixture
+def customer_without_email_fixture(db, tenant_fixture):
+    return SalonCustomer.objects.create(
+        tenant=tenant_fixture, name="Cliente Sem Email"
+    )
+
+
+@pytest.mark.django_db
+class TestVoucherSendEmail:
+    """BE-VOUCHER-04, #473: envio de voucher por email (disparo manual)."""
+
+    def url(self, voucher):
+        return f"/api/vouchers/{voucher.id}/send-email/"
+
+    def test_owner_can_send_voucher_email(
+        self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            response = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        data = response.json()
+        assert data["voucher"] == voucher_fixture.id
+        assert data["client"] == customer_with_email_fixture.id
+
+        client_voucher = ClientVoucher.objects.get(
+            voucher=voucher_fixture, client=customer_with_email_fixture
+        )
+        mock_delay.assert_called_once_with(client_voucher.id)
+
+    def test_manager_can_send_voucher_email(
+        self, api_client, manager_user, voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=manager_user)
+        with patch("vouchers.views.send_voucher_email_task.delay"):
+            response = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+        assert response.status_code == status.HTTP_202_ACCEPTED
+
+    def test_staff_cannot_send_voucher_email(
+        self, api_client, staff_user, voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            response = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_delay.assert_not_called()
+
+    def test_unauthenticated_cannot_send_voucher_email(
+        self, api_client, voucher_fixture, customer_with_email_fixture
+    ):
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_id": customer_with_email_fixture.id}
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_client_without_email_returns_clear_error(
+        self, api_client, owner_user, voucher_fixture, customer_without_email_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            response = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_without_email_fixture.id},
+            )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "client_id" in response.json()["error"]["details"]
+        mock_delay.assert_not_called()
+        assert not ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_without_email_fixture
+        ).exists()
+
+    def test_sending_assigns_voucher_when_not_yet_assigned(
+        self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
+    ):
+        assert not ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_with_email_fixture
+        ).exists()
+
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay"):
+            response = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_with_email_fixture
+        ).count() == 1
+
+    def test_sending_again_does_not_duplicate_assignment(
+        self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay"):
+            first = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+            second = api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+
+        assert first.status_code == status.HTTP_202_ACCEPTED
+        assert second.status_code == status.HTTP_202_ACCEPTED
+        assert ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=customer_with_email_fixture
+        ).count() == 1
+        assert (
+            first.json()["id"] == second.json()["id"]
+        )
+
+    def test_sending_again_still_dispatches_task_for_deliberate_resend(
+        self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+            api_client.post(
+                self.url(voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+
+        assert mock_delay.call_count == 2
+
+    def test_respects_max_uses_when_not_yet_assigned(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        voucher = Voucher.objects.create(
+            tenant=tenant_fixture,
+            code="LIMITED2",
+            type=Voucher.VoucherType.FIXED,
+            value=5,
+            max_uses=1,
+        )
+        customer_a = SalonCustomer.objects.create(
+            tenant=tenant_fixture, name="A", email="a@test.com"
+        )
+        customer_b = SalonCustomer.objects.create(
+            tenant=tenant_fixture, name="B", email="b@test.com"
+        )
+
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay"):
+            first_response = api_client.post(
+                self.url(voucher), {"client_id": customer_a.id}
+            )
+            second_response = api_client.post(
+                self.url(voucher), {"client_id": customer_b.id}
+            )
+
+        assert first_response.status_code == status.HTTP_202_ACCEPTED
+        assert second_response.status_code == status.HTTP_400_BAD_REQUEST
+        assert ClientVoucher.objects.filter(voucher=voucher).count() == 1
+
+    def test_cannot_send_to_client_of_other_tenant(
+        self, api_client, owner_user, voucher_fixture, other_customer_fixture
+    ):
+        other_customer_fixture.email = "other@test.com"
+        other_customer_fixture.save()
+
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            response = api_client.post(
+                self.url(voucher_fixture), {"client_id": other_customer_fixture.id}
+            )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "client_id" in response.json()["error"]["details"]
+        mock_delay.assert_not_called()
+        assert not ClientVoucher.objects.filter(
+            voucher=voucher_fixture, client=other_customer_fixture
+        ).exists()
+
+    def test_cannot_send_other_tenant_voucher(
+        self, api_client, owner_user, other_voucher_fixture, customer_with_email_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        with patch("vouchers.views.send_voucher_email_task.delay") as mock_delay:
+            response = api_client.post(
+                self.url(other_voucher_fixture),
+                {"client_id": customer_with_email_fixture.id},
+            )
+        assert response.status_code in (
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_403_FORBIDDEN,
+        )
+        mock_delay.assert_not_called()
+
+    def test_send_email_requires_client_id(
+        self, api_client, owner_user, voucher_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(voucher_fixture), {})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
