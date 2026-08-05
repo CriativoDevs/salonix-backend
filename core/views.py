@@ -41,6 +41,8 @@ from notifications.services import (
     send_customer_pwa_invite,
     trigger_feedback_notifications,
 )
+from vouchers.models import ClientVoucher
+from vouchers.serializers import ApplyVoucherSerializer, ClientVoucherSerializer
 from core.serializers import (
     AppointmentDetailSerializer,
     AppointmentSerializer,
@@ -5243,6 +5245,83 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
                 "detail": "Exclusão de agendamentos não é permitida. Cancele o agendamento."
             },
             status=drf_status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="apply-voucher")
+    def apply_voucher(self, request, pk=None):
+        """Aplica um voucher já atribuído ao cliente a este agendamento
+        (BE-VOUCHER-03, #472).
+
+        Permissão: mesmo acesso das demais escritas deste ViewSet — via
+        `get_object()`, que exige owner/manager do tenant OU o
+        profissional/serviço dono do agendamento. Aplicar voucher faz
+        parte do fluxo normal de atendimento (diferente de
+        criar/editar/apagar/atribuir voucher em `VoucherViewSet`, que fica
+        restrito a owner/manager por afetar receita/descontos).
+        """
+        appointment = self.get_object()
+
+        input_serializer = ApplyVoucherSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        client_voucher_id = input_serializer.validated_data["client_voucher_id"]
+
+        tenant = getattr(appointment, "tenant", None) or getattr(
+            request.user, "tenant", None
+        )
+
+        # Busca do ClientVoucher escopada explicitamente ao tenant do
+        # agendamento — nunca ClientVoucher.objects.get(pk=...) direto, que
+        # permitiria aplicar voucher de outro tenant (IDOR). Não confiamos
+        # apenas no isolamento do TenantIsolatedMixin (que é desativado
+        # durante os testes) para este objeto, que não tem ViewSet próprio.
+        try:
+            client_voucher = ClientVoucher.objects.select_related(
+                "voucher", "client"
+            ).get(pk=client_voucher_id, tenant=tenant)
+        except ClientVoucher.DoesNotExist:
+            raise ValidationError(
+                {"client_voucher_id": ["Voucher não encontrado para este tenant."]}
+            )
+
+        if (
+            appointment.customer_id is None
+            or client_voucher.client_id != appointment.customer_id
+        ):
+            raise ValidationError(
+                {
+                    "client_voucher_id": [
+                        "Este voucher não está atribuído ao cliente deste agendamento."
+                    ]
+                }
+            )
+
+        if client_voucher.used_at is not None:
+            raise ValidationError(
+                {"client_voucher_id": ["Este voucher já foi usado."]}
+            )
+
+        if client_voucher.status == ClientVoucher.Status.EXPIRED:
+            raise ValidationError(
+                {"client_voucher_id": ["Este voucher está expirado."]}
+            )
+
+        client_voucher.used_at = timezone.now()
+        client_voucher.used_in_booking = appointment
+        client_voucher.save(update_fields=["used_at", "used_in_booking"])
+
+        logger.info(
+            "Voucher applied to appointment",
+            extra={
+                "client_voucher_id": client_voucher.id,
+                "appointment_id": appointment.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": request.user.id,
+            },
+        )
+
+        return Response(
+            ClientVoucherSerializer(client_voucher).data,
+            status=drf_status.HTTP_200_OK,
         )
 
     MAX_EXPORT_ROWS = 20_000
