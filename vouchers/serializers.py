@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from core.models import Service
-from vouchers.models import ClientVoucher, Voucher
+from vouchers.models import BirthdayVoucherConfig, ClientVoucher, Voucher
 
 
 class VoucherSerializer(serializers.ModelSerializer):
@@ -133,3 +133,81 @@ class ApplyVoucherSerializer(serializers.Serializer):
     """
 
     client_voucher_id = serializers.IntegerField()
+
+
+class BirthdayVoucherConfigSerializer(serializers.ModelSerializer):
+    """Template do voucher automático de aniversário (BE-VOUCHER-05, #474).
+
+    Cada tenant pode ter até `BirthdayVoucherConfig.MAX_TEMPLATES_PER_TENANT`
+    templates salvos, com no máximo 1 `is_selected=True` por vez (o usado
+    pelo job de envio). `tenant` nunca é aceite via payload — resolvido
+    pela view a partir do request autenticado, mesmo padrão de
+    `VoucherSerializer`. `service` é restrito aos serviços do tenant do
+    request para evitar IDOR.
+    """
+
+    class Meta:
+        model = BirthdayVoucherConfig
+        fields = [
+            "id",
+            "voucher_type",
+            "voucher_value",
+            "service",
+            "validity_days",
+            "is_selected",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        tenant = self._resolve_tenant()
+        if tenant is not None:
+            self.fields["service"].queryset = Service.objects.filter(tenant=tenant)
+
+    def _resolve_tenant(self):
+        request = self.context.get("request")
+        if request is None:
+            return None
+        return getattr(request, "tenant", None) or getattr(
+            getattr(request, "user", None), "tenant", None
+        )
+
+    def validate(self, attrs):
+        voucher_type = attrs.get(
+            "voucher_type", getattr(self.instance, "voucher_type", None)
+        )
+        service = attrs.get("service", getattr(self.instance, "service", None))
+        voucher_value = attrs.get(
+            "voucher_value", getattr(self.instance, "voucher_value", None)
+        )
+
+        if voucher_type == Voucher.VoucherType.FREE_SERVICE:
+            if service is None:
+                raise serializers.ValidationError(
+                    {"service": "Obrigatório para vouchers do tipo 'free_service'."}
+                )
+        elif voucher_value is None:
+            raise serializers.ValidationError(
+                {"voucher_value": "Obrigatório para vouchers do tipo 'percent'/'fixed'."}
+            )
+
+        if self.instance is None:
+            tenant = self._resolve_tenant()
+            if tenant is not None:
+                existing_count = BirthdayVoucherConfig.objects.filter(
+                    tenant=tenant
+                ).count()
+                if existing_count >= BirthdayVoucherConfig.MAX_TEMPLATES_PER_TENANT:
+                    raise serializers.ValidationError(
+                        {
+                            "non_field_errors": [
+                                "Cada tenant pode ter no máximo "
+                                f"{BirthdayVoucherConfig.MAX_TEMPLATES_PER_TENANT} "
+                                "templates de voucher de aniversário."
+                            ]
+                        }
+                    )
+
+        return attrs

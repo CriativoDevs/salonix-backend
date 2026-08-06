@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from vouchers.models import ClientVoucher, Voucher
+from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
 
 
 @admin.register(Voucher)
@@ -51,3 +51,38 @@ class ClientVoucherAdmin(admin.ModelAdmin):
         "tenant__slug",
     )
     readonly_fields = ("assigned_at", "sent_at")
+
+
+@admin.register(BirthdayVoucherConfig)
+class BirthdayVoucherConfigAdmin(admin.ModelAdmin):
+    """Admin (leitura/suporte OPS) dos templates de voucher de aniversário
+    por tenant (BE-VOUCHER-05, #474 — até
+    `BirthdayVoucherConfig.MAX_TEMPLATES_PER_TENANT` por tenant, no máximo 1
+    `is_selected=True`). Edição normal é feita pelo tenant via
+    `/api/vouchers/birthday-configs/`; o admin serve para suporte/OPS
+    inspecionar/corrigir sem acesso a shell/DB.
+    """
+
+    list_display = (
+        "tenant",
+        "is_selected",
+        "voucher_type",
+        "voucher_value",
+        "validity_days",
+        "updated_at",
+    )
+    list_filter = ("is_selected", "voucher_type")
+    search_fields = ("tenant__name", "tenant__slug")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(BirthdayVoucherLog)
+class BirthdayVoucherLogAdmin(admin.ModelAdmin):
+    """Admin (leitura de suporte/OPS) do registo de idempotência do job de
+    aniversário (BE-VOUCHER-05, #474).
+    """
+
+    list_display = ("tenant", "client", "sent_date", "client_voucher", "created_at")
+    list_filter = ("tenant",)
+    search_fields = ("client__name", "client__email", "tenant__name", "tenant__slug")
+    readonly_fields = ("created_at",)
