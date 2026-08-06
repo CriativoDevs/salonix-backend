@@ -5,9 +5,9 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.utils import timezone
 
-from core.models import SalonCustomer
+from core.models import SalonCustomer, Service
 from users.models import Tenant
-from vouchers.models import ClientVoucher, Voucher
+from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
 
 
 @pytest.fixture
@@ -264,3 +264,168 @@ class TestClientVoucherModel:
         client_voucher_id = client_voucher.pk
         customer_fixture.delete()
         assert not ClientVoucher.objects.filter(pk=client_voucher_id).exists()
+
+
+@pytest.mark.django_db
+class TestBirthdayVoucherConfigModel:
+    def test_create_defaults_to_unselected(self, tenant_fixture):
+        config = BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+        assert config.pk is not None
+        assert config.is_selected is False
+        assert config.voucher_type == Voucher.VoucherType.PERCENT
+        assert config.voucher_value == 10
+        assert config.validity_days == 30
+
+    def test_up_to_three_configs_per_tenant_allowed(self, tenant_fixture):
+        for _ in range(3):
+            BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+        assert (
+            BirthdayVoucherConfig.objects.filter(tenant=tenant_fixture).count() == 3
+        )
+
+    def test_fourth_config_per_tenant_is_rejected(self, tenant_fixture):
+        for _ in range(3):
+            BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+
+        fourth = BirthdayVoucherConfig(tenant=tenant_fixture)
+        with pytest.raises(ValidationError):
+            fourth.full_clean()
+
+    def test_different_tenants_each_get_their_own_limit(
+        self, tenant_fixture, other_tenant
+    ):
+        for _ in range(3):
+            BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+        # Não deve levantar - é o primeiro template do outro tenant.
+        other_config = BirthdayVoucherConfig(tenant=other_tenant)
+        other_config.full_clean()
+
+    def test_updating_existing_config_does_not_count_against_limit(
+        self, tenant_fixture
+    ):
+        configs = [
+            BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+            for _ in range(3)
+        ]
+        configs[0].validity_days = 60
+        configs[0].full_clean()  # não deve levantar mesmo já havendo 3
+
+    def test_selecting_one_config_unselects_others_of_same_tenant(
+        self, tenant_fixture
+    ):
+        first = BirthdayVoucherConfig.objects.create(
+            tenant=tenant_fixture, is_selected=True
+        )
+        second = BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+
+        second.is_selected = True
+        second.save()
+
+        first.refresh_from_db()
+        assert first.is_selected is False
+        assert second.is_selected is True
+
+    def test_selecting_does_not_affect_other_tenants(
+        self, tenant_fixture, other_tenant
+    ):
+        own = BirthdayVoucherConfig.objects.create(
+            tenant=tenant_fixture, is_selected=True
+        )
+        other = BirthdayVoucherConfig.objects.create(
+            tenant=other_tenant, is_selected=True
+        )
+
+        own.refresh_from_db()
+        other.refresh_from_db()
+        assert own.is_selected is True
+        assert other.is_selected is True
+
+    def test_free_service_requires_service(self, tenant_fixture):
+        config = BirthdayVoucherConfig(
+            tenant=tenant_fixture,
+            voucher_type=Voucher.VoucherType.FREE_SERVICE,
+            voucher_value=None,
+        )
+        with pytest.raises(ValidationError):
+            config.full_clean()
+
+    def test_free_service_with_service_is_valid(self, tenant_fixture, user_fixture):
+        service = Service.objects.create(
+            tenant=tenant_fixture,
+            user=user_fixture,
+            name="Corte",
+            duration_minutes=30,
+            price_eur=50,
+        )
+        config = BirthdayVoucherConfig(
+            tenant=tenant_fixture,
+            voucher_type=Voucher.VoucherType.FREE_SERVICE,
+            voucher_value=None,
+            service=service,
+        )
+        config.full_clean()  # não deve levantar
+
+    def test_percent_without_value_is_invalid(self, tenant_fixture):
+        config = BirthdayVoucherConfig(
+            tenant=tenant_fixture,
+            voucher_type=Voucher.VoucherType.PERCENT,
+            voucher_value=None,
+        )
+        with pytest.raises(ValidationError):
+            config.full_clean()
+
+    def test_deleting_tenant_cascades_config(self, tenant_fixture):
+        config = BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+        config_id = config.pk
+        tenant_fixture.delete()
+        assert not BirthdayVoucherConfig.objects.filter(pk=config_id).exists()
+
+
+@pytest.mark.django_db
+class TestBirthdayVoucherLogModel:
+    def test_create_log_entry(self, tenant_fixture, customer_fixture):
+        log = BirthdayVoucherLog.objects.create(
+            tenant=tenant_fixture,
+            client=customer_fixture,
+            sent_date=timezone.localdate(),
+        )
+        assert log.pk is not None
+        assert log.client_voucher is None
+
+    def test_unique_per_tenant_client_date(self, tenant_fixture, customer_fixture):
+        today = timezone.localdate()
+        BirthdayVoucherLog.objects.create(
+            tenant=tenant_fixture, client=customer_fixture, sent_date=today
+        )
+        with pytest.raises(IntegrityError):
+            BirthdayVoucherLog.objects.create(
+                tenant=tenant_fixture, client=customer_fixture, sent_date=today
+            )
+
+    def test_same_client_different_date_allowed(self, tenant_fixture, customer_fixture):
+        today = timezone.localdate()
+        yesterday = today - datetime.timedelta(days=1)
+        BirthdayVoucherLog.objects.create(
+            tenant=tenant_fixture, client=customer_fixture, sent_date=yesterday
+        )
+        BirthdayVoucherLog.objects.create(
+            tenant=tenant_fixture, client=customer_fixture, sent_date=today
+        )
+        assert (
+            BirthdayVoucherLog.objects.filter(client=customer_fixture).count() == 2
+        )
+
+    def test_deleting_client_voucher_keeps_log(self, tenant_fixture, customer_fixture):
+        voucher = make_voucher(tenant_fixture, code="BIRTHDAY1")
+        client_voucher = ClientVoucher.objects.create(
+            tenant=tenant_fixture, voucher=voucher, client=customer_fixture
+        )
+        log = BirthdayVoucherLog.objects.create(
+            tenant=tenant_fixture,
+            client=customer_fixture,
+            sent_date=timezone.localdate(),
+            client_voucher=client_voucher,
+        )
+        client_voucher.delete()
+        log.refresh_from_db()
+        assert log.client_voucher is None

@@ -23,3 +23,23 @@ def test_admin_exposes_expected_list_display():
     assert "tenant" in model_admin.list_display
     assert "code" in model_admin.list_display
     assert "type" in model_admin.list_display
+
+
+def test_birthday_voucher_config_is_registered_in_custom_admin_site():
+    from vouchers.admin import BirthdayVoucherConfigAdmin
+    from vouchers.models import BirthdayVoucherConfig
+
+    assert BirthdayVoucherConfig in admin_site._registry
+    assert isinstance(
+        admin_site._registry[BirthdayVoucherConfig], BirthdayVoucherConfigAdmin
+    )
+
+
+def test_birthday_voucher_log_is_registered_in_custom_admin_site():
+    from vouchers.admin import BirthdayVoucherLogAdmin
+    from vouchers.models import BirthdayVoucherLog
+
+    assert BirthdayVoucherLog in admin_site._registry
+    assert isinstance(
+        admin_site._registry[BirthdayVoucherLog], BirthdayVoucherLogAdmin
+    )

@@ -1,4 +1,4 @@
-import random
+import secrets
 import string
 
 from django.core.exceptions import ValidationError
@@ -11,9 +11,15 @@ _MAX_CODE_GENERATION_ATTEMPTS = 10
 
 
 def generate_voucher_code() -> str:
-    """Gera um código alfanumérico maiúsculo de 8 caracteres."""
+    """Gera um código alfanumérico maiúsculo de 8 caracteres.
 
-    return "".join(random.choices(CODE_ALPHABET, k=CODE_LENGTH))
+    Usa `secrets` (CSPRNG), não `random` — o código é exibido/comunicado ao
+    cliente e, mesmo não sendo hoje usado como credencial de resgate (ver
+    `Voucher.save`/apply-voucher, que usam `client_voucher_id` autenticado),
+    é o tipo de campo que tende a virar ponto de resgate público no futuro.
+    """
+
+    return "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
 
 
 class Voucher(models.Model):
@@ -174,3 +180,157 @@ class ClientVoucher(models.Model):
         if valid_until is not None and valid_until < timezone.localdate():
             return self.Status.EXPIRED
         return self.Status.ACTIVE
+
+
+class BirthdayVoucherConfig(models.Model):
+    """Template (por tenant) do voucher automático de aniversário
+    (BE-VOUCHER-05, #474).
+
+    Cada tenant pode guardar até `MAX_TEMPLATES_PER_TENANT` templates
+    (percentual/fixo/serviço grátis + validade), mas apenas **um** deles
+    pode estar `is_selected=True` por vez — é esse que o job periódico
+    `send_birthday_vouchers` usa para gerar os vouchers do dia. Os demais
+    ficam guardados prontos para o tenant trocar depois.
+
+    Decisão de design (2026-08, ajuste de escopo BE-VOUCHER-05): o campo
+    `is_active` do desenho original (feature ligada/desligada a nível de
+    tenant, separado de "qual template usar") foi **removido** em favor de
+    só `is_selected` — nenhum template selecionado já significa "feature
+    desligada" (comportamento padrão em tenant novo, sem precisar de um
+    segundo flag para o mesmo conceito). `send_birthday_vouchers` passou a
+    iterar `BirthdayVoucherConfig.objects.filter(is_selected=True)`.
+    """
+
+    MAX_TEMPLATES_PER_TENANT = 3
+
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        on_delete=models.CASCADE,
+        related_name="birthday_voucher_configs",
+    )
+    voucher_type = models.CharField(
+        max_length=20,
+        choices=Voucher.VoucherType.choices,
+        default=Voucher.VoucherType.PERCENT,
+    )
+    voucher_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        default=10,
+        help_text="Percentual ou valor fixo. Não se aplica a 'free_service'.",
+    )
+    service = models.ForeignKey(
+        "core.Service",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="birthday_voucher_configs",
+        help_text="Obrigatório apenas quando voucher_type='free_service'.",
+    )
+    validity_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Validade (em dias, a partir da geração) do voucher de aniversário criado.",
+    )
+    is_selected = models.BooleanField(
+        default=False,
+        help_text=(
+            "Template usado pelo job de envio automático de vouchers de "
+            "aniversário. No máximo 1 por tenant pode estar selecionado — "
+            "nenhum selecionado equivale à feature desligada."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"BirthdayVoucherConfig({self.tenant_id}, selected={self.is_selected})"
+
+    def clean(self):
+        errors = {}
+        if self.voucher_type == Voucher.VoucherType.FREE_SERVICE:
+            if self.service_id is None:
+                errors["service"] = "Obrigatório para vouchers do tipo 'free_service'."
+        elif self.voucher_value is None:
+            errors["voucher_value"] = (
+                "Obrigatório para vouchers do tipo 'percent'/'fixed'."
+            )
+
+        if self.tenant_id is not None and self._state.adding:
+            existing_count = BirthdayVoucherConfig.objects.filter(
+                tenant_id=self.tenant_id
+            ).count()
+            if existing_count >= self.MAX_TEMPLATES_PER_TENANT:
+                errors["__all__"] = (
+                    "Cada tenant pode ter no máximo "
+                    f"{self.MAX_TEMPLATES_PER_TENANT} templates de voucher "
+                    "de aniversário."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_selected:
+            # Seleção exclusiva por tenant: desmarcar os outros templates do
+            # mesmo tenant em vez de validar/rejeitar — mais simples e menos
+            # propenso a erro (nenhuma corrida entre "rejeitar 2º select" e
+            # "trocar de template selecionado", que é o fluxo normal de uso).
+            BirthdayVoucherConfig.objects.filter(
+                tenant_id=self.tenant_id, is_selected=True
+            ).exclude(pk=self.pk).update(is_selected=False)
+
+
+class BirthdayVoucherLog(models.Model):
+    """Marca que já processámos o voucher de aniversário de um cliente numa
+    determinada data (BE-VOUCHER-05, #474).
+
+    Garante idempotência do job periódico `send_birthday_vouchers`: a
+    constraint única `(tenant, client, sent_date)` impede que uma segunda
+    execução no mesmo dia gere um novo `Voucher`/`ClientVoucher` ou dispare
+    outro e-mail para o mesmo cliente. Preferimos este registo explícito a
+    tentar inferir "já processado" a partir de `ClientVoucher` (que não tem
+    nenhuma marca de "gerado automaticamente por aniversário nesta data" e
+    poderia colidir com vouchers atribuídos manualmente no mesmo dia).
+    """
+
+    tenant = models.ForeignKey(
+        "users.Tenant",
+        on_delete=models.CASCADE,
+        related_name="birthday_voucher_logs",
+    )
+    client = models.ForeignKey(
+        "core.SalonCustomer",
+        on_delete=models.CASCADE,
+        related_name="birthday_voucher_logs",
+    )
+    sent_date = models.DateField()
+    client_voucher = models.ForeignKey(
+        ClientVoucher,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="birthday_log_entries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "client", "sent_date"],
+                name="birthday_voucher_log_unique_tenant_client_date",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["tenant", "sent_date"], name="birthday_log_tenant_date_idx"
+            ),
+        ]
+
+    def __str__(self):
+        return f"BirthdayVoucherLog({self.client_id}, {self.sent_date})"

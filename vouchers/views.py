@@ -11,8 +11,9 @@ from rest_framework.viewsets import ModelViewSet
 from core.mixins import TenantIsolatedMixin
 from core.models import SalonCustomer
 from users.models import TenantStaffMember
-from vouchers.models import ClientVoucher, Voucher
+from vouchers.models import BirthdayVoucherConfig, ClientVoucher, Voucher
 from vouchers.serializers import (
+    BirthdayVoucherConfigSerializer,
     ClientVoucherSerializer,
     VoucherAssignSerializer,
     VoucherSerializer,
@@ -231,4 +232,122 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         return Response(
             ClientVoucherSerializer(client_voucher).data,
             status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class BirthdayVoucherConfigViewSet(TenantIsolatedMixin, ModelViewSet):
+    """CRUD dos templates de voucher automático de aniversário do tenant
+    (BE-VOUCHER-05, #474 — ajuste de escopo 2026-08: até
+    `BirthdayVoucherConfig.MAX_TEMPLATES_PER_TENANT` templates salvos por
+    tenant, com no máximo 1 selecionado por vez).
+
+    O template com `is_selected=True` é o usado pelo job periódico
+    `send_birthday_vouchers`; nenhum selecionado equivale à feature
+    desligada nesse tenant. Trocar de template é feito via `POST
+    .../{id}/select/`, que desmarca os demais automaticamente (lógica em
+    `BirthdayVoucherConfig.save()`).
+
+    Permissões: mesmo critério do resto do módulo — list/retrieve para
+    qualquer staff autenticado do tenant; create/update/destroy/select
+    restritos a owner/manager, já que o template afeta receita/descontos
+    futuros.
+    """
+
+    queryset = BirthdayVoucherConfig.objects.select_related("service").all()
+    serializer_class = BirthdayVoucherConfigSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _resolve_tenant(self):
+        return getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+    def _require_owner_or_manager(self, action_description: str):
+        if not (
+            self.request.user.is_superuser
+            or self.request.user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                f"Apenas owner ou manager podem {action_description}."
+            )
+
+    def get_object(self):
+        # Mesmo padrão do VoucherViewSet: usa o get_queryset() já escopado
+        # por tenant (TenantIsolatedMixin), nunca o manager direto.
+        queryset = self.filter_queryset(self.get_queryset())
+        return get_object_or_404(
+            queryset, pk=self.kwargs.get(self.lookup_field, self.kwargs.get("pk"))
+        )
+
+    def perform_create(self, serializer):
+        tenant = self._resolve_tenant()
+        if tenant is None and not self.request.user.is_superuser:
+            raise ValidationError({"tenant": ["Tenant não encontrado para o usuário."]})
+
+        self._require_owner_or_manager("criar templates de voucher de aniversário")
+
+        serializer.save(tenant=tenant)
+
+        logger.info(
+            "Birthday voucher config created",
+            extra={
+                "config_id": serializer.instance.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "user_id": self.request.user.id,
+            },
+        )
+
+    def perform_update(self, serializer):
+        self._require_owner_or_manager("editar templates de voucher de aniversário")
+        serializer.save()
+
+        logger.info(
+            "Birthday voucher config updated",
+            extra={
+                "config_id": serializer.instance.id,
+                "tenant_id": serializer.instance.tenant_id,
+                "user_id": self.request.user.id,
+            },
+        )
+
+    def perform_destroy(self, instance):
+        self._require_owner_or_manager("remover templates de voucher de aniversário")
+
+        logger.info(
+            "Birthday voucher config deleted",
+            extra={
+                "config_id": instance.id,
+                "tenant_id": instance.tenant_id,
+                "user_id": self.request.user.id,
+            },
+        )
+        instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="select")
+    def select(self, request, pk=None):
+        """Marca este template como o selecionado para o job de envio
+        automático de vouchers de aniversário — desmarca automaticamente os
+        demais templates do mesmo tenant (`BirthdayVoucherConfig.save()`).
+        """
+        self._require_owner_or_manager(
+            "selecionar o template de voucher de aniversário"
+        )
+
+        config = self.get_object()
+        config.is_selected = True
+        config.save(update_fields=["is_selected", "updated_at"])
+
+        logger.info(
+            "Birthday voucher config selected",
+            extra={
+                "config_id": config.id,
+                "tenant_id": config.tenant_id,
+                "user_id": request.user.id,
+            },
+        )
+
+        return Response(
+            BirthdayVoucherConfigSerializer(config, context={"request": request}).data
         )

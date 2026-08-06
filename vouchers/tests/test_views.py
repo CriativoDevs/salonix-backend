@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import SalonCustomer
+from core.models import SalonCustomer, Service
 from users.models import Tenant, TenantStaffMember
 from vouchers.models import ClientVoucher, Voucher
 
@@ -703,3 +703,311 @@ class TestVoucherSendEmail:
         api_client.force_authenticate(user=owner_user)
         response = api_client.post(self.url(voucher_fixture), {})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.fixture
+def birthday_config_fixture(db, tenant_fixture):
+    from vouchers.models import BirthdayVoucherConfig
+
+    return BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+
+
+@pytest.mark.django_db
+class TestBirthdayVoucherConfigList:
+    """BE-VOUCHER-05, #474 (ajuste de escopo): CRUD de templates de voucher
+    de aniversário — até 3 por tenant, no máximo 1 selecionado.
+    """
+
+    url = "/api/vouchers/birthday-configs/"
+
+    def test_list_starts_empty(self, api_client, owner_user):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        results = data["results"] if "results" in data else data
+        assert results == []
+
+    def test_staff_can_list_configs(
+        self, api_client, staff_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        results = data["results"] if "results" in data else data
+        assert len(results) == 1
+
+    def test_does_not_leak_other_tenants_configs(
+        self, api_client, owner_user, other_tenant
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        BirthdayVoucherConfig.objects.create(
+            tenant=other_tenant, is_selected=True, validity_days=45
+        )
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.get(self.url)
+        data = response.json()
+        results = data["results"] if "results" in data else data
+        assert results == []
+        assert BirthdayVoucherConfig.objects.count() == 1
+
+    def test_owner_can_create_config(self, api_client, owner_user):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url,
+            {"voucher_type": "fixed", "voucher_value": "7.50", "validity_days": 10},
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert data["voucher_type"] == "fixed"
+        assert data["validity_days"] == 10
+        assert data["is_selected"] is False
+
+    def test_manager_can_create_config(self, api_client, manager_user):
+        api_client.force_authenticate(user=manager_user)
+        response = api_client.post(
+            self.url, {"voucher_value": "10.00", "is_selected": True}
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["is_selected"] is True
+
+    def test_staff_cannot_create_config(self, api_client, staff_user):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.post(self.url, {"voucher_value": "10.00"})
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        from vouchers.models import BirthdayVoucherConfig
+
+        assert not BirthdayVoucherConfig.objects.exists()
+
+    def test_unauthenticated_cannot_access(self, api_client):
+        response = api_client.get(self.url)
+        assert response.status_code in (
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_free_service_without_service_is_rejected(self, api_client, owner_user):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url, {"voucher_type": "free_service"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_free_service_with_service_is_accepted(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        service = Service.objects.create(
+            tenant=tenant_fixture,
+            user=owner_user,
+            name="Corte",
+            duration_minutes=30,
+            price_eur=50,
+        )
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url, {"voucher_type": "free_service", "service": service.id}
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["service"] == service.id
+
+    def test_creating_second_selected_unselects_first(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        first = BirthdayVoucherConfig.objects.create(
+            tenant=tenant_fixture, is_selected=True
+        )
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url, {"voucher_value": "10.00", "is_selected": True})
+        assert response.status_code == status.HTTP_201_CREATED
+
+        first.refresh_from_db()
+        assert first.is_selected is False
+
+    def test_fourth_config_is_rejected(self, api_client, owner_user, tenant_fixture):
+        from vouchers.models import BirthdayVoucherConfig
+
+        for _ in range(3):
+            BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url, {"voucher_value": "10.00"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert BirthdayVoucherConfig.objects.filter(tenant=tenant_fixture).count() == 3
+
+    def test_limit_is_per_tenant(
+        self, api_client, owner_user, tenant_fixture, other_tenant
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        for _ in range(3):
+            BirthdayVoucherConfig.objects.create(tenant=other_tenant)
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url, {"voucher_value": "10.00"})
+        assert response.status_code == status.HTTP_201_CREATED
+        assert BirthdayVoucherConfig.objects.filter(tenant=tenant_fixture).count() == 1
+
+
+@pytest.mark.django_db
+class TestBirthdayVoucherConfigRetrieveUpdateDestroy:
+    def url(self, config):
+        return f"/api/vouchers/birthday-configs/{config.id}/"
+
+    def test_staff_can_retrieve_config(
+        self, api_client, staff_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.get(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["id"] == birthday_config_fixture.id
+
+    def test_staff_cannot_update_config(
+        self, api_client, staff_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.patch(
+            self.url(birthday_config_fixture), {"validity_days": 5}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        birthday_config_fixture.refresh_from_db()
+        assert birthday_config_fixture.validity_days != 5
+
+    def test_owner_can_update_config(
+        self, api_client, owner_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.patch(
+            self.url(birthday_config_fixture), {"validity_days": 5}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        birthday_config_fixture.refresh_from_db()
+        assert birthday_config_fixture.validity_days == 5
+
+    def test_manager_can_update_config(
+        self, api_client, manager_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=manager_user)
+        response = api_client.patch(
+            self.url(birthday_config_fixture), {"voucher_value": "12.00"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_other_tenant_cannot_retrieve_config(
+        self, api_client, owner_user, other_tenant
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        other_config = BirthdayVoucherConfig.objects.create(tenant=other_tenant)
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.get(self.url(other_config))
+        assert response.status_code in (
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_owner_can_delete_config(
+        self, api_client, owner_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.delete(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        from vouchers.models import BirthdayVoucherConfig
+
+        assert not BirthdayVoucherConfig.objects.filter(
+            id=birthday_config_fixture.id
+        ).exists()
+
+    def test_staff_cannot_delete_config(
+        self, api_client, staff_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.delete(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        from vouchers.models import BirthdayVoucherConfig
+
+        assert BirthdayVoucherConfig.objects.filter(
+            id=birthday_config_fixture.id
+        ).exists()
+
+    def test_free_service_without_service_is_rejected_on_update(
+        self, api_client, owner_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.patch(
+            self.url(birthday_config_fixture), {"voucher_type": "free_service"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+class TestBirthdayVoucherConfigSelect:
+    def url(self, config):
+        return f"/api/vouchers/birthday-configs/{config.id}/select/"
+
+    def test_owner_can_select_config(
+        self, api_client, owner_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["is_selected"] is True
+
+        birthday_config_fixture.refresh_from_db()
+        assert birthday_config_fixture.is_selected is True
+
+    def test_manager_can_select_config(
+        self, api_client, manager_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=manager_user)
+        response = api_client.post(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_staff_cannot_select_config(
+        self, api_client, staff_user, birthday_config_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.post(self.url(birthday_config_fixture))
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        birthday_config_fixture.refresh_from_db()
+        assert birthday_config_fixture.is_selected is False
+
+    def test_selecting_unselects_previous_selection(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        first = BirthdayVoucherConfig.objects.create(
+            tenant=tenant_fixture, is_selected=True
+        )
+        second = BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(second))
+        assert response.status_code == status.HTTP_200_OK
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        assert first.is_selected is False
+        assert second.is_selected is True
+
+    def test_other_tenant_cannot_select_config(
+        self, api_client, owner_user, other_tenant
+    ):
+        from vouchers.models import BirthdayVoucherConfig
+
+        other_config = BirthdayVoucherConfig.objects.create(tenant=other_tenant)
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(other_config))
+        assert response.status_code in (
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_403_FORBIDDEN,
+        )
+        other_config.refresh_from_db()
+        assert other_config.is_selected is False
