@@ -269,6 +269,14 @@ class Tenant(models.Model):
         null=True,
         help_text="Data da última compra automática de crédito (limite de 1x/dia)",
     )
+    comm_auto_renew_consecutive_failures = models.PositiveIntegerField(
+        default=cast(Any, 0),
+        help_text=(
+            "Contador de falhas consecutivas da renovação automática de crédito "
+            "(BE-CREDITS-03). Zerado a cada sucesso; a partir de 2 falhas seguidas "
+            "o owner é notificado por e-mail."
+        ),
+    )
 
     # Plano Founder (Promoção Limitada)
     is_founder = models.BooleanField(

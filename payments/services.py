@@ -244,17 +244,20 @@ class CreditPurchaseService:
             .first()
         )
         if not owner_membership or not owner_membership.user_id:
+            cls._record_auto_renewal_failure(tenant, "no_owner", owner=None)
             return {"success": False, "reason": "no_owner"}
 
         owner = owner_membership.user
 
         payment_customer = PaymentCustomer.objects.filter(user=owner).first()
         if not payment_customer:
+            cls._record_auto_renewal_failure(tenant, "no_payment_customer", owner=owner)
             return {"success": False, "reason": "no_payment_customer"}
 
         price_id = tenant.comm_auto_renew_price_id
         credits_amount = cls.get_credits_from_price_id(price_id)
         if not price_id or credits_amount == Decimal("0.00"):
+            cls._record_auto_renewal_failure(tenant, "invalid_price_id", owner=owner)
             return {"success": False, "reason": "invalid_price_id"}
 
         customer_id = payment_customer.stripe_customer_id
@@ -265,6 +268,7 @@ class CreditPurchaseService:
                 "charge_auto_renewal: falha ao buscar customer no Stripe",
                 extra={"tenant_id": tenant.id, "customer_id": customer_id},
             )
+            cls._record_auto_renewal_failure(tenant, "no_payment_method", owner=owner)
             return {"success": False, "reason": "no_payment_method"}
 
         invoice_settings = (
@@ -278,6 +282,7 @@ class CreditPurchaseService:
             else None
         )
         if not payment_method_id:
+            cls._record_auto_renewal_failure(tenant, "no_payment_method", owner=owner)
             return {"success": False, "reason": "no_payment_method"}
 
         amount_cents = int(credits_amount * 100)
@@ -303,12 +308,14 @@ class CreditPurchaseService:
                 "charge_auto_renewal: cobrança recusada",
                 extra={"tenant_id": tenant.id, "error": str(e)},
             )
+            cls._record_auto_renewal_failure(tenant, "charge_failed", owner=owner)
             return {"success": False, "reason": "charge_failed"}
         except stripe.error.StripeError as e:
             logger.exception(
                 "charge_auto_renewal: erro do Stripe",
                 extra={"tenant_id": tenant.id, "error": str(e)},
             )
+            cls._record_auto_renewal_failure(tenant, "charge_failed", owner=owner)
             return {"success": False, "reason": "charge_failed"}
 
         payment = CreditPayment.objects.create(
@@ -328,6 +335,7 @@ class CreditPurchaseService:
         )
 
         if getattr(intent, "status", None) != "succeeded":
+            cls._record_auto_renewal_failure(tenant, "charge_failed", owner=owner)
             return {"success": False, "reason": "charge_failed"}
 
         CreditService(tenant).add_credits(
@@ -340,7 +348,49 @@ class CreditPurchaseService:
         payment.credits_applied = True
         payment.save(update_fields=["credits_applied"])
 
+        cls._record_auto_renewal_success(tenant)
+
         return {"success": True, "credits_purchased": credits_amount}
+
+    @classmethod
+    def _record_auto_renewal_failure(
+        cls, tenant: Tenant, reason: str, owner: Optional[UserType]
+    ) -> None:
+        """
+        Contabiliza uma falha de renovação automática (BE-CREDITS-03 #507):
+        incrementa a métrica Prometheus por motivo, incrementa o contador de
+        falhas consecutivas do tenant e, a partir da 2ª falha seguida, notifica
+        o owner por e-mail (falhas isoladas/pontuais não notificam, para evitar
+        ruído). O retry diário existente não é alterado — a falha continua a
+        ser reavaliada no dia seguinte, mesmo para motivos "permanentes".
+        """
+        from .observability import COMM_AUTO_RENEWAL_FAILURES_TOTAL
+
+        COMM_AUTO_RENEWAL_FAILURES_TOTAL.labels(reason=reason).inc()
+
+        tenant.comm_auto_renew_consecutive_failures += 1
+        tenant.save(update_fields=["comm_auto_renew_consecutive_failures"])
+
+        logger.warning(
+            "charge_auto_renewal: falha registrada",
+            extra={
+                "tenant_id": tenant.id,
+                "reason": reason,
+                "consecutive_failures": tenant.comm_auto_renew_consecutive_failures,
+            },
+        )
+
+        if tenant.comm_auto_renew_consecutive_failures >= 2 and owner is not None:
+            from core.email_utils import send_comm_auto_renewal_failed_email
+
+            send_comm_auto_renewal_failed_email(tenant, owner, reason)
+
+    @classmethod
+    def _record_auto_renewal_success(cls, tenant: Tenant) -> None:
+        """Zera o contador de falhas consecutivas após uma renovação bem-sucedida."""
+        if tenant.comm_auto_renew_consecutive_failures:
+            tenant.comm_auto_renew_consecutive_failures = 0
+            tenant.save(update_fields=["comm_auto_renew_consecutive_failures"])
 
 
 class SubscriptionService:

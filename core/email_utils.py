@@ -846,3 +846,79 @@ Equipe TimelyOne
     """
 
     return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+
+
+_AUTO_RENEWAL_FAILURE_REASON_MESSAGES = {
+    "no_owner": (
+        "Não encontrámos um responsável (owner) ativo para a tua conta, por isso "
+        "não conseguimos processar a compra automática."
+    ),
+    "no_payment_customer": (
+        "Ainda não existe nenhum método de pagamento associado à tua conta no "
+        "Stripe."
+    ),
+    "no_payment_method": (
+        "Não encontrámos um cartão predefinido guardado para cobrança automática."
+    ),
+    "invalid_price_id": (
+        "O pacote de crédito configurado para renovação automática já não é "
+        "válido."
+    ),
+    "charge_failed": ("A cobrança no teu cartão foi recusada pelo banco/emissor."),
+}
+
+
+def send_comm_auto_renewal_failed_email(
+    tenant,
+    owner_user,
+    reason: str,
+):
+    """
+    Avisa o owner que a renovação automática de crédito de comunicação falhou
+    em duas tentativas consecutivas (BE-CREDITS-03 #507). Enviado só a partir
+    da 2ª falha seguida, para evitar ruído em blips pontuais.
+    """
+    subject = "⚠️ Renovação automática de crédito falhou - TimelyOne"
+    reason_message = _AUTO_RENEWAL_FAILURE_REASON_MESSAGES.get(
+        reason, "Não foi possível concluir a compra automática de crédito."
+    )
+
+    body_plain = f"""
+Olá {owner_user.first_name or owner_user.username},
+
+A renovação automática de crédito de comunicação da tua conta "{tenant.name}" falhou em mais de uma tentativa seguida.
+
+Motivo: {reason_message}
+
+Enquanto isto não for resolvido, o envio de mensagens (SMS/WhatsApp) pode ficar bloqueado quando o saldo de crédito acabar.
+
+Para resolver, acede às configurações de pagamentos e confirma o método de pagamento e o pacote de renovação automática.
+
+Equipe TimelyOne
+"""
+
+    body_html = f"""
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 20px;">
+            <h2 style="color: #856404; margin-top: 0;">⚠️ Renovação automática de crédito falhou</h2>
+          </div>
+
+          <p>Olá <strong>{owner_user.first_name or owner_user.username}</strong>,</p>
+
+          <p>A renovação automática de crédito de comunicação da tua conta "<strong>{tenant.name}</strong>" falhou em mais de uma tentativa seguida.</p>
+
+          <div style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #d9534f; margin: 20px 0;">
+            <p style="margin: 0; color: #721c24;"><strong>Motivo:</strong> {reason_message}</p>
+          </div>
+
+          <p>Enquanto isto não for resolvido, o envio de mensagens (SMS/WhatsApp) pode ficar bloqueado quando o saldo de crédito acabar.</p>
+
+          <p>Para resolver, acede às configurações de pagamentos e confirma o método de pagamento e o pacote de renovação automática.</p>
+
+          <p style="margin-top: 20px;">
+            <strong>Equipe TimelyOne</strong>
+          </p>
+        </div>
+    """
+
+    return _send_email_safe(subject, body_plain, body_html, owner_user.email)

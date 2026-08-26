@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -228,3 +229,166 @@ def test_charge_auto_renewal_card_declined_returns_failure_without_raising(
 
     tenant.refresh_from_db()
     assert tenant.comm_credit_eur == Decimal("0.00")
+
+
+# --- BE-CREDITS-03 (#507): tracking de falhas consecutivas + notificação + métrica ---
+
+
+def _metric_value(reason: str) -> float:
+    from prometheus_client import REGISTRY
+
+    value = REGISTRY.get_sample_value(
+        "comm_auto_renewal_failures_total", {"reason": reason}
+    )
+    return float(value or 0.0)
+
+
+@pytest.mark.django_db
+def test_charge_auto_renewal_first_failure_increments_counter_but_does_not_notify(
+    monkeypatch, settings, owner_with_tenant
+):
+    _setup_price_ids(monkeypatch, settings)
+    tenant, owner = owner_with_tenant
+    tenant.comm_auto_renew_price_id = settings.STRIPE_PRICE_CREDITS_10_ID
+    tenant.save(update_fields=["comm_auto_renew_price_id"])
+    PaymentCustomer.objects.create(user=owner, stripe_customer_id="cus_first_fail")
+    _patch_stripe_declined(monkeypatch)
+
+    mock_email = MagicMock()
+    monkeypatch.setattr(
+        "core.email_utils.send_comm_auto_renewal_failed_email", mock_email
+    )
+
+    before = _metric_value("charge_failed")
+    result = CreditPurchaseService.charge_auto_renewal(tenant)
+    after = _metric_value("charge_failed")
+
+    assert result["success"] is False
+    assert after == before + 1
+    mock_email.assert_not_called()
+
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 1
+
+
+@pytest.mark.django_db
+def test_charge_auto_renewal_second_consecutive_failure_notifies_owner(
+    monkeypatch, settings, owner_with_tenant
+):
+    _setup_price_ids(monkeypatch, settings)
+    tenant, owner = owner_with_tenant
+    tenant.comm_auto_renew_price_id = settings.STRIPE_PRICE_CREDITS_10_ID
+    tenant.comm_auto_renew_consecutive_failures = 1
+    tenant.save(
+        update_fields=["comm_auto_renew_price_id", "comm_auto_renew_consecutive_failures"]
+    )
+    PaymentCustomer.objects.create(user=owner, stripe_customer_id="cus_second_fail")
+    _patch_stripe_declined(monkeypatch)
+
+    mock_email = MagicMock()
+    monkeypatch.setattr(
+        "core.email_utils.send_comm_auto_renewal_failed_email", mock_email
+    )
+
+    result = CreditPurchaseService.charge_auto_renewal(tenant)
+
+    assert result["success"] is False
+    mock_email.assert_called_once_with(tenant, owner, "charge_failed")
+
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 2
+
+
+@pytest.mark.django_db
+def test_charge_auto_renewal_success_resets_consecutive_failure_counter(
+    monkeypatch, settings, owner_with_tenant
+):
+    _setup_price_ids(monkeypatch, settings)
+    tenant, owner = owner_with_tenant
+    tenant.comm_auto_renew_price_id = settings.STRIPE_PRICE_CREDITS_10_ID
+    tenant.comm_credit_eur = Decimal("0.00")
+    tenant.comm_auto_renew_consecutive_failures = 3
+    tenant.save(
+        update_fields=[
+            "comm_auto_renew_price_id",
+            "comm_credit_eur",
+            "comm_auto_renew_consecutive_failures",
+        ]
+    )
+    PaymentCustomer.objects.create(user=owner, stripe_customer_id="cus_success_reset")
+    _patch_stripe_success(monkeypatch)
+
+    result = CreditPurchaseService.charge_auto_renewal(tenant)
+
+    assert result["success"] is True
+
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 0
+
+
+@pytest.mark.django_db
+def test_charge_auto_renewal_failure_after_success_does_not_notify_on_first_failure(
+    monkeypatch, settings, owner_with_tenant
+):
+    """Uma falha isolada após um sucesso anterior não deve notificar — o contador
+    de falhas consecutivas foi zerado pelo sucesso, então esta é novamente a
+    'primeira' falha."""
+    _setup_price_ids(monkeypatch, settings)
+    tenant, owner = owner_with_tenant
+    tenant.comm_auto_renew_price_id = settings.STRIPE_PRICE_CREDITS_10_ID
+    tenant.comm_credit_eur = Decimal("0.00")
+    tenant.comm_auto_renew_consecutive_failures = 0
+    tenant.save(
+        update_fields=[
+            "comm_auto_renew_price_id",
+            "comm_credit_eur",
+            "comm_auto_renew_consecutive_failures",
+        ]
+    )
+    PaymentCustomer.objects.create(user=owner, stripe_customer_id="cus_after_success")
+    _patch_stripe_success(monkeypatch)
+    CreditPurchaseService.charge_auto_renewal(tenant)
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 0
+
+    _patch_stripe_declined(monkeypatch)
+    mock_email = MagicMock()
+    monkeypatch.setattr(
+        "core.email_utils.send_comm_auto_renewal_failed_email", mock_email
+    )
+
+    result = CreditPurchaseService.charge_auto_renewal(tenant)
+
+    assert result["success"] is False
+    mock_email.assert_not_called()
+
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 1
+
+
+@pytest.mark.django_db
+def test_charge_auto_renewal_no_owner_failure_increments_metric_without_email(
+    monkeypatch, settings
+):
+    _setup_price_ids(monkeypatch, settings)
+    tenant = Tenant.objects.create(
+        name="No Owner Metric Tenant",
+        slug="no-owner-metric-tenant",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+
+    mock_email = MagicMock()
+    monkeypatch.setattr(
+        "core.email_utils.send_comm_auto_renewal_failed_email", mock_email
+    )
+
+    before = _metric_value("no_owner")
+    result = CreditPurchaseService.charge_auto_renewal(tenant)
+    after = _metric_value("no_owner")
+
+    assert result["success"] is False
+    assert after == before + 1
+    mock_email.assert_not_called()
+
+    tenant.refresh_from_db()
+    assert tenant.comm_auto_renew_consecutive_failures == 1
