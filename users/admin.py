@@ -39,6 +39,7 @@ class TenantAdmin(admin.ModelAdmin):
         "name",
         "slug",
         "plan_tier",
+        "is_founder",
         "billing_mode",
         "status",
         "is_active",
@@ -48,6 +49,7 @@ class TenantAdmin(admin.ModelAdmin):
     ]
     list_filter = [
         PlanTierListFilter,
+        "is_founder",
         "billing_mode",
         "status",
         "is_active",
@@ -78,6 +80,7 @@ class TenantAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "plan_tier",
+                    "is_founder",
                     "billing_mode",
                     "promotional_expires_at",
                     "promotional_converts_to_plan",
