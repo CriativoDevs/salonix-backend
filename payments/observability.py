@@ -15,3 +15,9 @@ PAYMENTS_SETTINGS_UPDATED_TOTAL = _get_or_create_counter(
     "Total de atualizações de configurações de pagamentos (Stripe settings)",
     ("result",),
 )
+
+COMM_AUTO_RENEWAL_FAILURES_TOTAL = _get_or_create_counter(
+    "comm_auto_renewal_failures_total",
+    "Total de falhas na renovação automática de crédito de comunicação, por motivo",
+    ("reason",),
+)
