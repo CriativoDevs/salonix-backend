@@ -29,6 +29,62 @@ class PlanTierListFilter(admin.SimpleListFilter):
         return queryset
 
 
+class PaymentStatusListFilter(admin.SimpleListFilter):
+    """Filtra tenants pelo status real de pagamento (não só billing_mode).
+
+    Criado para dar visibilidade no admin a tenants que se cadastraram
+    (ganhando acesso completo já no registo, ver Tenant.objects.create em
+    users/serializers.py) e nunca concluíram o checkout — caso não tinha
+    nenhum sinal no DAP até então (ex.: JBarber, sessão de checkout expirada
+    2x, nunca detectado sem investigação manual via Stripe Dashboard/logs).
+    """
+
+    title = "Status de pagamento"
+    parameter_name = "payment_status"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("paid", "✅ Pago"),
+            ("trial", "🕐 Em trial"),
+            ("pending", "⚠️ Checkout iniciado, não concluído"),
+            ("never_started", "❌ Checkout nunca iniciado"),
+            ("promotional", "🎁 Promocional"),
+        ]
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if not value:
+            return queryset
+
+        matching_ids = [
+            tenant.pk
+            for tenant in queryset
+            if _tenant_payment_status(tenant) == value
+        ]
+        return queryset.filter(pk__in=matching_ids)
+
+
+def _tenant_payment_status(tenant):
+    """Classifica o status de pagamento real de um tenant.
+
+    Usado tanto pela coluna `payment_status` quanto pelo
+    `PaymentStatusListFilter` do TenantAdmin, para que os dois nunca
+    divirjam.
+    """
+    if tenant.billing_mode == Tenant.BILLING_MODE_PROMOTIONAL:
+        return "promotional"
+    if tenant.is_in_trial():
+        return "trial"
+    if tenant.has_active_paid_subscription():
+        return "paid"
+
+    from payments.models import PaymentCustomer
+
+    if PaymentCustomer.objects.filter(user__tenant=tenant).exists():
+        return "pending"
+    return "never_started"
+
+
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
     """
@@ -41,6 +97,7 @@ class TenantAdmin(admin.ModelAdmin):
         "plan_tier",
         "is_founder",
         "billing_mode",
+        "payment_status",
         "status",
         "is_active",
         "users_count",
@@ -51,6 +108,7 @@ class TenantAdmin(admin.ModelAdmin):
         PlanTierListFilter,
         "is_founder",
         "billing_mode",
+        PaymentStatusListFilter,
         "status",
         "is_active",
         "reports_enabled",
@@ -188,6 +246,19 @@ class TenantAdmin(admin.ModelAdmin):
         return f"{count} usuários"
 
     users_count.short_description = "Usuários"
+
+    def payment_status(self, obj):
+        """Status real de pagamento — ver `_tenant_payment_status`."""
+        labels = {
+            "paid": "✅ Pago",
+            "trial": "🕐 Em trial",
+            "pending": "⚠️ Checkout pendente",
+            "never_started": "❌ Sem checkout",
+            "promotional": "🎁 Promocional",
+        }
+        return labels[_tenant_payment_status(obj)]
+
+    payment_status.short_description = "Pagamento"
 
     def feature_summary(self, obj):
         """Resume as principais features ativas."""
