@@ -26,6 +26,18 @@ class SmokeSeedTest(TestCase):
         self.assertTrue(User.objects.filter(username="pro_smoke").exists())
         self.assertTrue(User.objects.filter(username="client_smoke").exists())
 
+        # "admin" é o owner de teste do tenant, NUNCA superuser do DAP -- não
+        # misturar a conta de teste da plataforma com acesso de administração
+        # do Django Admin.
+        admin_user = User.objects.get(username="admin")
+        self.assertFalse(admin_user.is_superuser)
+        self.assertTrue(admin_user.check_password("admin123"))
+
+        # "superadmin" é o acesso dedicado ao DAP, sem tenant.
+        superadmin_user = User.objects.get(username="superadmin")
+        self.assertTrue(superadmin_user.is_superuser)
+        self.assertIsNone(superadmin_user.tenant)
+
         # Verificar Dados de Negócio (Default Tenant)
         default_tenant = Tenant.objects.get(slug="default")
         self.assertTrue(Service.objects.filter(tenant=default_tenant).exists())

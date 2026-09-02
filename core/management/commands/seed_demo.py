@@ -132,6 +132,11 @@ class Command(BaseCommand):
             created_counts["empty_tenant_created"] = int(empty_created)
 
             # --- Usuários ---
+            # "admin" é o OWNER do tenant de teste (Default Salon) -- usado para
+            # exercitar o app como um tenant normal (login web/mobile, agenda,
+            # billing, etc.). NUNCA deve ser superuser do Django Admin: é a
+            # conta que usamos pra testar a plataforma como cliente, não pra
+            # administrar o sistema. Ver "superadmin" abaixo para acesso ao DAP.
             admin, admin_created = User.objects.get_or_create(
                 username="admin",
                 defaults={
@@ -141,9 +146,33 @@ class Command(BaseCommand):
                 },
             )
             if admin_created:
-                admin.set_password("admin")
+                # >= 6 caracteres -- MOB valida tamanho mínimo de senha no
+                # login; "admin" (5 chars) passava no BE mas falhava no MOB.
+                admin.set_password("admin123")
                 admin.save()
             created_counts["user_admin_created"] = int(admin_created)
+
+            # Superuser dedicado para o Django Admin (DAP) -- sem tenant,
+            # separado do "admin" acima de propósito (ver comentário acima).
+            superadmin = User.objects.filter(username="superadmin").first()
+            superadmin_created = superadmin is None
+            if superadmin_created:
+                superadmin = User(
+                    username="superadmin",
+                    email="superadmin@demo.local",
+                    is_staff=True,
+                    is_superuser=True,
+                )
+                superadmin._tenant_explicitly_none = True
+                superadmin.tenant = None
+                superadmin.set_password("superadmin123")
+                superadmin.save()
+                # Força tenant=None via UPDATE direto, ignorando qualquer
+                # save() sobrescrito (ex.: monkey patch de tenant automático
+                # em conftest.py:setup_default_tenant, usado só em testes).
+                User.objects.filter(pk=superadmin.pk).update(tenant=None)
+                superadmin.refresh_from_db()
+            created_counts["user_superadmin_created"] = int(superadmin_created)
 
             pro, pro_created = User.objects.get_or_create(
                 username="pro_smoke",
@@ -707,8 +736,9 @@ class Command(BaseCommand):
             self.stdout.write(f"- {k}: {v}")
         self.stdout.write(
             "\nCredenciais úteis:\n"
-            "  • admin@demo.local / admin (superuser)\n"
+            "  • admin@demo.local / admin123 (owner do tenant de teste Default Salon)\n"
             f"  • pro_smoke@demo.local / {smoke_password} (PRO, relatórios habilitados)\n"
             f"  • client_smoke@demo.local / {smoke_password}\n"
+            "  • superadmin@demo.local / superadmin123 (Django Admin/DAP -- sem tenant)\n"
             "\nDica: defina SMOKE_USER_PASSWORD=... antes de rodar o seed para mudar a senha padrão.\n"
         )
