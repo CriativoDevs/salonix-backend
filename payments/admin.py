@@ -17,7 +17,7 @@ class PaymentCustomerAdmin(admin.ModelAdmin):
         "stripe_customer_id",
         "user__tenant__name",
     )
-    readonly_fields = ()
+    readonly_fields = ("tenant_name",)
 
     fieldsets = (
         ("Cliente", {"fields": ("user", "tenant_name")}),
