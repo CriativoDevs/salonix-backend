@@ -445,9 +445,17 @@ class Command(BaseCommand):
             professionals = [p for p in [alice_professional, bruno_professional] if p]
 
             # Seleciona 3 slots disponíveis e reserva para o cliente
+            # Restrito a partir de hoje (base_day) -- sem isso, em bancos locais
+            # com anos de slots acumulados de execuções anteriores, o
+            # order_by("start_time") pega os slots disponíveis mais ANTIGOS do
+            # banco inteiro (ex.: sobras de novembro/2025) em vez dos slots
+            # recém-criados acima, deixando os agendamentos de demo com datas
+            # no passado, invisíveis na agenda do FEW/MOB.
             free_slots = (
                 ScheduleSlot.objects.filter(
-                    professional__in=professionals, is_available=True
+                    professional__in=professionals,
+                    is_available=True,
+                    start_time__date__gte=base_day.date(),
                 )
                 .order_by("start_time")
                 .distinct()[:6]
