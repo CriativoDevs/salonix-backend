@@ -121,11 +121,20 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
 
         Estados possíveis:
         - "billing_pending": Tenant sem assinatura ativa (precisa escolher plano)
-        - "completed": Tenant com assinatura ativa (acesso liberado)
+        - "completed": Tenant com assinatura ativa (acesso liberado), ou tenant
+          em billing_mode=promotional (nunca passa por checkout Stripe --
+          exigir Subscription ativa deixaria QUALQUER tenant promocional
+          preso no onboarding indefinidamente, já que nunca terá uma)
 
         Returns:
             str: "billing_pending" ou "completed"
         """
+        # Tenants promocionais não são cobrados via Stripe -- nunca terão uma
+        # Subscription, então o onboarding tem que ser considerado concluído
+        # independentemente de billing.
+        if obj.is_promotional_billing():
+            return "completed"
+
         try:
             Subscription = apps.get_model("payments", "Subscription")
 

@@ -103,6 +103,39 @@ class TestBillingState:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["billing_pending"] is False
 
+    def test_onboarding_state_billing_pending_for_stripe_tenant_without_subscription(
+        self,
+    ):
+        """billing_mode=stripe sem Subscription -- onboarding pendente, correto."""
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["onboarding_state"] == "billing_pending"
+
+    def test_onboarding_state_completed_for_promotional_tenant(self):
+        """Tenant promocional nunca passa por checkout Stripe -- nunca terá uma
+        Subscription. Sem esse caso, get_onboarding_state deixava QUALQUER
+        tenant promocional preso em "billing_pending" para sempre, e o
+        OnboardingGuard do FEW redireciona toda rota para /onboarding/plan
+        nesse estado, travando o acesso (ex.: TimelyOne em produção)."""
+        self.tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
+        self.tenant.save(update_fields=["billing_mode", "updated_at"])
+
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["onboarding_state"] == "completed"
+
+    def test_onboarding_state_completed_for_active_subscription(self):
+        from payments.models import Subscription
+
+        Subscription.objects.create(
+            user=self.user,
+            stripe_subscription_id="sub_onboarding_active",
+            status="active",
+        )
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["onboarding_state"] == "completed"
+
     def test_me_tenant_promotional_skips_subscription_sync(self, monkeypatch):
         """Tenant promocional não deve reconciliar plano com Stripe no bootstrap."""
         self.tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
