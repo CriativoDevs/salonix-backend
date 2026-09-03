@@ -18,7 +18,6 @@ class SmokeSeedTest(TestCase):
         # Verificar Tenants
         self.assertTrue(Tenant.objects.filter(slug="default").exists())
         self.assertTrue(Tenant.objects.filter(slug="basic-demo").exists())
-        self.assertTrue(Tenant.objects.filter(slug="pro-demo").exists())
         self.assertTrue(Tenant.objects.filter(slug="empty-credits").exists())
 
         # Verificar Usuários
@@ -26,11 +25,52 @@ class SmokeSeedTest(TestCase):
         self.assertTrue(User.objects.filter(username="pro_smoke").exists())
         self.assertTrue(User.objects.filter(username="client_smoke").exists())
 
-        # Verificar Dados de Negócio (Default Tenant)
+        # "admin" é o owner de teste do tenant, NUNCA superuser do DAP -- não
+        # misturar a conta de teste da plataforma com acesso de administração
+        # do Django Admin.
+        admin_user = User.objects.get(username="admin")
+        self.assertFalse(admin_user.is_superuser)
+        self.assertTrue(admin_user.check_password("admin123"))
+
+        # "superadmin" é o acesso dedicado ao DAP, sem tenant.
+        superadmin_user = User.objects.get(username="superadmin")
+        self.assertTrue(superadmin_user.is_superuser)
+        self.assertIsNone(superadmin_user.tenant)
+
+        # Verificar Dados de Negócio (tenant TimelyOne, slug "default")
         default_tenant = Tenant.objects.get(slug="default")
+        self.assertEqual(default_tenant.name, "TimelyOne")
+        self.assertEqual(default_tenant.plan_tier, Tenant.PLAN_BASIC)
+        self.assertTrue(default_tenant.is_founder)
+        self.assertEqual(
+            default_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL
+        )
         self.assertTrue(Service.objects.filter(tenant=default_tenant).exists())
         self.assertTrue(Appointment.objects.filter(tenant=default_tenant).exists())
-        
+
+        # ~2 meses de histórico (30 dias antes + 30 depois de hoje) para
+        # popular relatórios/insights com dados realistas.
+        appointment_count = Appointment.objects.filter(tenant=default_tenant).count()
+        self.assertGreaterEqual(appointment_count, 200)
+        self.assertTrue(
+            Appointment.objects.filter(
+                tenant=default_tenant, status="completed"
+            ).exists()
+        )
+        self.assertTrue(
+            Appointment.objects.filter(tenant=default_tenant, status="paid").exists()
+        )
+        self.assertTrue(
+            Appointment.objects.filter(
+                tenant=default_tenant, status="cancelled"
+            ).exists()
+        )
+        self.assertTrue(
+            Appointment.objects.filter(
+                tenant=default_tenant, status="scheduled"
+            ).exists()
+        )
+
         # Verificar CommLedger (Créditos)
         # O seed cria transações para o default_tenant
         ledger_count = CommLedger.objects.filter(tenant=default_tenant).count()
@@ -40,12 +80,14 @@ class SmokeSeedTest(TestCase):
         basic_tenant = Tenant.objects.get(slug="basic-demo")
         self.assertEqual(basic_tenant.plan_tier, "basic")
         self.assertFalse(basic_tenant.comm_auto_renew)
+        self.assertEqual(
+            basic_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL
+        )
 
-        # Verificar Feature Flags do Pro
-        pro_tenant = Tenant.objects.get(slug="pro-demo")
-        self.assertEqual(pro_tenant.plan_tier, "pro")
-        self.assertTrue(pro_tenant.custom_domain_enabled)
-        
+        # Nenhum tenant do seed deve usar o plano Pro (BE-PLANS-01: bloqueado
+        # para venda/atribuição, não faz sentido como demo).
+        self.assertFalse(Tenant.objects.filter(plan_tier="pro").exists())
+
         # Capturar contagens atuais para verificar idempotência
         count_tenants = Tenant.objects.count()
         count_users = User.objects.count()

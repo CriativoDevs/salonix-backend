@@ -90,7 +90,8 @@ As configurações dos tenants no seed (`seed_demo.py`) refletem estas política
 
 ## Credenciais de Acesso
 
-- **Admin**: admin@demo.local / admin
+- **Admin (owner tenant teste)**: admin@demo.local / admin123
+- **Superadmin (DAP, sem tenant)**: superadmin@demo.local / superadmin123
 - **Usuário PRO**: pro_smoke@demo.local / Smoke@123
 - **Cliente**: client_smoke@demo.local / Smoke@123
 
