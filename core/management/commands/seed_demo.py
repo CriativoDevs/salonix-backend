@@ -26,14 +26,20 @@ class Command(BaseCommand):
         from typing import Any, cast
 
         with cast(Any, transaction.atomic()):
-            # --- Tenant padrão ---
+            # --- Tenant padrão: TimelyOne (Founder, billing promocional) ---
+            # Renomeado de "Default Salon" -- este é o tenant "vitrine",
+            # usado para gerar imagens/vídeos de demonstração da plataforma
+            # e para testar a app localmente com dados ricos. Plano Pro
+            # removido daqui (BE-PLANS-01: bloqueado para venda/atribuição,
+            # não faz sentido como demo) -- Founder é Basic + is_founder=True.
             default_tenant, tenant_created = Tenant.objects.get_or_create(
                 slug="default",
                 defaults={
-                    "name": "Default Salon",
-                    "app_name": "Default Salon",
-                    # Configurar plano Standard para demo
-                    "plan_tier": "pro",
+                    "name": "TimelyOne",
+                    "app_name": "TimelyOne",
+                    "plan_tier": Tenant.PLAN_BASIC,
+                    "is_founder": True,
+                    "billing_mode": Tenant.BILLING_MODE_PROMOTIONAL,
                     # Habilitar features para demo
                     "reports_enabled": True,
                     "pwa_admin_enabled": True,
@@ -43,7 +49,7 @@ class Command(BaseCommand):
                     # Novos campos de comunicação
                     "comm_credit_eur": Decimal("10.00"),  # 10 EUR de crédito inicial
                     "comm_extra_allowed": True,  # Permite compra de créditos extras
-                    "comm_auto_renew": True,  # Renovação automática (Standard+)
+                    "comm_auto_renew": True,
                     # Domínio personalizado desabilitado por padrão
                     "custom_domain_enabled": False,
                     "custom_domain": "",
@@ -52,7 +58,11 @@ class Command(BaseCommand):
 
             # Se tenant já existia, atualizar feature flags para demo
             if not tenant_created:
-                default_tenant.plan_tier = "pro"
+                default_tenant.name = "TimelyOne"
+                default_tenant.app_name = "TimelyOne"
+                default_tenant.plan_tier = Tenant.PLAN_BASIC
+                default_tenant.is_founder = True
+                default_tenant.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
                 default_tenant.reports_enabled = True
                 default_tenant.pwa_admin_enabled = True
                 default_tenant.pwa_client_enabled = True
@@ -67,6 +77,10 @@ class Command(BaseCommand):
                 default_tenant.save()
 
             # --- Tenants adicionais para demonstrar diferentes planos ---
+            # Todos em billing_mode=promotional -- são tenants de teste/demo,
+            # nunca passaram por checkout real, então não faz sentido exibir
+            # o gate de cobrança do Stripe para eles (mesmo padrão usado em
+            # produção para tenants não-pagantes, ver Tenant.billing_mode).
 
             # Tenant Basic - sem créditos auto-renew
             basic_tenant, basic_created = Tenant.objects.get_or_create(
@@ -74,7 +88,8 @@ class Command(BaseCommand):
                 defaults={
                     "name": "Basic Salon Demo",
                     "app_name": "Basic Salon",
-                    "plan_tier": "basic",
+                    "plan_tier": Tenant.PLAN_BASIC,
+                    "billing_mode": Tenant.BILLING_MODE_PROMOTIONAL,
                     "reports_enabled": True,  # Basic agora tem relatórios
                     "pwa_admin_enabled": True,
                     "pwa_client_enabled": False,
@@ -89,34 +104,14 @@ class Command(BaseCommand):
             )
             created_counts["basic_tenant_created"] = int(basic_created)
 
-            # Tenant Pro - com domínio personalizado
-            pro_tenant, pro_created = Tenant.objects.get_or_create(
-                slug="pro-demo",
-                defaults={
-                    "name": "Pro Salon Demo",
-                    "app_name": "Pro Salon",
-                    "plan_tier": "pro",
-                    "reports_enabled": True,
-                    "pwa_admin_enabled": True,
-                    "pwa_client_enabled": True,
-                    "push_web_enabled": True,
-                    "push_mobile_enabled": True,
-                    "comm_credit_eur": Decimal("25.00"),  # Mais créditos iniciais
-                    "comm_extra_allowed": True,
-                    "comm_auto_renew": True,
-                    "custom_domain_enabled": True,  # Pro tem domínio personalizado
-                    "custom_domain": "pro-salon.example.com",
-                },
-            )
-            created_counts["pro_tenant_created"] = int(pro_created)
-
             # Tenant sem créditos (para testar cenário de esgotamento)
             empty_tenant, empty_created = Tenant.objects.get_or_create(
                 slug="empty-credits",
                 defaults={
                     "name": "Empty Credits Demo",
                     "app_name": "Empty Credits",
-                    "plan_tier": "standard",
+                    "plan_tier": Tenant.PLAN_BASIC,
+                    "billing_mode": Tenant.BILLING_MODE_PROMOTIONAL,
                     "reports_enabled": True,
                     "pwa_admin_enabled": True,
                     "pwa_client_enabled": True,
@@ -132,7 +127,7 @@ class Command(BaseCommand):
             created_counts["empty_tenant_created"] = int(empty_created)
 
             # --- Usuários ---
-            # "admin" é o OWNER do tenant de teste (Default Salon) -- usado para
+            # "admin" é o OWNER do tenant de teste (TimelyOne) -- usado para
             # exercitar o app como um tenant normal (login web/mobile, agenda,
             # billing, etc.). NUNCA deve ser superuser do Django Admin: é a
             # conta que usamos pra testar a plataforma como cliente, não pra
@@ -433,66 +428,56 @@ class Command(BaseCommand):
                 p for p in [alice_professional, bruno_professional] if p is not None
             ]
 
-            # --- Slots próximos 3 dias (9h–17h, de hora em hora) ---
+            # --- Clientes extra para diversidade nos relatórios (Top Serviços,
+            # Novos vs Recorrentes, Receita por semana etc.) -- além do
+            # "Cliente Demo" original, criado acima. ---
+            extra_customers_data = [
+                ("Ana Ferreira", "ana.ferreira@demo.local", "+351911111111"),
+                ("Bruno Costa", "bruno.costa@demo.local", "+351911111112"),
+                ("Carla Nunes", "carla.nunes@demo.local", "+351911111113"),
+                ("Diogo Pinto", "diogo.pinto@demo.local", "+351911111114"),
+                ("Elsa Ramos", "elsa.ramos@demo.local", "+351911111115"),
+                ("Filipe Sousa", "filipe.sousa@demo.local", "+351911111116"),
+            ]
+            demo_customers = [demo_customer]
+            for name, email, phone in extra_customers_data:
+                cust, cust_created = SalonCustomer.objects.get_or_create(
+                    tenant=default_tenant,
+                    email=email,
+                    defaults={
+                        "name": name,
+                        "phone_number": phone,
+                        "marketing_opt_in": True,
+                        "is_active": True,
+                        "notes": "Criado automaticamente pelo seed_demo (histórico de 2 meses).",
+                    },
+                )
+                demo_customers.append(cust)
+                created_counts["customers_created"] += int(cust_created)
+
+            # --- Slots e agendamentos: ~2 meses completos (30 dias antes +
+            # 30 dias a partir de hoje), para preencher relatórios/insights
+            # com dados realistas (usado também para gerar imagens/vídeos de
+            # demonstração da plataforma). Passado: mix completed/paid/
+            # cancelled. Hoje em diante: scheduled. ---
             tz_now = timezone.now()
             base_day = tz_now.replace(minute=0, second=0, microsecond=0)
-            working_hours = list(range(9, 17))  # 9..16
+            appointment_hours = [9, 11, 14, 16]
+            services_cycle = [svc1, svc2, svc3]
 
-            slots_created = 0
-            for d in range(0, 3):
-                day = (base_day + timedelta(days=d)).date()
-                for hour in working_hours:
-                    for prof in professionals:
-                        start = timezone.make_aware(
-                            timezone.datetime(
-                                year=day.year, month=day.month, day=day.day, hour=hour
-                            )
-                        )
-                        end = start + timedelta(minutes=60)
-                        _, created = ScheduleSlot.objects.get_or_create(
-                            professional=prof,
-                            start_time=start,
-                            end_time=end,
-                            defaults={
-                                "is_available": True,
-                                "status": "available",
-                                "tenant": default_tenant,
-                            },
-                        )
-                        slots_created += int(created)
-            created_counts["slots_created"] = slots_created
-
-            # --- Alguns agendamentos (scheduled, cancelled, completed) ---
-            # Buscar professionals pelos staff members
             alice_professional = Professional.objects.filter(
                 staff_member=alice_staff
             ).first()
             bruno_professional = Professional.objects.filter(
                 staff_member=bruno_staff
             ).first()
+            professionals = [
+                p for p in [alice_professional, bruno_professional] if p
+            ]
 
-            professionals = [p for p in [alice_professional, bruno_professional] if p]
-
-            # Seleciona 3 slots disponíveis e reserva para o cliente
-            # Restrito a partir de hoje (base_day) -- sem isso, em bancos locais
-            # com anos de slots acumulados de execuções anteriores, o
-            # order_by("start_time") pega os slots disponíveis mais ANTIGOS do
-            # banco inteiro (ex.: sobras de novembro/2025) em vez dos slots
-            # recém-criados acima, deixando os agendamentos de demo com datas
-            # no passado, invisíveis na agenda do FEW/MOB.
-            free_slots = (
-                ScheduleSlot.objects.filter(
-                    professional__in=professionals,
-                    is_available=True,
-                    start_time__date__gte=base_day.date(),
-                )
-                .order_by("start_time")
-                .distinct()[:6]
-            )
-            appts_created = 0
-
-            def _book(slot: ScheduleSlot, service: Service, status: str = "scheduled"):
-                # idempotente: existe appointment para este slot+client?
+            def _upsert_appointment(
+                slot: ScheduleSlot, service: Service, customer: SalonCustomer, status: str
+            ):
                 appt, created = Appointment.objects.get_or_create(
                     slot=slot,
                     client=client,
@@ -502,49 +487,72 @@ class Command(BaseCommand):
                         "status": status,
                         "notes": "",
                         "tenant": default_tenant,
-                        "customer": demo_customer,
+                        "customer": customer,
                     },
                 )
-                if created:
-                    # marcar slot conforme status
-                    if status in ("scheduled", "completed", "paid"):
-                        # reservado
-                        slot.mark_booked()
-                    elif status == "cancelled":
-                        slot.mark_available()
-                else:
+                if not created:
                     updated_fields = []
-                    if appt.customer_id is None:
-                        appt.customer = demo_customer
+                    if appt.customer_id != customer.id:
+                        appt.customer = customer
                         updated_fields.append("customer")
-                    # se já existe, garantimos consistência básica do status/slot
-                    if status in ("scheduled", "completed", "paid"):
-                        slot.mark_booked()
-                        if appt.status != status:
-                            appt.status = status
-                            updated_fields.append("status")
-                    elif status == "cancelled":
-                        slot.mark_available()
-                        if appt.status != "cancelled":
-                            appt.status = "cancelled"
-                            updated_fields.append("status")
+                    if appt.status != status:
+                        appt.status = status
+                        updated_fields.append("status")
                     if updated_fields:
                         appt.save(update_fields=updated_fields)
+                if status in ("scheduled", "completed", "paid"):
+                    slot.mark_booked()
+                elif status == "cancelled":
+                    slot.mark_available()
                 return int(created)
 
-            if free_slots:
-                appts_created += _book(free_slots[0], svc1, status="scheduled")
-            if free_slots.count() > 1:
-                appts_created += _book(free_slots[1], svc2, status="cancelled")
-            if free_slots.count() > 2:
-                appts_created += _book(free_slots[2], svc3, status="completed")
-            if free_slots.count() > 3:
-                appts_created += _book(free_slots[3], svc1, status="scheduled")
-            if free_slots.count() > 4:
-                appts_created += _book(free_slots[4], svc2, status="completed")
-            if free_slots.count() > 5:
-                appts_created += _book(free_slots[5], svc3, status="scheduled")
+            slots_created = 0
+            appts_created = 0
+            i = 0
+            for d in range(-30, 30):
+                day = (base_day + timedelta(days=d)).date()
+                is_past = d < 0
+                for idx, hour in enumerate(appointment_hours):
+                    prof = professionals[idx % len(professionals)]
+                    service = services_cycle[idx % len(services_cycle)]
+                    customer = demo_customers[i % len(demo_customers)]
+                    start = timezone.make_aware(
+                        timezone.datetime(
+                            year=day.year, month=day.month, day=day.day, hour=hour
+                        )
+                    )
+                    end = start + timedelta(minutes=60)
+                    slot, slot_created = ScheduleSlot.objects.get_or_create(
+                        professional=prof,
+                        start_time=start,
+                        end_time=end,
+                        defaults={
+                            "is_available": True,
+                            "status": "available",
+                            "tenant": default_tenant,
+                        },
+                    )
+                    slots_created += int(slot_created)
 
+                    if is_past:
+                        # distribuição determinística: 60% completed,
+                        # 20% paid, 20% cancelled
+                        bucket = i % 5
+                        if bucket < 3:
+                            status = "completed"
+                        elif bucket == 3:
+                            status = "paid"
+                        else:
+                            status = "cancelled"
+                    else:
+                        status = "scheduled"
+
+                    appts_created += _upsert_appointment(
+                        slot, service, customer, status
+                    )
+                    i += 1
+
+            created_counts["slots_created"] = slots_created
             created_counts["appointments_created"] = appts_created
 
         # --- Histórico de transações de créditos (CommLedger) ---
@@ -615,51 +623,6 @@ class Command(BaseCommand):
             )
             if created:
                 comm_ledger_created += 1
-
-        # Transações para o tenant Pro
-        if pro_tenant:
-            # Crédito inicial maior para plano Pro
-            pro_initial, created = CommLedger.objects.get_or_create(
-                tenant=pro_tenant,
-                transaction_type="purchase",
-                amount_eur=Decimal("25.00"),
-                description="Créditos iniciais do plano Pro",
-                defaults={
-                    "balance_before": Decimal("0.00"),
-                    "balance_after": Decimal("25.00"),
-                    "status": "completed",
-                    "created_at": timezone.now() - timedelta(days=25),
-                },
-            )
-            if created:
-                comm_ledger_created += 1
-
-            # Múltiplos consumos para mostrar atividade
-            consumos_pro = [
-                (Decimal("1.20"), "Campanha de marketing por SMS", 20),
-                (Decimal("0.80"), "Lembretes de agendamento", 18),
-                (Decimal("2.50"), "Notificações promocionais", 15),
-                (Decimal("0.60"), "Confirmações de agendamento", 12),
-            ]
-
-            balance_before = Decimal("25.00")
-            for amount, desc, days_ago in consumos_pro:
-                balance_after = balance_before - amount
-                debit_entry, created = CommLedger.objects.get_or_create(
-                    tenant=pro_tenant,
-                    transaction_type="consumption",
-                    amount_eur=amount,
-                    description=desc,
-                    defaults={
-                        "balance_before": balance_before,
-                        "balance_after": balance_after,
-                        "status": "completed",
-                        "created_at": timezone.now() - timedelta(days=days_ago),
-                    },
-                )
-                if created:
-                    comm_ledger_created += 1
-                balance_before = balance_after
 
         # Transações para o tenant Basic
         if basic_tenant:
@@ -736,7 +699,7 @@ class Command(BaseCommand):
             self.stdout.write(f"- {k}: {v}")
         self.stdout.write(
             "\nCredenciais úteis:\n"
-            "  • admin@demo.local / admin123 (owner do tenant de teste Default Salon)\n"
+            "  • admin@demo.local / admin123 (owner do tenant de teste TimelyOne)\n"
             f"  • pro_smoke@demo.local / {smoke_password} (PRO, relatórios habilitados)\n"
             f"  • client_smoke@demo.local / {smoke_password}\n"
             "  • superadmin@demo.local / superadmin123 (Django Admin/DAP -- sem tenant)\n"
