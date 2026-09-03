@@ -47,25 +47,6 @@ logger = logging.getLogger("reports")
 
 
 # === Helpers para adaptar aos nomes reais do teu modelo ===
-def _pick_datetime_field(model):
-    """
-    Escolhe um campo datetime do Appointment. No teu schema, existe 'created_at'.
-    Se no futuro houver outro (ex.: 'start_at'), a prioridade abaixo cuida disso.
-    """
-    preferred = {
-        "created_at",
-        "date",
-        "start",
-        "start_at",
-        "start_time",
-        "scheduled_for",
-        "datetime",
-    }
-    dt_fields = [f for f in model._meta.fields if isinstance(f, models.DateTimeField)]
-    by_name = [f for f in dt_fields if f.name in preferred]
-    return by_name[0].name if by_name else (dt_fields[0].name if dt_fields else None)
-
-
 def _pick_price_source():
     """
     Preferimos somar um DecimalField do Appointment (se existir).
@@ -84,7 +65,16 @@ def _pick_price_source():
     return None, "service__price_eur"  # (None, annotation via F())
 
 
-DATE_FIELD = _pick_datetime_field(Appointment)
+# Data usada para filtrar/agrupar relatórios: a data REAL do agendamento
+# (slot.start_time), não `Appointment.created_at` (quando a linha foi
+# inserida na BD). Isto espelha o que reports/aggregator.py já faz em
+# overview/, revenue/ e basic/ — usar `created_at` aqui fazia com que
+# "Top Serviços", "Retenção", `summary/` e os exports CSV baseados neste
+# módulo devolvessem dados errados/vazios sempre que um agendamento é
+# marcado com antecedência (o caso normal em produção). `slot` é FK
+# obrigatória em Appointment (sem null=True), por isso este lookup não
+# exclui nenhuma linha por join implícito.
+DATE_FIELD = "slot__start_time"
 APPT_PRICE_FIELD, SERVICE_PRICE_LOOKUP = _pick_price_source()
 
 
@@ -124,6 +114,54 @@ def _date_range(request):
         start = _parse_iso_dt(from_str)
 
     return start, end
+
+
+class InvalidFilterParam(Exception):
+    """Levantado quando um filtro opcional de query param não é um inteiro válido."""
+
+    def __init__(self, param: str):
+        self.param = param
+        super().__init__(param)
+
+
+def _get_optional_int_filter(request, name: str) -> Optional[int]:
+    """
+    Lê um query param opcional (ex.: professional_id, service_id) e retorna
+    o inteiro correspondente, ou None se ausente/vazio.
+    Levanta InvalidFilterParam se o valor fornecido não puder ser convertido.
+    """
+    raw = request.query_params.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise InvalidFilterParam(name)
+
+
+def _get_professional_service_filters(request) -> dict:
+    """
+    Monta um dict de filtros opcionais (professional_id, service_id) para
+    aplicar diretamente num queryset de Appointment.
+    Levanta InvalidFilterParam se algum valor for inválido.
+    """
+    filters: dict = {}
+    professional_id = _get_optional_int_filter(request, "professional_id")
+    if professional_id is not None:
+        filters["professional_id"] = professional_id
+
+    service_id = _get_optional_int_filter(request, "service_id")
+    if service_id is not None:
+        filters["service_id"] = service_id
+
+    return filters
+
+
+def _invalid_filter_response(exc: "InvalidFilterParam"):
+    return Response(
+        {"detail": f"Parâmetro '{exc.param}' inválido. Deve ser um número inteiro."},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 def _get_limit_offset(request):
@@ -197,6 +235,20 @@ PARAM_OFFSET = OpenApiParameter(
     type=OpenApiTypes.INT,
     location=OpenApiParameter.QUERY,
     description="Deslocamento para paginação.",
+    required=False,
+)
+PARAM_PROFESSIONAL_ID = OpenApiParameter(
+    name="professional_id",
+    type=OpenApiTypes.INT,
+    location=OpenApiParameter.QUERY,
+    description="Filtra os agendamentos considerados por profissional (opcional).",
+    required=False,
+)
+PARAM_SERVICE_ID = OpenApiParameter(
+    name="service_id",
+    type=OpenApiTypes.INT,
+    location=OpenApiParameter.QUERY,
+    description="Filtra os agendamentos considerados por serviço (opcional).",
     required=False,
 )
 PARAM_INTERVAL = OpenApiParameter(
@@ -383,7 +435,14 @@ class TopServicesReportView(_BaseReports):
     @cache_drf_response(
         prefix="reports:top_services:json",
         ttl=settings.REPORTS_CACHE_TTL["top_services_json"],
-        vary_on_params=["limit", "offset", "from", "to"],  # inclui paginação
+        vary_on_params=[
+            "limit",
+            "offset",
+            "from",
+            "to",
+            "professional_id",
+            "service_id",
+        ],  # inclui paginação
         vary_on_user=True,
         view_label="top_services",
         format_label="json",
@@ -391,8 +450,19 @@ class TopServicesReportView(_BaseReports):
     @extend_schema(
         tags=["Reports"],
         summary="Top Services",
-        parameters=[PARAM_FROM, PARAM_TO, PARAM_LIMIT, PARAM_OFFSET],
-        responses={200: RESP_TOP_SERVICES_JSON, 403: OpenApiTypes.OBJECT},
+        parameters=[
+            PARAM_FROM,
+            PARAM_TO,
+            PARAM_LIMIT,
+            PARAM_OFFSET,
+            PARAM_PROFESSIONAL_ID,
+            PARAM_SERVICE_ID,
+        ],
+        responses={
+            200: RESP_TOP_SERVICES_JSON,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
     )
     @observe_request(endpoint="/api/reports/top-services/")
     def get(self, request):
@@ -401,9 +471,15 @@ class TopServicesReportView(_BaseReports):
         date_lte = {f"{DATE_FIELD}__lte": end}
         limit, offset = _get_limit_offset(request)
 
+        try:
+            extra_filters = _get_professional_service_filters(request)
+        except InvalidFilterParam as exc:
+            return _invalid_filter_response(exc)
+
         base = Appointment.objects.filter(
             **date_gte,
             **date_lte,
+            **extra_filters,
             status__in=COMPLETED_STATUSES,
             tenant=getattr(request.user, "tenant", None),
         ).values("service_id", "service__name")
@@ -664,7 +740,7 @@ class ExportTopServicesCSVView(_BaseReports):
     @cache_drf_response(
         prefix="reports:top_services:csv",
         ttl=settings.REPORTS_CACHE_TTL["top_services_csv"],
-        vary_on_params=["from", "to"],
+        vary_on_params=["from", "to", "professional_id", "service_id"],
         vary_on_user=True,
         view_label="top_services",
         format_label="csv",
@@ -672,8 +748,12 @@ class ExportTopServicesCSVView(_BaseReports):
     @extend_schema(
         tags=["Reports"],
         summary="Exportar Top Services (CSV)",
-        parameters=[PARAM_FROM, PARAM_TO],
-        responses={200: RESP_CSV_TOP_SERVICES, 403: OpenApiTypes.OBJECT},
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_PROFESSIONAL_ID, PARAM_SERVICE_ID],
+        responses={
+            200: RESP_CSV_TOP_SERVICES,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
     )
     def get(self, request) -> HttpResponse:
         start, end = _date_range(request)
@@ -681,9 +761,15 @@ class ExportTopServicesCSVView(_BaseReports):
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
+        try:
+            extra_filters = _get_professional_service_filters(request)
+        except InvalidFilterParam as exc:
+            return _invalid_filter_response(exc)
+
         base = Appointment.objects.filter(
             **date_gte,
             **date_lte,
+            **extra_filters,
             status__in=COMPLETED_STATUSES,
             tenant=tenant,
         ).values("service_id", "service__name")
@@ -1073,7 +1159,9 @@ class ExportBasicReportsCSVView(_BaseReports):
             )
 
 
-def _compute_monthly_cohort(tenant, range_start, range_end, max_months: int = 6):
+def _compute_monthly_cohort(
+    tenant, range_start, range_end, max_months: int = 6, professional_id=None
+):
     """
     Calcula cohort mensal de clientes.
 
@@ -1118,12 +1206,16 @@ def _compute_monthly_cohort(tenant, range_start, range_end, max_months: int = 6)
 
     # Agendamentos concluídos desses clientes — usa slot__start_time como data real
     # (created_at é auto_now_add e não reflete a data do serviço)
+    appts_filter_kwargs = {
+        "tenant": tenant,
+        "customer_id__in": customer_ids,
+        "status__in": COMPLETED_STATUSES,
+    }
+    if professional_id is not None:
+        appts_filter_kwargs["professional_id"] = professional_id
+
     appts = (
-        Appointment.objects.filter(
-            tenant=tenant,
-            customer_id__in=customer_ids,
-            status__in=COMPLETED_STATUSES,
-        )
+        Appointment.objects.filter(**appts_filter_kwargs)
         .values("customer_id", "slot__start_time")
         .order_by("customer_id", "slot__start_time")
     )
@@ -1211,7 +1303,7 @@ class RetentionReportView(_BaseReports):
     @cache_drf_response(
         prefix="reports:retention:json",
         ttl=settings.REPORTS_CACHE_TTL.get("retention_json", 300),
-        vary_on_params=["from", "to"],
+        vary_on_params=["from", "to", "professional_id"],
         vary_on_user=True,
         view_label="retention",
         format_label="json",
@@ -1219,7 +1311,7 @@ class RetentionReportView(_BaseReports):
     @extend_schema(
         tags=["Reports"],
         summary="Retenção de Clientes (Novos vs Recorrentes)",
-        parameters=[PARAM_FROM, PARAM_TO],
+        parameters=[PARAM_FROM, PARAM_TO, PARAM_PROFESSIONAL_ID],
         responses={
             200: {
                 "type": "object",
@@ -1264,9 +1356,21 @@ class RetentionReportView(_BaseReports):
         date_gte = {f"{DATE_FIELD}__gte": start}
         date_lte = {f"{DATE_FIELD}__lte": end}
 
+        try:
+            professional_id = _get_optional_int_filter(request, "professional_id")
+        except InvalidFilterParam as exc:
+            return _invalid_filter_response(exc)
+
+        prof_filter = (
+            {"professional_id": professional_id}
+            if professional_id is not None
+            else {}
+        )
+
         qs = Appointment.objects.filter(
             **date_gte,
             **date_lte,
+            **prof_filter,
             status__in=COMPLETED_STATUSES,
             tenant=getattr(request.user, "tenant", None),
         )
@@ -1285,6 +1389,7 @@ class RetentionReportView(_BaseReports):
                 status__in=COMPLETED_STATUSES,
                 tenant=tenant,
                 slot__start_time__isnull=False,
+                **prof_filter,
             )
             .values("customer_id")
             .annotate(first_dt=Min("slot__start_time"))
@@ -1306,6 +1411,7 @@ class RetentionReportView(_BaseReports):
                         tenant=tenant,
                         slot__start_time__gt=first_dt,
                         slot__start_time__lte=first_dt + timedelta(days=days),
+                        **prof_filter,
                     ).exists()
                     if has_return:
                         repeaters[days] += 1
@@ -1319,6 +1425,7 @@ class RetentionReportView(_BaseReports):
         qs = Appointment.objects.filter(
             **date_gte,
             **date_lte,
+            **prof_filter,
             status__in=COMPLETED_STATUSES,
             tenant=tenant,
         ).annotate(
@@ -1360,6 +1467,7 @@ class RetentionReportView(_BaseReports):
                     tenant=getattr(request.user, "tenant", None),
                     range_start=start,
                     range_end=end,
+                    professional_id=professional_id,
                 ),
                 "definitions": {
                     "new_clients": "Clientes cujo primeiro agendamento concluído ocorreu dentro do período selecionado.",
@@ -1442,7 +1550,13 @@ class ExportAdvancedReportsCSVView(_BaseReports):
     @cache_drf_response(
         prefix="reports:advanced:csv",
         ttl=settings.REPORTS_CACHE_TTL.get("advanced_csv", 300),  # 5 min default
-        vary_on_params=["from", "to", "interval"],
+        vary_on_params=[
+            "from",
+            "to",
+            "interval",
+            "professional_id",
+            "service_id",
+        ],
         vary_on_user=True,
         view_label="advanced",
         format_label="csv",
@@ -1450,8 +1564,18 @@ class ExportAdvancedReportsCSVView(_BaseReports):
     @extend_schema(
         tags=["Reports"],
         summary="Exportar Relatórios Avançados (CSV)",
-        parameters=[PARAM_FROM, PARAM_TO, PARAM_INTERVAL],
-        responses={200: RESP_CSV_OVERVIEW, 403: OpenApiTypes.OBJECT},
+        parameters=[
+            PARAM_FROM,
+            PARAM_TO,
+            PARAM_INTERVAL,
+            PARAM_PROFESSIONAL_ID,
+            PARAM_SERVICE_ID,
+        ],
+        responses={
+            200: RESP_CSV_OVERVIEW,
+            400: OpenApiTypes.OBJECT,
+            403: OpenApiTypes.OBJECT,
+        },
     )
     @observe_request(endpoint="/api/reports/advanced/export/")
     def get(self, request) -> HttpResponse:
@@ -1465,10 +1589,16 @@ class ExportAdvancedReportsCSVView(_BaseReports):
             date_gte = {f"{DATE_FIELD}__gte": start}
             date_lte = {f"{DATE_FIELD}__lte": end}
 
+            try:
+                extra_filters = _get_professional_service_filters(request)
+            except InvalidFilterParam as exc:
+                return _invalid_filter_response(exc)
+
             # === TOP SERVICES DATA ===
             top_services_qs = Appointment.objects.filter(
                 **date_gte,
                 **date_lte,
+                **extra_filters,
                 status__in=COMPLETED_STATUSES,
                 tenant=tenant,
             ).values("service_id", "service__name")
@@ -1497,6 +1627,7 @@ class ExportAdvancedReportsCSVView(_BaseReports):
                 Appointment.objects.filter(
                     **date_gte,
                     **date_lte,
+                    **extra_filters,
                     status__in=COMPLETED_STATUSES,
                     tenant=tenant,
                 )
