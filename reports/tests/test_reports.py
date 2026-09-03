@@ -808,3 +808,283 @@ def test_retention_short_range_one_day():
     assert "cohort" in data
     assert "repeat_rate" in data
     assert "definitions" in data
+
+
+# ---------- professional_id / service_id filters (fix/relatorios-filtros-parity) ----------
+
+
+def _setup_prof_service_filter_scenario(suffix):
+    """
+    Cria tenant Pro com 2 profissionais e 2 serviços, e agendamentos completados
+    cruzando as combinações:
+      - Profissional 1 + Serviço 1: 2 agendamentos
+      - Profissional 2 + Serviço 2: 1 agendamento
+    Retorna (client_autenticado, professional1, professional2, service1, service2).
+    """
+    from django.core.cache import cache
+    from users.models import Tenant
+    from core.models import Professional, ScheduleSlot
+
+    # Evita colisões de cache entre testes: a chave de cache de reports usa
+    # apenas user_id + params, e o pk do user pode ser reaproveitado entre
+    # transações de teste (SQLite). Ver reports/utils/cache.py.
+    cache.clear()
+
+    tenant = Tenant.objects.create(
+        slug=f"pro-filters-{suffix}",
+        name="Pro Filters",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"filters_{suffix}",
+        password="x",
+        email=f"filters_{suffix}@test.com",
+        tenant=tenant,
+    )
+    UserFeatureFlags.objects.update_or_create(
+        user=user, defaults={"is_pro": True, "reports_enabled": True}
+    )
+
+    prof1 = Professional.objects.create(tenant=tenant, user=user, name="Prof 1")
+    prof2 = Professional.objects.create(tenant=tenant, user=user, name="Prof 2")
+
+    service1 = Service.objects.create(
+        tenant=tenant, user=user, name="Serviço 1", duration_minutes=30, price_eur=30
+    )
+    service2 = Service.objects.create(
+        tenant=tenant, user=user, name="Serviço 2", duration_minutes=45, price_eur=50
+    )
+
+    now = timezone.now()
+
+    def make_appt(professional, service, when, price):
+        slot = ScheduleSlot.objects.create(
+            tenant=tenant,
+            professional=professional,
+            start_time=when,
+            end_time=when + timedelta(minutes=service.duration_minutes),
+            status="booked",
+        )
+        return Appointment.objects.create(
+            tenant=tenant,
+            client=user,
+            service=service,
+            professional=professional,
+            slot=slot,
+            status=COMPLETED,
+        )
+
+    make_appt(prof1, service1, now - timedelta(days=1), 30)
+    make_appt(prof1, service1, now - timedelta(days=2), 30)
+    make_appt(prof2, service2, now - timedelta(days=1), 50)
+
+    c = APIClient()
+    c.force_authenticate(user)
+    return c, prof1, prof2, service1, service2
+
+
+@pytest.mark.django_db
+def test_top_services_filter_by_professional_id_only():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get(f"/api/reports/top-services/?professional_id={prof1.id}")
+    assert r.status_code == 200
+    names = {row["service_name"] for row in r.data}
+    assert names == {"Serviço 1"}
+    row = r.data[0]
+    assert row["qty"] == 2
+
+
+@pytest.mark.django_db
+def test_top_services_filter_by_service_id_only():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get(f"/api/reports/top-services/?service_id={service2.id}")
+    assert r.status_code == 200
+    names = {row["service_name"] for row in r.data}
+    assert names == {"Serviço 2"}
+    row = r.data[0]
+    assert row["qty"] == 1
+
+
+@pytest.mark.django_db
+def test_top_services_filter_by_professional_and_service_id():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    # Combinação que existe: prof1 + service1 -> 2
+    r = c.get(
+        f"/api/reports/top-services/?professional_id={prof1.id}&service_id={service1.id}"
+    )
+    assert r.status_code == 200
+    assert len(r.data) == 1
+    assert r.data[0]["qty"] == 2
+
+    # Combinação que não existe: prof1 + service2 -> vazio
+    r2 = c.get(
+        f"/api/reports/top-services/?professional_id={prof1.id}&service_id={service2.id}"
+    )
+    assert r2.status_code == 200
+    assert r2.data == []
+
+
+@pytest.mark.django_db
+def test_top_services_invalid_professional_id_returns_400():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get("/api/reports/top-services/?professional_id=not-an-int")
+    assert r.status_code == 400
+    assert "detail" in r.data
+
+
+@pytest.mark.django_db
+def test_top_services_invalid_service_id_returns_400():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get("/api/reports/top-services/?service_id=abc")
+    assert r.status_code == 400
+    assert "detail" in r.data
+
+
+@pytest.mark.django_db
+def test_top_services_no_filter_params_preserves_existing_behavior():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get("/api/reports/top-services/")
+    assert r.status_code == 200
+    names = {row["service_name"] for row in r.data}
+    assert names == {"Serviço 1", "Serviço 2"}
+
+
+@pytest.mark.django_db
+def test_top_services_export_csv_filter_by_professional_id():
+    import uuid
+
+    c, prof1, prof2, service1, service2 = _setup_prof_service_filter_scenario(
+        str(uuid.uuid4())[:8]
+    )
+
+    r = c.get(f"/api/reports/top-services/export/?professional_id={prof1.id}")
+    assert r.status_code == 200
+    content = r.content.decode("utf-8")
+    assert "Serviço 1" in content
+    assert "Serviço 2" not in content
+
+
+@pytest.mark.django_db
+def test_retention_filter_by_professional_id():
+    import uuid
+    from django.core.cache import cache
+    from core.models import SalonCustomer, Professional, ScheduleSlot
+    from users.models import Tenant
+
+    cache.clear()
+    suffix = str(uuid.uuid4())[:8]
+    tenant = Tenant.objects.create(
+        slug=f"pro-retention-filter-{suffix}",
+        name="Retention Filter",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"ret_filter_{suffix}",
+        password="x",
+        email=f"ret_filter_{suffix}@test.com",
+        tenant=tenant,
+    )
+    prof1 = Professional.objects.create(tenant=tenant, user=user, name="Prof R1")
+    prof2 = Professional.objects.create(tenant=tenant, user=user, name="Prof R2")
+    service = Service.objects.create(
+        tenant=tenant, user=user, name="Svc Ret", duration_minutes=30, price_eur=40
+    )
+
+    now = timezone.now()
+
+    customer1 = SalonCustomer.objects.create(
+        tenant=tenant, name="C1", email=f"c1_{suffix}@c.com"
+    )
+    customer2 = SalonCustomer.objects.create(
+        tenant=tenant, name="C2", email=f"c2_{suffix}@c.com"
+    )
+
+    def make_appt(professional, customer, when, price):
+        slot = ScheduleSlot.objects.create(
+            tenant=tenant,
+            professional=professional,
+            start_time=when,
+            end_time=when + timedelta(minutes=30),
+            status="booked",
+        )
+        return Appointment.objects.create(
+            tenant=tenant,
+            client=user,
+            customer=customer,
+            service=service,
+            professional=professional,
+            slot=slot,
+            status=COMPLETED,
+            **{},
+        )
+
+    # prof1 atende customer1 (novo, criado agora)
+    make_appt(prof1, customer1, now, 40)
+    # prof2 atende customer2 (novo, criado agora)
+    make_appt(prof2, customer2, now, 40)
+
+    c = APIClient()
+    c.force_authenticate(user)
+
+    r = c.get(f"/api/reports/retention/?professional_id={prof1.id}")
+    assert r.status_code == 200
+    data = r.data
+    # Apenas o agendamento do prof1 deve ser considerado
+    assert data["new_clients"]["qty"] == 1
+
+
+@pytest.mark.django_db
+def test_retention_invalid_professional_id_returns_400():
+    import uuid
+    from django.core.cache import cache
+    from users.models import Tenant
+
+    cache.clear()
+    suffix = str(uuid.uuid4())[:8]
+    tenant = Tenant.objects.create(
+        slug=f"pro-retention-invalid-{suffix}",
+        name="Retention Invalid",
+        plan_tier=Tenant.PLAN_PRO,
+    )
+    user = User.objects.create_user(
+        username=f"ret_invalid_{suffix}",
+        password="x",
+        email=f"ret_invalid_{suffix}@test.com",
+        tenant=tenant,
+    )
+    c = APIClient()
+    c.force_authenticate(user)
+
+    r = c.get("/api/reports/retention/?professional_id=xyz")
+    assert r.status_code == 400
+    assert "detail" in r.data
