@@ -53,6 +53,8 @@ from platform_comms.admin import PlatformAnnouncementAdmin, PlatformAnnouncement
 from inventory.models import InventoryItem, StockMovement
 from inventory.admin import InventoryItemAdmin, StockMovementAdmin
 from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+from raffles.models import Raffle
+from raffles.admin import RaffleAdmin
 from vouchers.admin import (
     BirthdayVoucherConfigAdmin,
     BirthdayVoucherLogAdmin,
@@ -353,3 +355,5 @@ admin_site.register(Voucher, VoucherAdmin)
 admin_site.register(ClientVoucher, ClientVoucherAdmin)
 admin_site.register(BirthdayVoucherConfig, BirthdayVoucherConfigAdmin)
 admin_site.register(BirthdayVoucherLog, BirthdayVoucherLogAdmin)
+
+admin_site.register(Raffle, RaffleAdmin)

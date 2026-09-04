@@ -124,6 +124,7 @@ INSTALLED_APPS = [
     "platform_comms",
     "inventory",
     "vouchers.apps.VouchersConfig",
+    "raffles.apps.RafflesConfig",
 ]
 
 # Silenciar warnings de URLField default em Django 6
