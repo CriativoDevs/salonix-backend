@@ -249,3 +249,91 @@ class NotificationLog(models.Model):
     def __str__(self):
         tenant_name = self.tenant.name if self.tenant else "No Tenant"
         return f"{self.get_channel_display()} - {self.status} - {self.user.username} ({tenant_name})"
+
+
+class EmailMarketingCampaign(models.Model):
+    """
+    Campanha de email marketing disparada por um tenant à sua base de
+    clientes elegíveis (BE-MARKETING-04, #522).
+
+    Uma linha por campanha, com as contagens já resolvidas no momento da
+    criação (elegibilidade, cota mensal grátis e crédito de comunicação
+    cobrado/insuficiente) — o envio em si acontece de forma assíncrona
+    (`notifications.tasks.send_marketing_campaign_task`), mas a decisão de
+    quem entra em cada balde (grátis/crédito/bloqueado/sem consentimento)
+    é tomada de forma síncrona e atômica na criação, para não haver disputa
+    de crédito entre campanhas concorrentes.
+    """
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Na fila"
+        COMPLETED = "completed", "Concluída"
+        FAILED = "failed", "Falhou"
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="marketing_campaigns",
+        help_text="Tenant que disparou a campanha",
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marketing_campaigns",
+        help_text="Staff que compôs/disparou a campanha",
+    )
+    subject = models.CharField(max_length=255, help_text="Assunto do email")
+    body = models.TextField(help_text="Corpo do email (texto)")
+    reply_to = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="Reply-To escolhido pelo tenant (opcional); o From é sempre timelyone.today",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.QUEUED
+    )
+
+    # Contagens resolvidas na criação (ver docstring da classe)
+    eligible_count = models.PositiveIntegerField(
+        default=0, help_text="Clientes com consentimento de marketing e email"
+    )
+    skipped_no_consent_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Clientes com email mas sem consentimento ativo (ou com unsubscribe)",
+    )
+    free_sent_count = models.PositiveIntegerField(
+        default=0, help_text="Envios cobertos pela cota mensal grátis (50/mês)"
+    )
+    credit_sent_count = models.PositiveIntegerField(
+        default=0, help_text="Envios excedentes cobrados do crédito de comunicação"
+    )
+    credit_charged_eur = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Total cobrado do crédito de comunicação para esta campanha",
+    )
+    blocked_credit_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Elegíveis não enviados por falta de crédito de comunicação",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant", "-created_at"]),
+            models.Index(fields=["tenant", "status"]),
+        ]
+        ordering = ["-created_at"]
+
+    @property
+    def total_sent_count(self) -> int:
+        return self.free_sent_count + self.credit_sent_count
+
+    def __str__(self):
+        tenant_name = self.tenant.name if self.tenant else "No Tenant"
+        return f"Campanha '{self.subject}' ({tenant_name}) - {self.status}"

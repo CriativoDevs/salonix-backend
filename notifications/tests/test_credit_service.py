@@ -70,6 +70,19 @@ class CommunicationCreditServiceTest(TestCase):
         cost = self.credit_service.get_cost(self.tenant, "whatsapp", "marketing")
         self.assertEqual(cost, Decimal("0.04"))
 
+    def test_get_cost_email_marketing(self):
+        """BE-MARKETING-04 (#522): custo do email de marketing excedente,
+        fixo independente do plano — mesmo pool de crédito do SMS/WhatsApp."""
+        cost = self.credit_service.get_cost(self.tenant, "email")
+        self.assertEqual(cost, Decimal("0.01"))
+
+    def test_can_send_message_email_uses_communication_pool(self):
+        """Email não tem gate de trial (só SMS tem) nem toggle de canal
+        próprio — cai direto na verificação de saldo do pool de comunicação."""
+        result = self.credit_service.can_send_message(self.tenant, "email")
+        self.assertTrue(result["can_send"])
+        self.assertEqual(result["cost"], Decimal("0.01"))
+
     def test_get_cost_invalid_type(self):
         """Testar retorno para tipo de comunicação inválido"""
         cost = self.credit_service.get_cost(self.tenant, "invalid_type")

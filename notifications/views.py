@@ -1,8 +1,12 @@
 import logging
+from decimal import Decimal
+from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.contrib.auth import get_user_model
 from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from typing import Any, Dict, cast
@@ -10,7 +14,13 @@ from rest_framework.views import APIView
 from core.mixins import TenantIsolatedMixin
 from drf_spectacular.utils import extend_schema
 from users.permissions import RequiresMobileAccess
-from .models import Notification, NotificationDevice, NotificationLog
+from users.models import TenantStaffMember
+from .models import (
+    Notification,
+    NotificationDevice,
+    NotificationLog,
+    EmailMarketingCampaign,
+)
 from core.models import CustomerCommunicationConsent, SalonCustomer
 from .serializers import (
     NotificationSerializer,
@@ -25,8 +35,19 @@ from .serializers import (
     CommunicationConsentSerializer,
     CommunicationConsentCreateSerializer,
     CommunicationConsentWithdrawSerializer,
+    MarketingCampaignCreateSerializer,
+    EmailMarketingCampaignSerializer,
 )
-from .services import notification_service, MobilePushDriver
+from .services import (
+    notification_service,
+    MobilePushDriver,
+    get_eligible_marketing_email_customers,
+)
+from .credit_service import credit_service
+from .tasks import send_marketing_campaign_task
+
+#: Cota mensal grátis de emails de marketing por tenant (BE-MARKETING-04, #522).
+MARKETING_EMAIL_FREE_MONTHLY_LIMIT = 50
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -576,6 +597,162 @@ class CommunicationConsentWithdrawView(TenantIsolatedMixin, APIView):
             )
 
         return Response(CommunicationConsentSerializer(instance).data)
+
+
+class MarketingCampaignListCreateView(TenantIsolatedMixin, generics.ListCreateAPIView):
+    """
+    GET  /api/notifications/marketing-campaigns/  — histórico de campanhas do tenant.
+    POST /api/notifications/marketing-campaigns/  — compõe e dispara uma campanha
+                                                      (BE-MARKETING-04, #522).
+
+    Restrito a owner/manager (mesmo critério de `VoucherViewSet` — envolve
+    comunicação com toda a base de clientes e consumo de crédito).
+
+    A criação resolve, de forma síncrona e atômica, quem entra em cada
+    balde: elegíveis (consentimento ativo + email), pulados por falta de
+    consentimento/unsubscribe, cobertos pela cota mensal grátis (50/mês),
+    cobrados do crédito de comunicação (mesmo pool do SMS/WhatsApp) e
+    bloqueados por falta de crédito. O envio de fato é sempre assíncrono
+    (`send_marketing_campaign_task`), nunca síncrono na view.
+    """
+
+    serializer_class = EmailMarketingCampaignSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = EmailMarketingCampaign.objects.all()
+
+    def _resolve_tenant(self):
+        return getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+    def _require_owner_or_manager(self):
+        if not (
+            self.request.user.is_superuser
+            or self.request.user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            raise PermissionDenied(
+                "Apenas owner ou manager podem disparar campanhas de email marketing."
+            )
+
+    def get_queryset(self):
+        return super().get_queryset().order_by("-created_at")
+
+    def _already_sent_this_month(self, tenant) -> int:
+        now = timezone.now()
+        aggregate = EmailMarketingCampaign.objects.filter(
+            tenant=tenant,
+            created_at__year=now.year,
+            created_at__month=now.month,
+        ).aggregate(
+            free=Sum("free_sent_count"), credit=Sum("credit_sent_count")
+        )
+        return (aggregate["free"] or 0) + (aggregate["credit"] or 0)
+
+    def create(self, request, *args, **kwargs):
+        self._require_owner_or_manager()
+
+        tenant = self._resolve_tenant()
+        if tenant is None:
+            raise PermissionDenied("Tenant não encontrado para o usuário.")
+
+        input_serializer = MarketingCampaignCreateSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        v = input_serializer.validated_data
+        subject = v["subject"]
+        body = v["body"]
+        reply_to = v.get("reply_to") or None
+
+        with transaction.atomic():
+            # select_for_update evita duas campanhas concorrentes lerem o
+            # mesmo saldo de crédito e ambas acharem que "cabe" o excedente.
+            tenant = type(tenant).objects.select_for_update().get(pk=tenant.pk)
+
+            eligible_qs = get_eligible_marketing_email_customers(tenant)
+            eligible_customers = list(eligible_qs)
+            eligible_count = len(eligible_customers)
+
+            total_with_email = (
+                SalonCustomer.objects.filter(tenant=tenant)
+                .exclude(email__isnull=True)
+                .exclude(email="")
+                .count()
+            )
+            skipped_no_consent_count = max(0, total_with_email - eligible_count)
+
+            already_sent = self._already_sent_this_month(tenant)
+            free_remaining = max(0, MARKETING_EMAIL_FREE_MONTHLY_LIMIT - already_sent)
+
+            to_send_free = eligible_customers[:free_remaining]
+            remaining = eligible_customers[free_remaining:]
+
+            to_send_credit = []
+            blocked = []
+            credit_exhausted = False
+            for customer in remaining:
+                if credit_exhausted:
+                    blocked.append(customer)
+                    continue
+                charge_result = credit_service.charge_for_message(
+                    tenant=tenant,
+                    communication_type="email",
+                    description=f"Email marketing - campanha '{subject}'",
+                    user=request.user,
+                )
+                if charge_result["success"]:
+                    to_send_credit.append(customer)
+                else:
+                    credit_exhausted = True
+                    blocked.append(customer)
+
+            to_send = to_send_free + to_send_credit
+            credit_charged_eur = Decimal(len(to_send_credit)) * credit_service.get_cost(
+                tenant, "email"
+            )
+
+            campaign = EmailMarketingCampaign.objects.create(
+                tenant=tenant,
+                created_by=request.user if request.user.is_authenticated else None,
+                subject=subject,
+                body=body,
+                reply_to=reply_to,
+                status=(
+                    EmailMarketingCampaign.Status.COMPLETED
+                    if not to_send
+                    else EmailMarketingCampaign.Status.QUEUED
+                ),
+                eligible_count=eligible_count,
+                skipped_no_consent_count=skipped_no_consent_count,
+                free_sent_count=len(to_send_free),
+                credit_sent_count=len(to_send_credit),
+                credit_charged_eur=credit_charged_eur,
+                blocked_credit_count=len(blocked),
+                completed_at=timezone.now() if not to_send else None,
+            )
+
+        if to_send:
+            send_marketing_campaign_task.delay(
+                campaign.id, [c.id for c in to_send]
+            )
+
+        logger.info(
+            "marketing_campaign_created",
+            extra={
+                "campaign_id": campaign.id,
+                "tenant_id": tenant.id,
+                "eligible_count": eligible_count,
+                "free_sent_count": campaign.free_sent_count,
+                "credit_sent_count": campaign.credit_sent_count,
+                "blocked_credit_count": campaign.blocked_credit_count,
+                "skipped_no_consent_count": campaign.skipped_no_consent_count,
+            },
+        )
+
+        return Response(
+            EmailMarketingCampaignSerializer(campaign).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 UNSUBSCRIBE_TOKEN_SALT = "comm-consent-unsub"

@@ -49,6 +49,32 @@ SMS_RATE_LIMIT_BLOCKED_TOTAL = _get_or_create_counter(
 )
 
 
+def get_eligible_marketing_email_customers(tenant: Tenant):
+    """
+    Clientes do tenant elegíveis para receber email de marketing
+    (BE-MARKETING-04, #522): têm email cadastrado e consentimento ativo
+    (`CustomerCommunicationConsent` com channel="email", purpose="marketing",
+    status="consented"). Um cliente que nunca deu consentimento e um cliente
+    que fez unsubscribe (status="withdrawn") ficam igualmente de fora — o
+    unsubscribe público (`PublicUnsubscribeView`) já grava esse mesmo
+    registro com status="withdrawn", então basta filtrar por "consented".
+    """
+    from core.models import SalonCustomer
+
+    consented_customer_ids = CustomerCommunicationConsent.objects.filter(
+        tenant=tenant,
+        channel="email",
+        purpose="marketing",
+        status="consented",
+    ).values_list("customer_id", flat=True)
+
+    return (
+        SalonCustomer.objects.filter(tenant=tenant, id__in=consented_customer_ids)
+        .exclude(email__isnull=True)
+        .exclude(email="")
+    )
+
+
 def send_customer_pwa_invite(
     tenant: Tenant,
     customer,

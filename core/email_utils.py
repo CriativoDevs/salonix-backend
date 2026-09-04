@@ -417,6 +417,30 @@ def _build_unsubscribe_link(
         return ""
 
 
+def _marketing_from_email(salon_name: str) -> str:
+    """
+    Monta o header `From` de emails de marketing (BE-MARKETING-04, #522):
+    sempre no nosso domínio verificado (EMAIL_FROM_SUPPORT/timelyone.today),
+    nunca o email do tenant — o tenant só pode influenciar o `Reply-To`
+    (ver `send_marketing_email`). O nome de exibição usa o nome do tenant
+    para o email parecer pessoal ("<Salão X> via TimelyOne"), mas o
+    endereço real de envio continua sendo o nosso.
+    """
+    import email.utils
+
+    base = (
+        getattr(settings, "EMAIL_FROM_SUPPORT", "")
+        or settings.EMAIL_HOST_USER
+        or settings.DEFAULT_FROM_EMAIL
+    )
+    _, address = email.utils.parseaddr(base)
+    address = address or base
+    display_name = (
+        f"{salon_name} via TimelyOne" if salon_name and salon_name != "TimelyOne" else "TimelyOne"
+    )
+    return email.utils.formataddr((display_name, address))
+
+
 def send_marketing_email(
     to_email: str,
     client_name: str,
@@ -426,9 +450,16 @@ def send_marketing_email(
     tenant_id: int,
     customer_id: int,
     salon_name: str = "TimelyOne",
+    reply_to: str | None = None,
 ):
     """
     Envia e-mail de marketing com link de descadastro (unsubscribe).
+
+    `reply_to` é opcional e escolhido pelo próprio tenant ao compor a
+    campanha (BE-MARKETING-04, #522) — quando informado, é usado como
+    Reply-To, mas o `From` nunca é o email do tenant, sempre o nosso
+    domínio verificado (ver `_marketing_from_email`). Quando omitido, cai
+    no Reply-To padrão (`EMAIL_REPLY_TO`) já aplicado por `_send_email_safe`.
     """
     unsubscribe_link = _build_unsubscribe_link(
         tenant_id, customer_id, "email", "marketing"
@@ -464,7 +495,8 @@ def send_marketing_email(
         body_plain,
         body_html,
         to_email,
-        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+        reply_to=[reply_to] if reply_to else None,
+        from_email=_marketing_from_email(salon_name),
     )
 
 
