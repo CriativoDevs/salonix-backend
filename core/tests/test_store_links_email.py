@@ -15,13 +15,14 @@ def _capture_send():
     """Patcha _send_email_safe e devolve a lista de chamadas capturadas."""
     calls = []
 
-    def fake(subject, body_plain, body_html, to_emails, reply_to=None):
+    def fake(subject, body_plain, body_html, to_emails, reply_to=None, from_email=None):
         calls.append(
             {
                 "subject": subject,
                 "plain": body_plain or "",
                 "html": body_html or "",
                 "to": to_emails,
+                "from_email": from_email,
             }
         )
         return True

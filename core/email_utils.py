@@ -1,3 +1,22 @@
+"""
+Envio de emails transacionais/automáticos da plataforma.
+
+Mapeamento de remetente (from_email) por tipo de email — BE-MARKETING-02 (#477).
+O mapeamento completo e as razões de cada bucket estão documentados junto às
+settings EMAIL_FROM_* em salonix_backend/settings.py; resumo:
+  EMAIL_FROM_BOOKING      -> confirmação/alteração de agendamento
+  EMAIL_FROM_CANCELLATION -> cancelamento de agendamento
+  EMAIL_FROM_SUPPORT      -> suporte, feedback da plataforma, e demais emails
+                             transacionais não cobertos pelos remetentes acima
+                             (também o default de _send_email_safe quando a
+                             função chamadora não passa from_email explícito)
+  EMAIL_FROM_BILLING      -> faturação/subscrição (Stripe) e ciclo de vida da
+                             conta
+
+`timelyone@timelyone.today` (DEFAULT_FROM_EMAIL) é reservado ao contacto geral
+da landing page e nunca deve ser usado como remetente automático.
+"""
+
 import logging
 import threading
 import time
@@ -20,10 +39,17 @@ def _send_email_safe(
     body_html: str | None,
     to_emails: list[str] | str,
     reply_to: list[str] | None = None,
+    from_email: str | None = None,
 ) -> bool:
     """
     Helper interno para enviar e-mails de forma assíncrona usando Threads.
     Evita travar a resposta HTTP enquanto o servidor SMTP processa o envio.
+
+    `from_email` deve ser passado explicitamente pela função chamadora sempre
+    que o tipo de email tiver um remetente mapeado (ver EMAIL_FROM_* em
+    settings.py, BE-MARKETING-02 #477). Quando omitido, cai em
+    EMAIL_FROM_SUPPORT — nunca em DEFAULT_FROM_EMAIL, que é reservado ao
+    contacto geral e não deve responder por emails automáticos.
     """
     if getattr(settings, "EMAIL_DISABLE_OUTBOUND", False):
         # Permitimos o bypass para testes que precisam validar threads
@@ -35,6 +61,13 @@ def _send_email_safe(
 
     if isinstance(to_emails, str):
         to_emails = [to_emails]
+
+    resolved_from_email = (
+        from_email
+        or getattr(settings, "EMAIL_FROM_SUPPORT", "")
+        or settings.DEFAULT_FROM_EMAIL
+        or settings.EMAIL_HOST_USER
+    )
 
     # Reply-To padrão (no-reply respondível) quando o chamador não especifica um.
     if reply_to is None:
@@ -52,7 +85,7 @@ def _send_email_safe(
                 email = EmailMultiAlternatives(
                     subject=subject,
                     body=body_plain,
-                    from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+                    from_email=resolved_from_email,
                     to=to_emails,
                     reply_to=reply_to,
                 )
@@ -174,7 +207,13 @@ def send_appointment_confirmation_email(
         </div>
         """
 
-    _send_email_safe(subject, body, body_html, to_email)
+    _send_email_safe(
+        subject,
+        body,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_BOOKING", None),
+    )
 
 
 def send_appointment_cancellation_email(
@@ -209,7 +248,13 @@ def send_appointment_cancellation_email(
     )
 
     # Envia para ambos
-    _send_email_safe(subject, body, None, [client_email, salon_email])
+    _send_email_safe(
+        subject,
+        body,
+        None,
+        [client_email, salon_email],
+        from_email=getattr(settings, "EMAIL_FROM_CANCELLATION", None),
+    )
 
 
 def send_staff_access_link_email(to_email, access_url, salon_name):
@@ -233,7 +278,13 @@ def send_staff_access_link_email(to_email, access_url, salon_name):
         + _("Se você não solicitou este acesso, ignore este e-mail.")
     )
 
-    return _send_email_safe(subject, body, None, to_email)
+    return _send_email_safe(
+        subject,
+        body,
+        None,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+    )
 
 
 def send_bulk_appointment_confirmation_email(
@@ -337,7 +388,13 @@ def send_bulk_appointment_confirmation_email(
         </div>
         """
 
-    _send_email_safe(subject, body, body_html, to_email)
+    _send_email_safe(
+        subject,
+        body,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_BOOKING", None),
+    )
 
 
 def _build_unsubscribe_link(
@@ -402,7 +459,13 @@ def send_marketing_email(
         </div>
         """
 
-    _send_email_safe(subject, body_plain, body_html, to_email)
+    _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+    )
 
 
 def _store_links() -> tuple[str, str]:
@@ -482,7 +545,13 @@ Equipe {salon_name}
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, to_email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+    )
 
 
 def send_tenant_welcome_email(
@@ -517,7 +586,13 @@ def send_tenant_welcome_email(
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, to_email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+    )
 
 
 def send_voucher_email(
@@ -583,7 +658,13 @@ def send_voucher_email(
         </div>
         """
 
-    return _send_email_safe(subject, body_plain, body_html, to_email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        to_email,
+        from_email=getattr(settings, "EMAIL_FROM_SUPPORT", None),
+    )
 
 
 def send_account_cancellation_email(
@@ -670,7 +751,13 @@ Equipe TimelyOne
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        owner_user.email,
+        from_email=getattr(settings, "EMAIL_FROM_BILLING", None),
+    )
 
 
 def send_deletion_reminder_email(
@@ -766,7 +853,13 @@ Equipe TimelyOne
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        owner_user.email,
+        from_email=getattr(settings, "EMAIL_FROM_BILLING", None),
+    )
 
 
 def send_account_reactivation_email(
@@ -845,7 +938,13 @@ Equipe TimelyOne
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        owner_user.email,
+        from_email=getattr(settings, "EMAIL_FROM_BILLING", None),
+    )
 
 
 _AUTO_RENEWAL_FAILURE_REASON_MESSAGES = {
@@ -861,8 +960,7 @@ _AUTO_RENEWAL_FAILURE_REASON_MESSAGES = {
         "Não encontrámos um cartão predefinido guardado para cobrança automática."
     ),
     "invalid_price_id": (
-        "O pacote de crédito configurado para renovação automática já não é "
-        "válido."
+        "O pacote de crédito configurado para renovação automática já não é " "válido."
     ),
     "charge_failed": ("A cobrança no teu cartão foi recusada pelo banco/emissor."),
 }
@@ -921,4 +1019,10 @@ Equipe TimelyOne
         </div>
     """
 
-    return _send_email_safe(subject, body_plain, body_html, owner_user.email)
+    return _send_email_safe(
+        subject,
+        body_plain,
+        body_html,
+        owner_user.email,
+        from_email=getattr(settings, "EMAIL_FROM_BILLING", None),
+    )
