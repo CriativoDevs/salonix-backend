@@ -11,6 +11,7 @@ from .views import (
     CommunicationConsentListView,
     CommunicationConsentCreateView,
     CommunicationConsentWithdrawView,
+    MarketingCampaignListCreateView,
 )
 
 urlpatterns = [
@@ -58,5 +59,11 @@ urlpatterns = [
         "consent/withdraw/",
         CommunicationConsentWithdrawView.as_view(),
         name="communication-consent-withdraw",
+    ),
+    # Campanhas de email marketing (BE-MARKETING-04, #522)
+    path(
+        "marketing-campaigns/",
+        MarketingCampaignListCreateView.as_view(),
+        name="marketing-campaign-list-create",
     ),
 ]

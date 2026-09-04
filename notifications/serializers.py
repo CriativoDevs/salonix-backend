@@ -373,3 +373,46 @@ class CommunicationChannel(str, Enum):
 class CommunicationPurpose(str, Enum):
     marketing = "marketing"
     transactional = "transactional"
+
+
+class MarketingCampaignCreateSerializer(serializers.Serializer):
+    """
+    Payload de criação de uma campanha de email marketing
+    (BE-MARKETING-04, #522). `reply_to` é opcional — quando informado, é
+    usado como Reply-To do email, mas nunca como remetente (`From`), que
+    continua sempre sendo o nosso domínio verificado.
+    """
+
+    subject = serializers.CharField(max_length=255)
+    body = serializers.CharField()
+    reply_to = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+
+
+class EmailMarketingCampaignSerializer(serializers.ModelSerializer):
+    total_sent_count = serializers.IntegerField(read_only=True)
+    created_by_username = serializers.CharField(
+        source="created_by.username", read_only=True, default=None
+    )
+
+    class Meta:
+        from .models import EmailMarketingCampaign
+
+        model = EmailMarketingCampaign
+        fields = [
+            "id",
+            "subject",
+            "body",
+            "reply_to",
+            "status",
+            "eligible_count",
+            "skipped_no_consent_count",
+            "free_sent_count",
+            "credit_sent_count",
+            "credit_charged_eur",
+            "blocked_credit_count",
+            "total_sent_count",
+            "created_by_username",
+            "created_at",
+            "completed_at",
+        ]
+        read_only_fields = fields

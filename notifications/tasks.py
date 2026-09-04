@@ -97,3 +97,72 @@ def send_appointment_reminders():
             logger.error(f"Erro ao enviar lembrete para agendamento {appt.id}: {e}")
 
     return f"Lembretes enviados: {count}"
+
+
+@shared_task(name="notifications.send_marketing_campaign", bind=True, max_retries=3)
+def send_marketing_campaign_task(self, campaign_id: int, customer_ids: list[int]):
+    """
+    Envia (assincronamente) os emails de uma campanha de marketing já
+    aprovada/contabilizada (BE-MARKETING-04, #522).
+
+    A view (`MarketingCampaignListCreateView.create`) já resolveu, de forma
+    síncrona e atômica, quem entra na campanha (elegibilidade, cota grátis
+    e crédito de comunicação já foram decididos e cobrados antes de
+    disparar esta task) — aqui apenas disparamos o email de fato para cada
+    `customer_id` recebido, reaproveitando `send_marketing_email` (que já
+    inclui o rodapé com link de unsubscribe).
+    """
+    from .models import EmailMarketingCampaign
+    from core.models import SalonCustomer
+    from core.email_utils import send_marketing_email
+
+    try:
+        campaign = EmailMarketingCampaign.objects.select_related("tenant").get(
+            id=campaign_id
+        )
+    except EmailMarketingCampaign.DoesNotExist:
+        logger.error(
+            "marketing_campaign_not_found", extra={"campaign_id": campaign_id}
+        )
+        return
+
+    customers = SalonCustomer.objects.filter(
+        tenant=campaign.tenant, id__in=customer_ids
+    )
+
+    sent = 0
+    for customer in customers:
+        if not customer.email:
+            continue
+        try:
+            send_marketing_email(
+                to_email=customer.email,
+                client_name=customer.name,
+                subject=campaign.subject,
+                body_text=campaign.body,
+                tenant_id=campaign.tenant_id,
+                customer_id=customer.id,
+                salon_name=campaign.tenant.name,
+                reply_to=campaign.reply_to or None,
+            )
+            sent += 1
+        except Exception:
+            logger.exception(
+                "marketing_campaign_email_failed",
+                extra={"campaign_id": campaign_id, "customer_id": customer.id},
+            )
+
+    campaign.status = EmailMarketingCampaign.Status.COMPLETED
+    campaign.completed_at = timezone.now()
+    campaign.save(update_fields=["status", "completed_at"])
+
+    logger.info(
+        "marketing_campaign_sent",
+        extra={
+            "campaign_id": campaign_id,
+            "tenant_id": campaign.tenant_id,
+            "emails_sent": sent,
+            "requested": len(customer_ids),
+        },
+    )
+    return sent

@@ -46,6 +46,15 @@ class CommunicationCreditService:
             }
             return whatsapp_costs.get(message_category, whatsapp_costs["utility"])
 
+        elif communication_type == "email":
+            # BE-MARKETING-04 (#522): custo por email de marketing acima da
+            # cota mensal grátis (50/mês, ver EmailMarketingCampaign), cobrado
+            # do mesmo pool de crédito de comunicação do SMS/WhatsApp — não
+            # há um pool separado para email. Valor fixo, independente do
+            # plano (bem abaixo do custo de SMS, condizente com o custo real
+            # de envio de email via SMTP).
+            return Decimal("0.01")
+
         return Decimal("0.00")
 
     def can_send_message(
