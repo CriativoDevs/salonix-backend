@@ -1,12 +1,12 @@
 from rest_framework.generics import ListAPIView, RetrieveAPIView
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from cms.models import PublicPage, RoadmapItem
 from cms.serializers import PublicPageListSerializer, PublicPageDetailSerializer, RoadmapItemSerializer
 
 
 class PublicPageListView(ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     serializer_class = PublicPageListSerializer
 
     def get_queryset(self):
@@ -14,7 +14,7 @@ class PublicPageListView(ListAPIView):
 
 
 class PublicPageDetailView(RetrieveAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     serializer_class = PublicPageDetailSerializer
     lookup_field = "slug"
 

@@ -32,7 +32,8 @@ def draft_page():
 
 
 @pytest.mark.django_db
-def test_list_returns_only_published(client, published_page, draft_page):
+def test_list_returns_only_published(client, published_page, draft_page, user_fixture):
+    client.force_authenticate(user_fixture)
     url = reverse("cms-page-list")
     response = client.get(url)
     assert response.status_code == 200
@@ -42,7 +43,8 @@ def test_list_returns_only_published(client, published_page, draft_page):
 
 
 @pytest.mark.django_db
-def test_detail_returns_published_page(client, published_page):
+def test_detail_returns_published_page(client, published_page, user_fixture):
+    client.force_authenticate(user_fixture)
     url = reverse("cms-page-detail", kwargs={"slug": "tutorial-pub"})
     response = client.get(url)
     assert response.status_code == 200
@@ -51,22 +53,49 @@ def test_detail_returns_published_page(client, published_page):
 
 
 @pytest.mark.django_db
-def test_detail_draft_returns_404(client, draft_page):
+def test_detail_draft_returns_404(client, draft_page, user_fixture):
+    client.force_authenticate(user_fixture)
     url = reverse("cms-page-detail", kwargs={"slug": "tutorial-draft"})
     response = client.get(url)
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_detail_slug_inexistente_returns_404(client):
+def test_detail_slug_inexistente_returns_404(client, user_fixture):
+    client.force_authenticate(user_fixture)
     url = reverse("cms-page-detail", kwargs={"slug": "nao-existe"})
     response = client.get(url)
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_endpoints_sao_publicos_sem_autenticacao(client, published_page):
-    list_url = reverse("cms-page-list")
-    detail_url = reverse("cms-page-detail", kwargs={"slug": "tutorial-pub"})
-    assert client.get(list_url).status_code == 200
-    assert client.get(detail_url).status_code == 200
+def test_list_sem_autenticacao_retorna_401(client, published_page):
+    url = reverse("cms-page-list")
+    response = client.get(url)
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_detail_sem_autenticacao_retorna_401(client, published_page):
+    url = reverse("cms-page-detail", kwargs={"slug": "tutorial-pub"})
+    response = client.get(url)
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_list_autenticado_retorna_200(client, published_page, user_fixture):
+    client.force_authenticate(user_fixture)
+    url = reverse("cms-page-list")
+    response = client.get(url)
+    assert response.status_code == 200
+    slugs = [p["slug"] for p in response.data]
+    assert "tutorial-pub" in slugs
+
+
+@pytest.mark.django_db
+def test_detail_autenticado_retorna_200(client, published_page, user_fixture):
+    client.force_authenticate(user_fixture)
+    url = reverse("cms-page-detail", kwargs={"slug": "tutorial-pub"})
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.data["title"] == "Tutorial Publicado"
