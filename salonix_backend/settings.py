@@ -590,6 +590,35 @@ DEFAULT_FROM_EMAIL = env_get(
 # Endereço de resposta dos emails (no-reply respondível). Mailbox já existe.
 EMAIL_REPLY_TO = env_get("EMAIL_REPLY_TO", "support@timelyone.today")
 
+# Mapeamento de remetente (from_email) por tipo de email (BE-MARKETING-02, #477).
+# `timelyone@timelyone.today` (DEFAULT_FROM_EMAIL acima) é o contacto geral da
+# landing page — nunca deve ser usado como remetente de um email automático.
+# Cada função em core/email_utils.py e cada tipo de notificação por email em
+# notifications/services.py passa um destes explicitamente:
+#   EMAIL_FROM_BOOKING      -> confirmação e alteração de agendamento
+#   EMAIL_FROM_CANCELLATION -> cancelamento de agendamento
+#   EMAIL_FROM_SUPPORT      -> suporte, feedback da plataforma, e demais emails
+#                              transacionais não cobertos pelos remetentes acima
+#                              (convites/acesso de staff, boas-vindas do tenant,
+#                              acesso PWA do cliente, vouchers, marketing) —
+#                              também o fallback default de _send_email_safe
+#                              quando nenhum from_email é passado explicitamente
+#   EMAIL_FROM_BILLING      -> faturação/subscrição (Stripe) e ciclo de vida da
+#                              conta (cancelamento/reativação, crédito de SMS)
+EMAIL_FROM_BOOKING = env_get(
+    "EMAIL_FROM_BOOKING", "TimelyOne <booking@timelyone.today>"
+)
+EMAIL_FROM_CANCELLATION = env_get(
+    "EMAIL_FROM_CANCELLATION", "TimelyOne <cancellation@timelyone.today>"
+)
+EMAIL_FROM_SUPPORT = env_get(
+    "EMAIL_FROM_SUPPORT", "TimelyOne <support@timelyone.today>"
+)
+EMAIL_FROM_BILLING = env_get(
+    "EMAIL_FROM_BILLING", "TimelyOne <billing@timelyone.today>"
+)
+
+
 def first_csv_value(raw: str) -> str:
     """Primeira entrada não vazia de uma string separada por vírgulas (ex.: env vars
     que aceitam múltiplos domínios, mas só um valor é usado)."""

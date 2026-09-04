@@ -70,8 +70,12 @@ def send_customer_pwa_invite(
         _, _, link = create_client_access_data(tenant, customer)
 
     subject = f"Seu acesso ao {getattr(tenant, 'name', 'TimelyOne')}"
-    sender_email = settings.EMAIL_HOST_USER or getattr(
-        settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
+    # BE-MARKETING-02 (#477): acesso do cliente ao PWA não é confirmação de
+    # agendamento nem cobre os outros buckets — usa o remetente de suporte.
+    sender_email = (
+        getattr(settings, "EMAIL_FROM_SUPPORT", "")
+        or settings.EMAIL_HOST_USER
+        or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@localhost")
     )
 
     text_body = (
@@ -789,6 +793,37 @@ class WhatsAppDriver(NotificationDriverBase):
         return True
 
 
+#: notification_type -> setting name para o remetente (BE-MARKETING-02, #477).
+_CANCELLATION_NOTIFICATION_TYPES = {"appointment_cancelled"}
+_BOOKING_NOTIFICATION_TYPES = {
+    "appointment_created",
+    "appointment_completed",
+    "appointment_reminder",
+    "payment_received",
+}
+
+
+def _email_sender_for_notification_type(notification_type: str) -> str:
+    """Remetente do EmailDriver por tipo de notificação (BE-MARKETING-02, #477).
+
+    Tipos ligados a agendamento (criação/lembrete/conclusão/pagamento) usam
+    EMAIL_FROM_BOOKING; cancelamento usa EMAIL_FROM_CANCELLATION; qualquer
+    outro tipo (ex.: "system", usado em testes de canal) cai em
+    EMAIL_FROM_SUPPORT como bucket geral de notificações transacionais.
+    """
+    if notification_type in _CANCELLATION_NOTIFICATION_TYPES:
+        setting_name = "EMAIL_FROM_CANCELLATION"
+    elif notification_type in _BOOKING_NOTIFICATION_TYPES:
+        setting_name = "EMAIL_FROM_BOOKING"
+    else:
+        setting_name = "EMAIL_FROM_SUPPORT"
+    return (
+        getattr(settings, setting_name, "")
+        or settings.EMAIL_HOST_USER
+        or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@localhost")
+    )
+
+
 class EmailDriver(NotificationDriverBase):
     """Driver para envio de e-mails via SMTP/Backend padrão do Django"""
 
@@ -810,10 +845,8 @@ class EmailDriver(NotificationDriverBase):
             )
             return False
 
-        # Configurar remetente
-        sender_email = settings.EMAIL_HOST_USER or getattr(
-            settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
-        )
+        # Configurar remetente (por tipo de notificação — BE-MARKETING-02 #477)
+        sender_email = _email_sender_for_notification_type(notification_type)
 
         # Montar corpo do e-mail
         # Se houver um template HTML específico no metadata, usar.
@@ -979,8 +1012,11 @@ def send_feedback_digest_email_if_due(tenant: Tenant) -> bool:
         tenant.save(update_fields=["feedback_digest_last_sent", "updated_at"])
         return False
     subject = "Digest de feedbacks"
-    sender_email = settings.EMAIL_HOST_USER or getattr(
-        settings, "DEFAULT_FROM_EMAIL", "noreply@localhost"
+    # BE-MARKETING-02 (#477): "notificações de feedback da plataforma" -> support@.
+    sender_email = (
+        getattr(settings, "EMAIL_FROM_SUPPORT", "")
+        or settings.EMAIL_HOST_USER
+        or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@localhost")
     )
     text_lines: List[str] = []
     html_lines: List[str] = []

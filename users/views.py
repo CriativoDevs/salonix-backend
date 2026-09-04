@@ -1416,7 +1416,10 @@ class TenantStaffAccessLinkView(APIView):
             )
 
             subject = "Acesso ao painel • TimelyOne"
-            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
+            # BE-MARKETING-02 (#477): acesso/reset de senha de staff -> support@.
+            from_email = getattr(settings, "EMAIL_FROM_SUPPORT", None) or getattr(
+                settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
+            )
             text_body = (
                 "Receba um link para acessar redefinindo sua senha.\n\n"
                 f"Clique no link a seguir: {link}\n\n"
@@ -1604,7 +1607,10 @@ class PasswordResetRequestView(APIView):
             )
 
             subject = "Recuperação de senha • TimelyOne"
-            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost")
+            # BE-MARKETING-02 (#477): recuperação de senha -> support@.
+            from_email = getattr(settings, "EMAIL_FROM_SUPPORT", None) or getattr(
+                settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
+            )
             text_body = (
                 "Recebemos um pedido para redefinir a sua senha.\n\n"
                 f"Se foi você, clique no link a seguir: {link}\n\n"
