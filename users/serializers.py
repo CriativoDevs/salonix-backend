@@ -1225,7 +1225,7 @@ class PurchaseCreditsSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
-        min_value=5.00,  # Mínimo 5 EUR
+        min_value=Decimal("5.00"),  # Mínimo 5 EUR
         help_text="Quantidade de créditos a comprar em EUR (mínimo 5.00)",
     )
 
