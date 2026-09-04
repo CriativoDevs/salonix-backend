@@ -1,7 +1,7 @@
 -r requirements.txt
 
 Faker==33.1.0
-pytest==9.0.2
+pytest==9.1.1
 pytest-django==4.11.1
 pyright
 django-stubs
