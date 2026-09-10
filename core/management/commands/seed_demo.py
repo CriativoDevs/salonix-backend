@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 from core.models import Professional, Service, ScheduleSlot, Appointment, SalonCustomer
+from inventory.models import InventoryItem
 from users.models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
 
 
@@ -416,6 +417,29 @@ class Command(BaseCommand):
                 },
             )
             created_counts["services_created"] = int(s1_new) + int(s2_new) + int(s3_new)
+
+            # --- Itens de estoque (inclui alguns abaixo do mínimo, para
+            # testar o card de alerta no dashboard mobile/web -- MOB-STOCK-01). ---
+            inventory_items_data = [
+                ("Luvas descartáveis", "cx", 3, 5),
+                ("Tinta de cabelo", "unidade", 2, 4),
+                ("Toalhas", "unidade", 40, 10),
+                ("Shampoo profissional", "frasco", 15, 5),
+                ("Agulhas", "cx", 8, 3),
+            ]
+            inventory_items_created = 0
+            for name, unit, quantity, minimum_quantity in inventory_items_data:
+                item, item_created = InventoryItem.objects.get_or_create(
+                    tenant=default_tenant,
+                    name=name,
+                    defaults={
+                        "unit": unit,
+                        "quantity": quantity,
+                        "minimum_quantity": minimum_quantity,
+                    },
+                )
+                inventory_items_created += int(item_created)
+            created_counts["inventory_items_created"] = inventory_items_created
 
             # Buscar professionals para criar slots
             alice_professional = Professional.objects.filter(
