@@ -623,9 +623,17 @@ class Tenant(models.Model):
                 "reports_standard_enabled": self.can_use_standard_reports(),
                 "reports_advanced_enabled": self.can_use_advanced_reports(),
                 "pwa_admin_enabled": self.pwa_admin_enabled,
-                "pwa_client_enabled": self.can_use_pwa_client(),
-                "rn_admin_enabled": self.can_use_native_admin(),
-                "rn_client_enabled": self.can_use_native_client(),
+                # BE-BUG-01 (#537): entitlement por plano (gating), usado por
+                # RequiresMobileAccess e permissões afins. Quase sempre True
+                # em Basic/Founder — não confundir com o toggle bruto abaixo.
+                "can_use_pwa_client": self.can_use_pwa_client(),
+                "can_use_native_admin": self.can_use_native_admin(),
+                "can_use_native_client": self.can_use_native_client(),
+                # Estado bruto do toggle configurado pelo tenant (o mesmo
+                # valor lido/escrito por TenantModulesSettingsView).
+                "pwa_client_enabled": self.pwa_client_enabled,
+                "rn_admin_enabled": self.rn_admin_enabled,
+                "rn_client_enabled": self.rn_client_enabled,
             },
             "notifications": {
                 "push_web": self.push_web_enabled,

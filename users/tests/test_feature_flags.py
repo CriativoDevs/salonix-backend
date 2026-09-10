@@ -445,6 +445,107 @@ class TestTenantMetaEndpoint:
 
 
 @pytest.mark.django_db
+class TestTenantMetaRawModuleFlags:
+    """BE-BUG-01 (#537): feature_flags.modules deve expor o estado bruto dos
+    toggles (pwa_client_enabled/rn_admin_enabled/rn_client_enabled) separado
+    da entitlement por plano (can_use_pwa_client/can_use_native_admin/
+    can_use_native_client), que continua sempre True para Basic/Founder.
+    """
+
+    def setup_method(self):
+        self.client = APIClient()
+
+    def test_raw_flags_reflect_model_even_when_disabled(self):
+        """Basic com todos os toggles desligados: GET deve devolver False bruto,
+        mas can_use_* deve continuar True (entitlement por plano)."""
+        tenant = Tenant.objects.create(
+            name="Raw Flags Salon",
+            slug="raw-flags-salon",
+            plan_tier=Tenant.PLAN_BASIC,
+            pwa_client_enabled=False,
+            rn_admin_enabled=False,
+            rn_client_enabled=False,
+        )
+
+        url = reverse("tenant_meta")
+        response = self.client.get(url, {"tenant": "raw-flags-salon"})
+
+        assert response.status_code == status.HTTP_200_OK
+        modules = response.json()["feature_flags"]["modules"]
+
+        # Estado bruto do model (o que o tenant efetivamente configurou)
+        assert modules["pwa_client_enabled"] is False
+        assert modules["rn_admin_enabled"] is False
+        assert modules["rn_client_enabled"] is False
+
+        # Entitlement por plano continua True para Basic (não deve regredir)
+        assert modules["can_use_pwa_client"] is True
+        assert modules["can_use_native_admin"] is True
+        assert modules["can_use_native_client"] is True
+
+        # E o método de gating usado por RequiresMobileAccess não muda
+        assert tenant.can_use_pwa_client() is True
+        assert tenant.can_use_native_admin() is True
+        assert tenant.can_use_native_client() is True
+
+    def test_raw_flags_reflect_model_when_enabled(self):
+        tenant = Tenant.objects.create(
+            name="Raw Flags On Salon",
+            slug="raw-flags-on-salon",
+            plan_tier=Tenant.PLAN_FOUNDER,
+            pwa_client_enabled=True,
+            rn_admin_enabled=True,
+            rn_client_enabled=True,
+        )
+
+        url = reverse("tenant_meta")
+        response = self.client.get(url, {"tenant": "raw-flags-on-salon"})
+
+        assert response.status_code == status.HTTP_200_OK
+        modules = response.json()["feature_flags"]["modules"]
+
+        assert modules["pwa_client_enabled"] is True
+        assert modules["rn_admin_enabled"] is True
+        assert modules["rn_client_enabled"] is True
+        assert modules["can_use_pwa_client"] is True
+        assert modules["can_use_native_admin"] is True
+        assert modules["can_use_native_client"] is True
+
+    def test_requires_mobile_access_gating_unaffected_by_raw_toggle_off(self):
+        """RequiresMobileAccess deve continuar liberando acesso para
+        Basic/Founder mesmo com rn_admin_enabled/rn_client_enabled em False,
+        pois o gating usa can_use_native_admin/can_use_native_client, não o
+        campo bruto."""
+        from users.permissions import RequiresMobileAccess
+        from django.test import RequestFactory
+
+        tenant = Tenant.objects.create(
+            name="Gating Salon",
+            slug="gating-salon",
+            plan_tier=Tenant.PLAN_BASIC,
+            rn_admin_enabled=False,
+            rn_client_enabled=False,
+        )
+        user = CustomUser.objects.create_user(
+            username="gating-owner",
+            email="gating@owner.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+
+        factory = RequestFactory()
+        permission = RequiresMobileAccess()
+
+        django_request = factory.get("/", HTTP_X_APP_TYPE="admin")
+        django_request.user = user
+        assert permission.has_permission(django_request, None) is True
+
+        django_request = factory.get("/", HTTP_X_APP_TYPE="client")
+        django_request.user = user
+        assert permission.has_permission(django_request, None) is True
+
+
+@pytest.mark.django_db
 class TestPlanUpgradeScenarios:
     """Testes para cenários de upgrade de plano."""
 
