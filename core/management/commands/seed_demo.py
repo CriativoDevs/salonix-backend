@@ -9,7 +9,14 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
-from core.models import Professional, Service, ScheduleSlot, Appointment, SalonCustomer
+from core.models import (
+    Professional,
+    ProfessionalService,
+    Service,
+    ScheduleSlot,
+    Appointment,
+    SalonCustomer,
+)
 from inventory.models import InventoryItem
 from users.models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger
 
@@ -451,6 +458,24 @@ class Command(BaseCommand):
             professionals = [
                 p for p in [alice_professional, bruno_professional] if p is not None
             ]
+
+            # Vincular os profissionais aos serviços (FEW-CLIENT-REVIEW-01):
+            # sem isso, PublicProfessionalListView (usada pelo cliente ao
+            # agendar) não retorna nenhum profissional para nenhum serviço,
+            # mesmo já existindo agendamentos históricos com esses pares.
+            professional_service_links_created = 0
+            for professional in professionals:
+                for service in [svc1, svc2, svc3]:
+                    _, link_created = ProfessionalService.objects.get_or_create(
+                        tenant=default_tenant,
+                        professional=professional,
+                        service=service,
+                        defaults={"is_active": True},
+                    )
+                    professional_service_links_created += int(link_created)
+            created_counts["professional_service_links_created"] = (
+                professional_service_links_created
+            )
 
             # --- Clientes extra para diversidade nos relatórios (Top Serviços,
             # Novos vs Recorrentes, Receita por semana etc.) -- além do

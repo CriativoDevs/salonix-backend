@@ -52,6 +52,44 @@ class TestClientLoginFlow:
         assert response.data["tenant_id"] == self.tenant.id
         assert response.data["customer_id"] == self.customer.id
 
+    def test_login_success_with_stale_bearer_token_in_header(self):
+        """FEW-CLIENT-REVIEW-01 (#310): o frontend anexa o Bearer token da
+        sessão ativa em qualquer request cuja URL não esteja na allowlist de
+        endpoints públicos. `ClientLoginView` não tinha `authentication_classes
+        = []`, então um token antigo (de outra sessão de cliente, ou já
+        expirado) no header fazia o DRF tentar autenticar com o
+        `JWTVersionAuthentication` global e falhar com 401 "User not found"
+        antes mesmo do `AllowAny` ser avaliado — cliente não conseguia logar
+        de jeito nenhum enquanto esse token estivesse no localStorage.
+        """
+        self.customer.set_password("securepass123")
+        self.customer.save()
+
+        # Token de acesso de cliente de uma sessão qualquer — claims válidas
+        # de JWT, mas sem "user_id" reconhecível por JWTVersionAuthentication.
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        stale_token = AccessToken()
+        stale_token["scope"] = "client"
+        stale_token["tenant_id"] = self.tenant.id
+        stale_token["customer_id"] = self.customer.id
+
+        url = reverse("clients_login")
+        data = {
+            "email": "client@test.com",
+            "password": "securepass123",
+            "tenant_slug": "test-salon",
+        }
+        response = self.client.post(
+            url,
+            data,
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {stale_token}",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "access" in response.data
+
     def test_login_invalid_password(self):
         self.customer.set_password("securepass123")
         self.customer.save()

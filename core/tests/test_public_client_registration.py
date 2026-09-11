@@ -11,11 +11,11 @@ class TestPublicClientRegistrationSerializer:
         assert serializer.is_valid(), serializer.errors
         assert serializer.validated_data["email"] == "maria@example.com"
 
-    def test_valid_with_phone_only(self):
+    def test_phone_only_is_invalid(self):
         serializer = PublicClientRegistrationSerializer(
             data={"name": "João Costa", "phone_number": "+351912345678"}
         )
-        assert serializer.is_valid(), serializer.errors
+        assert not serializer.is_valid()
 
     def test_missing_name_is_invalid(self):
         serializer = PublicClientRegistrationSerializer(

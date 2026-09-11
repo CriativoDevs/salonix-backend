@@ -293,6 +293,19 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
         return data
 
 
+class SalonCustomerClientProfileSerializer(SalonCustomerSerializer):
+    """Perfil do próprio cliente (`/api/clients/me/profile/`).
+
+    Igual a `SalonCustomerSerializer`, mas sem `notes` — esse campo é para
+    anotações internas do staff sobre o cliente (visíveis no Django Admin) e
+    nunca deve ser exposto/editável pelo próprio cliente (FEW-CLIENT-REVIEW-01,
+    issue #310).
+    """
+
+    class Meta(SalonCustomerSerializer.Meta):
+        fields = [f for f in SalonCustomerSerializer.Meta.fields if f != "notes"]
+
+
 class PublicClientRegistrationSerializer(serializers.Serializer):
     """
     Serializer para auto-cadastro público de clientes (BE-MARKETING-03).
@@ -331,11 +344,9 @@ class PublicClientRegistrationSerializer(serializers.Serializer):
         return sanitized
 
     def validate(self, data):
-        email = data.get("email")
-        phone = data.get("phone_number")
-        if not email and not phone:
+        if not data.get("email"):
             raise serializers.ValidationError(
-                "Informe pelo menos email ou telefone para o cliente."
+                "Informe um email para receber o link de acesso."
             )
         return data
 
