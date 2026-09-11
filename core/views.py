@@ -57,6 +57,7 @@ from core.serializers import (
     MixedBulkAppointmentResponseSerializer,
     ProfessionalSerializer,
     SalonCustomerSerializer,
+    SalonCustomerClientProfileSerializer,
     ServiceSerializer,
     ScheduleSlotSerializer,
     ClientAccessLinkRequestSerializer,
@@ -481,7 +482,9 @@ class PublicSlotListView(ListAPIView):
         )
 
         qs = ScheduleSlot.objects.filter(
-            professional_id=int(professional_id), is_available=True
+            professional_id=int(professional_id),
+            is_available=True,
+            start_time__gte=timezone.now(),
         )
 
         date_from = self.request.query_params.get("date_from")
@@ -559,6 +562,7 @@ class PublicClientRegistrationView(APIView):
     """
 
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
     throttle_classes = [UsersClientRegistrationThrottle]
     throttle_scope = "clients_registration"
 
@@ -2567,6 +2571,7 @@ class ClientAccessLinkView(TenantIsolatedMixin, APIView):
 
 class PublicClientAccessLinkView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
     throttle_classes = [UsersClientAccessLinkThrottle]
     throttle_scope = "clients_access_link"
 
@@ -2708,6 +2713,7 @@ class PublicClientAccessLinkView(APIView):
 
 class ClientAccessAcceptView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
     throttle_classes = [UsersClientAccessLinkThrottle]
     throttle_scope = "clients_access_link"
 
@@ -2846,6 +2852,7 @@ class ClientAccessAcceptView(APIView):
 
 class ClientLoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
     throttle_classes = [UsersClientAccessLinkThrottle]
 
     @extend_schema(
@@ -2974,11 +2981,48 @@ class ClientSetPasswordView(APIView):
         return Response({"status": "password_set"}, status=drf_status.HTTP_200_OK)
 
 
+def _paginate_client_appointments(request, qs):
+    """Pagina uma queryset de Appointment para os endpoints /clients/me/appointments/*.
+
+    Sem DRF pagination class porque essas views são APIView simples (autenticação
+    manual via JWT, ver `_get_client_from_jwt`) — implementação própria, minimalista,
+    limit/offset com `has_more` (FEW-CLIENT-REVIEW-01, issue #310: antes devolvia
+    a lista inteira sem limite, crescendo sem controle ao longo dos meses).
+    """
+    try:
+        limit = int(request.query_params.get("limit", 20))
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 100))
+
+    try:
+        offset = int(request.query_params.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+
+    page = list(qs[offset : offset + limit + 1])
+    has_more = len(page) > limit
+    page = page[:limit]
+
+    ser = AppointmentDetailSerializer(page, many=True)
+    return Response(
+        {"results": ser.data, "has_more": has_more},
+        status=drf_status.HTTP_200_OK,
+    )
+
+
 class ClientsMeAppointmentsUpcomingView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # No auto-authentication, we handle JWT manually
 
-    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", int, description="Máximo 100, padrão 20."),
+            OpenApiParameter("offset", int, description="Padrão 0."),
+        ],
+        responses={200: AppointmentDetailSerializer(many=True)},
+    )
     def get(self, request):
         tenant, customer = _get_client_from_jwt(request)
         now = timezone.now()
@@ -2992,15 +3036,20 @@ class ClientsMeAppointmentsUpcomingView(APIView):
             .select_related("slot", "service", "professional")
             .order_by("slot__start_time")
         )
-        ser = AppointmentDetailSerializer(qs, many=True)
-        return Response(ser.data, status=drf_status.HTTP_200_OK)
+        return _paginate_client_appointments(request, qs)
 
 
 class ClientsMeAppointmentsHistoryView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # No auto-authentication, we handle JWT manually
 
-    @extend_schema(responses={200: AppointmentDetailSerializer(many=True)})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", int, description="Máximo 100, padrão 20."),
+            OpenApiParameter("offset", int, description="Padrão 0."),
+        ],
+        responses={200: AppointmentDetailSerializer(many=True)},
+    )
     def get(self, request):
         tenant, customer = _get_client_from_jwt(request)
         now = timezone.now()
@@ -3014,8 +3063,7 @@ class ClientsMeAppointmentsHistoryView(APIView):
             .select_related("slot", "service", "professional")
             .order_by("-slot__start_time")
         )
-        ser = AppointmentDetailSerializer(qs, many=True)
-        return Response(ser.data, status=drf_status.HTTP_200_OK)
+        return _paginate_client_appointments(request, qs)
 
 
 class ClientsMeAppointmentCreateView(APIView):
@@ -3162,14 +3210,17 @@ class ClientsMeProfileView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # No auto-authentication, we handle JWT manually
 
-    @extend_schema(responses={200: SalonCustomerSerializer})
+    @extend_schema(responses={200: SalonCustomerClientProfileSerializer})
     def get(self, request):
         _, customer = _get_client_from_jwt(request)
-        ser = SalonCustomerSerializer(customer)
+        ser = SalonCustomerClientProfileSerializer(
+            customer, context={"request": request}
+        )
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
     @extend_schema(
-        request=SalonCustomerSerializer, responses={200: SalonCustomerSerializer}
+        request=SalonCustomerClientProfileSerializer,
+        responses={200: SalonCustomerClientProfileSerializer},
     )
     def patch(self, request):
         tenant, customer = _get_client_from_jwt(request)
@@ -3178,11 +3229,12 @@ class ClientsMeProfileView(APIView):
             "phone_number",
             "photo",
             "birthday",
-            "notes",
             "marketing_opt_in",
         }
         data = {k: v for k, v in request.data.items() if k in allowed}
-        ser = SalonCustomerSerializer(customer, data=data, partial=True)
+        ser = SalonCustomerClientProfileSerializer(
+            customer, data=data, partial=True, context={"request": request}
+        )
         ser.is_valid(raise_exception=True)
         ser.save(tenant=tenant)
         return Response(ser.data, status=drf_status.HTTP_200_OK)
