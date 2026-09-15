@@ -14,6 +14,16 @@ from payments.models import Subscription, PaymentCustomer
     STRIPE_PRICE_BASIC_MONTHLY_ID="price_basic_test",
 )
 class CheckoutTrialTestCase(APITestCase):
+    """
+    BE-TRIAL-04: o trial de 14 dias vive inteiramente na plataforma
+    (Tenant.is_trial_expired(), BE-TRIAL-01). Sem checkout no registro, o
+    primeiro checkout de qualquer tenant é sempre pós-trial (ou um pagamento
+    voluntário antecipado, durante o trial). Conceder trial_period_days aqui
+    duplicaria o período grátis (14 dias na plataforma + 14 dias no Stripe).
+    O Stripe nunca mais concede trial próprio -- a cobrança no checkout é
+    sempre imediata, independentemente do histórico de Subscription.
+    """
+
     def setUp(self):
         # Create user and tenant
         self.user = CustomUser.objects.create_user(
@@ -64,54 +74,44 @@ class CheckoutTrialTestCase(APITestCase):
         self.patcher.stop()
         self.founder_patcher.stop()
 
-    def test_new_customer_gets_trial(self):
-        """User with no subscription history should get trial days."""
-        response = self.client.post(self.url, {"plan": "basic"})
-        self.assertEqual(response.status_code, 200)
-
-        # Check call args
+    def _assert_no_trial_granted(self):
         _, kwargs = self.mock_stripe.checkout.Session.create.call_args
         subscription_data = kwargs.get("subscription_data", {})
-        self.assertEqual(subscription_data.get("trial_period_days"), 14)
+        self.assertNotIn("trial_period_days", subscription_data)
+        self.assertFalse(subscription_data.get("trial_from_plan", True))
+
+    def test_new_customer_without_subscription_history_gets_no_trial(self):
+        """Primeiro checkout de todos (sem checkout no registro) -- cobrança
+        imediata, sem trial_period_days do Stripe."""
+        response = self.client.post(self.url, {"plan": "basic"})
+        self.assertEqual(response.status_code, 200)
+        self._assert_no_trial_granted()
 
     def test_active_subscription_no_trial(self):
-        """User with active subscription should NOT get trial."""
         Subscription.objects.create(
             user=self.user, stripe_subscription_id="sub_active", status="active"
         )
 
         response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
-
-        _, kwargs = self.mock_stripe.checkout.Session.create.call_args
-        subscription_data = kwargs.get("subscription_data", {})
-        self.assertNotIn("trial_period_days", subscription_data)
-        self.assertFalse(subscription_data.get("trial_from_plan", True))
+        self._assert_no_trial_granted()
 
     def test_canceled_subscription_no_trial(self):
-        """User with canceled subscription should NOT get trial."""
         Subscription.objects.create(
             user=self.user, stripe_subscription_id="sub_canceled", status="canceled"
         )
 
         response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
+        self._assert_no_trial_granted()
 
-        _, kwargs = self.mock_stripe.checkout.Session.create.call_args
-        subscription_data = kwargs.get("subscription_data", {})
-        self.assertNotIn("trial_period_days", subscription_data)
-
-    def test_incomplete_subscription_gets_trial(self):
-        """User with only incomplete subscription SHOULD get trial."""
+    def test_incomplete_subscription_no_trial(self):
+        """Checkout abandonado (incomplete) também não deve gerar trial --
+        antes era o único caso que ainda concedia; agora nenhum caso concede."""
         Subscription.objects.create(
             user=self.user, stripe_subscription_id="sub_incomplete", status="incomplete"
         )
 
         response = self.client.post(self.url, {"plan": "basic"})
         self.assertEqual(response.status_code, 200)
-
-        _, kwargs = self.mock_stripe.checkout.Session.create.call_args
-        subscription_data = kwargs.get("subscription_data", {})
-
-        # This is expected to fail before the fix
-        self.assertEqual(subscription_data.get("trial_period_days"), 14)
+        self._assert_no_trial_granted()
