@@ -1,8 +1,14 @@
 """
-Regressão de produção: um tenant nasce com billing_mode=Stripe, is_active=True
-e (se havia vaga) is_founder=True já no cadastro (users/serializers.py), antes
-de qualquer pagamento. Se o checkout nunca é concluído, nada revoga esse
-acesso. `deactivate_unpaid_signups` fecha essa lacuna.
+BE-TRIAL-02: deactivate_unpaid_signups virou no-op.
+
+O comando existia para o fluxo antigo (checkout no registro): um tenant que
+abandonava o checkout mantinha acesso completo indefinidamente, então o cron
+desativava a conta após o período de carência. Com o checkout removido do
+registro (BE-TRIAL-01), todo tenant sem pagamento passaria por esse mesmo
+caminho após o trial -- desativar contradiz a decisão de bloqueio brando
+indefinido (Tenant.is_trial_expired() + HasActiveTrialOrSubscription já
+bloqueiam o acesso sem apagar/desativar). O comando é mantido como no-op só
+para não quebrar o Cron Job já configurado em produção.
 """
 
 from datetime import timedelta
@@ -11,7 +17,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from users.models import Tenant, UserFeatureFlags
+from users.models import Tenant
 
 
 def _backdate(tenant, days):
@@ -22,56 +28,10 @@ def _backdate(tenant, days):
 
 
 @pytest.mark.django_db
-def test_deactivates_tenant_past_grace_without_payment(tenant_fixture, user_fixture):
-    _backdate(tenant_fixture, days=15)
-
-    call_command("deactivate_unpaid_signups")
-
-    tenant_fixture.refresh_from_db()
-    assert tenant_fixture.is_active is False
-
-
-@pytest.mark.django_db
-def test_keeps_tenant_still_within_grace_period(tenant_fixture, user_fixture):
-    _backdate(tenant_fixture, days=5)
-
-    call_command("deactivate_unpaid_signups")
-
-    tenant_fixture.refresh_from_db()
-    assert tenant_fixture.is_active is True
-
-
-@pytest.mark.django_db
-def test_keeps_tenant_currently_trialing(tenant_fixture, user_fixture):
-    _backdate(tenant_fixture, days=15)
-    ff = user_fixture.featureflags
-    ff.pro_status = UserFeatureFlags.STATUS_TRIALING
-    ff.save(update_fields=["pro_status"])
-
-    call_command("deactivate_unpaid_signups")
-
-    tenant_fixture.refresh_from_db()
-    assert tenant_fixture.is_active is True
-
-
-@pytest.mark.django_db
-def test_keeps_tenant_with_confirmed_paid_subscription(tenant_fixture, user_fixture):
-    _backdate(tenant_fixture, days=15)
-    ff = user_fixture.featureflags
-    ff.pro_status = UserFeatureFlags.STATUS_ACTIVE
-    ff.save(update_fields=["pro_status"])
-
-    call_command("deactivate_unpaid_signups")
-
-    tenant_fixture.refresh_from_db()
-    assert tenant_fixture.is_active is True
-
-
-@pytest.mark.django_db
-def test_ignores_promotional_tenants(tenant_fixture, user_fixture):
-    _backdate(tenant_fixture, days=15)
-    tenant_fixture.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
-    tenant_fixture.save(update_fields=["billing_mode"])
+def test_never_deactivates_tenant_past_grace_without_payment(
+    tenant_fixture, user_fixture
+):
+    _backdate(tenant_fixture, days=100)
 
     call_command("deactivate_unpaid_signups")
 

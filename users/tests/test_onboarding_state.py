@@ -103,13 +103,36 @@ class TestBillingState:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["billing_pending"] is False
 
-    def test_onboarding_state_billing_pending_for_stripe_tenant_without_subscription(
+    def test_onboarding_state_completed_for_stripe_tenant_within_trial(
         self,
     ):
-        """billing_mode=stripe sem Subscription -- onboarding pendente, correto."""
+        """BE-TRIAL-01/02: billing_mode=stripe sem Subscription, mas ainda
+        dentro do trial de 14 dias (created_at recente) -- onboarding
+        completo, tenant acessa a plataforma normalmente. Sem checkout no
+        registro, "sem Subscription" é o estado normal durante todo o
+        trial, não sinal de onboarding pendente."""
+        response = self.client.get(self.url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["onboarding_state"] == "completed"
+        assert response.data["is_trial_expired"] is False
+
+    def test_onboarding_state_billing_pending_after_trial_expired(self):
+        """Sem Subscription e trial já expirado (created_at antigo) -- aí
+        sim onboarding pendente, o tenant precisa pagar para continuar."""
+        from django.conf import settings
+
+        trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
+        Tenant.objects.filter(pk=self.tenant.pk).update(
+            created_at=timezone.now() - timedelta(days=trial_days + 1)
+        )
+        # self.user.tenant é o mesmo objeto Python que self.tenant (setado
+        # diretamente no create()); refletir o update() feito via queryset.
+        self.tenant.refresh_from_db()
+
         response = self.client.get(self.url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["onboarding_state"] == "billing_pending"
+        assert response.data["is_trial_expired"] is True
 
     def test_onboarding_state_completed_for_promotional_tenant(self):
         """Tenant promocional nunca passa por checkout Stripe -- nunca terá uma
