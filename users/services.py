@@ -255,32 +255,15 @@ class FounderService:
         """
         Retorna a disponibilidade do plano Founder.
 
-        Returns:
-            Dict com 'total_limit', 'used_count' e 'remaining_count'.
+        BE-TRIAL-03: contagem por Tenant.is_founder=True diretamente, não por
+        histórico de Subscription. Sem checkout no registro (BE-TRIAL-01),
+        um tenant Founder novo só ganha uma Subscription real quando paga
+        (pós-trial) -- contar via Subscription deixava o used_count sempre
+        zerado durante o trial inteiro, permitindo estourar as 500 vagas.
+        is_founder=True já reflete a ocupação real da vaga no momento;
+        TenantService.cancel_tenant zera a flag ao cancelar, liberando a vaga.
         """
-        # Contar HISTÓRICO de quantos tenants JÁ USARAM Founder (não apenas os ativos)
-        # Busca em subscriptions para pegar histórico, não apenas is_founder atual
-        try:
-            from payments.models import Subscription
-            from payments.stripe_utils import get_plan_code_from_price
-
-            # Pega todos os tenants que já tiveram subscription Founder alguma vez
-            founder_subscriptions = Subscription.objects.filter(
-                price_id__isnull=False
-            ).select_related("user__tenant")
-
-            founder_tenant_ids = set()
-            for sub in founder_subscriptions:
-                if sub.price_id:
-                    plan = get_plan_code_from_price(sub.price_id)
-                    if plan == "founder" and sub.user and sub.user.tenant:
-                        founder_tenant_ids.add(sub.user.tenant.id)
-
-            used_count = len(founder_tenant_ids)
-        except (ImportError, Exception) as e:
-            # Fallback: se erro ao importar ou buscar subscriptions, usa o método antigo
-            print(f"[FounderService] Erro ao buscar histórico: {e}. Usando fallback.")
-            used_count = Tenant.objects.filter(is_founder=True, is_active=True).count()
+        used_count = Tenant.objects.filter(is_founder=True).count()
 
         remaining_count = max(0, cls.FOUNDER_LIMIT - used_count)
 
