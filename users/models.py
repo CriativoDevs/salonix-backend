@@ -9,7 +9,7 @@ from typing import Any, cast
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
-from datetime import time
+from datetime import time, timedelta
 
 from .managers import CustomUserManager
 from .validators import validate_logo_image, validate_profile_image
@@ -475,6 +475,29 @@ class Tenant(models.Model):
             UserFeatureFlags.STATUS_ACTIVE,
             UserFeatureFlags.STATUS_PAST_DUE,
         )
+
+    def is_trial_expired(self) -> bool:
+        """BE-TRIAL-01: True se o trial de 14 dias do registro já passou sem
+        pagamento confirmado.
+
+        Sem checkout no fluxo de registro, nenhuma Subscription Stripe existe
+        para disparar o webhook que alimenta UserFeatureFlags.pro_status —
+        is_in_trial() fica sempre False, tanto durante quanto depois do
+        trial. Esta é a fonte própria, baseada em created_at, usada pelo gate
+        de acesso pós-trial (bloqueio brando na FEW/MOB).
+        """
+        if not self.uses_stripe_billing():
+            return False
+        if self.has_active_paid_subscription():
+            return False
+        trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
+        if trial_days <= 0:
+            # STRIPE_TRIAL_DAYS ausente/malformado no ambiente (fallback de
+            # _safe_int). Falhar aberto: preferível não bloquear a travar
+            # toda a base de tenants por uma env var quebrada.
+            return False
+        trial_ends_at = self.created_at + timedelta(days=trial_days)
+        return timezone.now() >= trial_ends_at
 
     def can_use_native_admin(self):
         """Verifica se pode usar app nativo Admin.
