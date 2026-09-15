@@ -50,44 +50,19 @@ class TestFounderPlan:
         assert tenant.is_active is False
         assert tenant.is_founder is False
 
-    @patch("payments.stripe_utils.get_plan_code_from_price")
-    def test_founder_availability_endpoint(self, mock_get_plan):
-        """Testa o endpoint de disponibilidade do Founder."""
-        mock_get_plan.return_value = "founder"
+    def test_founder_availability_endpoint(self):
+        """Testa o endpoint de disponibilidade do Founder.
 
-        from payments.models import Subscription
-
+        BE-TRIAL-03: contagem por Tenant.is_founder=True diretamente -- não
+        depende de Subscription (que só existe após pagamento real, pós-trial).
+        """
         client = APIClient()
         url = reverse("founder_availability")
 
-        # Cria alguns founders com subscriptions
-        t1 = Tenant.objects.create(
-            name="F1", slug="f1", is_founder=True, is_active=True
-        )
-        u1 = CustomUser.objects.create_user(
-            username="u1", email="u1@test.com", password="pass", tenant=t1
-        )
-        Subscription.objects.create(
-            user=u1,
-            stripe_subscription_id="sub_f1",
-            price_id="price_founder_1",
-            status="active",
-        )
-
-        t2 = Tenant.objects.create(
-            name="F2", slug="f2", is_founder=True, is_active=True
-        )
-        u2 = CustomUser.objects.create_user(
-            username="u2", email="u2@test.com", password="pass", tenant=t2
-        )
-        Subscription.objects.create(
-            user=u2,
-            stripe_subscription_id="sub_f2",
-            price_id="price_founder_2",
-            status="active",
-        )
-
-        # Inativo não deve contar se não tem subscription founder
+        # Founders contam independentemente de terem Subscription (trial sem
+        # checkout no registro) ou de estarem ativos.
+        Tenant.objects.create(name="F1", slug="f1", is_founder=True, is_active=True)
+        Tenant.objects.create(name="F2", slug="f2", is_founder=True, is_active=True)
         Tenant.objects.create(name="F3", slug="f3", is_founder=True, is_active=False)
         # Não founder não conta
         Tenant.objects.create(name="NF1", slug="nf1", is_founder=False, is_active=True)
@@ -98,8 +73,8 @@ class TestFounderPlan:
         data = response.data
 
         assert data["total_limit"] == 500
-        assert data["used_count"] == 2
-        assert data["remaining_count"] == 498
+        assert data["used_count"] == 3
+        assert data["remaining_count"] == 497
 
     @patch("payments.stripe_utils.get_plan_code_from_price")
     def test_founder_limit_enforcement(self, mock_get_plan):
@@ -422,6 +397,10 @@ class TestFounderAvailabilityEndpointTenantAware:
         assert response.data["remaining_count"] == 0
 
     def test_authenticated_active_founder_tenant_still_sees_remaining(self):
+        """BE-TRIAL-03: o próprio tenant Founder autenticado agora conta como
+        vaga usada (is_founder=True), então de 500 vagas restam 499 -- antes
+        a contagem via Subscription ignorava founders sem Subscription
+        (trial sem checkout no registro), inflando indevidamente o restante."""
         from django.urls import reverse
         from rest_framework.test import APIClient
 
@@ -441,7 +420,7 @@ class TestFounderAvailabilityEndpointTenantAware:
         response = client.get(url)
 
         assert response.status_code == 200
-        assert response.data["remaining_count"] == 500
+        assert response.data["remaining_count"] == 499
 
     def test_authenticated_fresh_tenant_sees_global_remaining(self):
         from django.urls import reverse
