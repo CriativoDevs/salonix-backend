@@ -156,19 +156,15 @@ class CreateCheckoutSession(APIView):
 
         subscription_data = {}
 
-        has_existing_subscription = (
-            Subscription.objects.filter(
-                user__tenant=request.user.tenant,
-            )
-            .exclude(status__in=["incomplete", "incomplete_expired"])
-            .exists()
-        )
-
-        trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", 0)
-        if trial_days and not has_existing_subscription:
-            subscription_data["trial_period_days"] = trial_days
-        else:
-            subscription_data["trial_from_plan"] = False
+        # BE-TRIAL-04: o trial de 14 dias vive inteiramente na plataforma
+        # (Tenant.is_trial_expired(), BE-TRIAL-01). Sem checkout no registro,
+        # o primeiro checkout de qualquer tenant é sempre pós-trial (ou um
+        # pagamento voluntário antecipado, ainda dentro do trial) -- nunca a
+        # primeira etapa do cadastro. Conceder trial_period_days aqui
+        # duplicaria o período grátis (14 dias na plataforma + 14 dias no
+        # Stripe). O Stripe nunca concede trial próprio; a cobrança no
+        # checkout é sempre imediata.
+        subscription_data["trial_from_plan"] = False
 
         subscription_data["metadata"] = metadata
         params["subscription_data"] = subscription_data

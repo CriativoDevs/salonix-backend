@@ -247,7 +247,12 @@ def test_checkout_trial_suppressed_for_other_user_in_same_tenant(
 
 
 @pytest.mark.django_db
-def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_client):
+def test_checkout_never_grants_stripe_trial_for_new_customer(
+    monkeypatch, settings, auth_client
+):
+    """BE-TRIAL-04: o trial vive na plataforma (Tenant.is_trial_expired()),
+    não mais no Stripe -- conceder trial_period_days aqui duplicaria o
+    período grátis (14 dias na plataforma + 14 no Stripe)."""
     monkeypatch.setattr(
         "users.services.FounderService.get_availability",
         lambda: {"total_limit": 500, "used_count": 500, "remaining_count": 0},
@@ -281,7 +286,8 @@ def test_checkout_trial_applied_for_new_customer(monkeypatch, settings, auth_cli
 
     created_kwargs = _StripeCheckoutSession.last_kwargs
     assert created_kwargs["line_items"][0]["price"] == "price_basic_123"
-    assert created_kwargs["subscription_data"].get("trial_period_days") == 14
+    assert "trial_period_days" not in created_kwargs["subscription_data"]
+    assert created_kwargs["subscription_data"].get("trial_from_plan") is False
 
 
 @pytest.mark.django_db
