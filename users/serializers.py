@@ -938,6 +938,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
     auto_invite_enabled = serializers.BooleanField(read_only=True)
     profile = serializers.SerializerMethodField()
+    is_trial_expired = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -962,6 +963,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "feature_flags",
             "auto_invite_enabled",
             "profile",
+            "is_trial_expired",
         ]
         read_only_fields = [
             "name",
@@ -984,6 +986,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "feature_flags",
             "auto_invite_enabled",
             "profile",
+            "is_trial_expired",
         ]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -1012,6 +1015,15 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "email": getattr(obj, "contact_email", None) or owner_email,
             "phone": getattr(obj, "contact_phone", None),
         }
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_trial_expired(self, obj):
+        """MOB-TRIAL-01: o app mobile recarrega o tenant por este endpoint
+        (público, users/tenant/meta/) em todo restart/refresh -- sem este
+        campo aqui, o bloqueio pós-trial funcionava só logo após o login
+        (via TenantSelfServiceSerializer no bootstrap) e desaparecia ao
+        reabrir o app. Mesma exposição de plan_tier já existente aqui."""
+        return obj.is_trial_expired()
 
 
 class TenantPublicSerializer(serializers.ModelSerializer):
