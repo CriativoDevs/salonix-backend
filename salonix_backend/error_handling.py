@@ -58,6 +58,7 @@ class ErrorCodes:
     BUSINESS_SLOT_UNAVAILABLE = "E203"
     BUSINESS_FEATURE_DISABLED = "E204"
     BUSINESS_PLAN_LIMIT_EXCEEDED = "E205"
+    BUSINESS_TRIAL_EXPIRED = "E206"
 
     # Erros de Sistema (E300-E399)
     SYSTEM_INTERNAL_ERROR = "E300"
@@ -116,6 +117,29 @@ class TenantError(BusinessError):
 
     def __init__(self, message: str, code: str = ErrorCodes.BUSINESS_TENANT_NOT_FOUND):
         super().__init__(message=message, code=code)
+
+
+class TrialExpiredError(SalonixError):
+    """BE-TRIAL-02: bloqueio brando pós-trial (sem checkout no registro).
+
+    402 Payment Required — o tenant existe e os dados continuam intactos,
+    só o acesso fica condicionado ao pagamento. Nunca desativa a conta.
+    """
+
+    def __init__(
+        self,
+        message: str = "O período de teste expirou. Assine um plano para continuar.",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        merged_details = {"code": "trial_expired"}
+        if details:
+            merged_details.update(details)
+        super().__init__(
+            message=message,
+            code=ErrorCodes.BUSINESS_TRIAL_EXPIRED,
+            details=merged_details,
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        )
 
 
 class FeatureDisabledError(BusinessError):

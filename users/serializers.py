@@ -96,6 +96,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
     plan = serializers.SerializerMethodField()
     billing_pending = serializers.SerializerMethodField()
     onboarding_state = serializers.SerializerMethodField()
+    is_trial_expired = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -106,6 +107,7 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             "plan",
             "billing_pending",
             "onboarding_state",
+            "is_trial_expired",
             "timezone",
             "currency",
             "preferred_language",
@@ -120,11 +122,18 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
         Retorna estado do onboarding do tenant.
 
         Estados possíveis:
-        - "billing_pending": Tenant sem assinatura ativa (precisa escolher plano)
-        - "completed": Tenant com assinatura ativa (acesso liberado), ou tenant
+        - "billing_pending": trial de 14 dias (BE-TRIAL-01) já expirou e não há
+          assinatura ativa (precisa pagar para continuar)
+        - "completed": tenant ainda dentro do trial, com assinatura ativa, ou
           em billing_mode=promotional (nunca passa por checkout Stripe --
           exigir Subscription ativa deixaria QUALQUER tenant promocional
           preso no onboarding indefinidamente, já que nunca terá uma)
+
+        BE-TRIAL-01/02: sem checkout no registro, nenhum tenant novo tem
+        Subscription até pagar de verdade -- "sem Subscription" deixou de
+        significar "precisa completar onboarding" e passou a ser o estado
+        normal durante todo o trial. Só vira "billing_pending" quando o
+        trial (Tenant.is_trial_expired()) já expirou.
 
         Returns:
             str: "billing_pending" ou "completed"
@@ -146,12 +155,19 @@ class TenantSelfServiceSerializer(serializers.ModelSerializer):
             if has_active_subscription:
                 return "completed"
 
-            # Se não tem assinatura, precisa escolher plano
-            return "billing_pending"
-
         except LookupError:
             # Se o model Subscription não existir (improvável), assume completed
             return "completed"
+
+        # Sem Subscription: só pendente se o trial já expirou de verdade.
+        if not obj.is_trial_expired():
+            return "completed"
+
+        return "billing_pending"
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_is_trial_expired(self, obj):
+        return obj.is_trial_expired()
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_billing_pending(self, obj):

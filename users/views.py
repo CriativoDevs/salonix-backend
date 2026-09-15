@@ -42,7 +42,7 @@ import secrets
 from salonix_backend.error_handling import TenantError, ErrorCodes
 from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser, TenantBusinessHours
 from .services import CreditService, TenantService, FounderService
-from .permissions import IsActiveTenant, RequiresMobileAccess
+from .permissions import IsActiveTenant, RequiresMobileAccess, HasActiveTrialOrSubscription
 from salonix_backend.pii_utils import mask_email, mask_user_repr
 
 from .serializers import (
@@ -1029,7 +1029,12 @@ class MeProfileView(APIView):
 
 
 class TenantModulesSettingsView(APIView):
-    permission_classes = [IsAuthenticated, IsActiveTenant, RequiresMobileAccess]
+    permission_classes = [
+        IsAuthenticated,
+        IsActiveTenant,
+        HasActiveTrialOrSubscription,
+        RequiresMobileAccess,
+    ]
 
     @extend_schema(
         description=(
@@ -1079,7 +1084,12 @@ class TenantModulesSettingsView(APIView):
 
 
 class TenantStaffView(APIView):
-    permission_classes = [IsAuthenticated, IsActiveTenant, RequiresMobileAccess]
+    permission_classes = [
+        IsAuthenticated,
+        IsActiveTenant,
+        HasActiveTrialOrSubscription,
+        RequiresMobileAccess,
+    ]
     # Listar staff não deve ser afetado pelo throttle de convites
     serializer_class = TenantStaffMemberSerializer
 

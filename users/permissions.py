@@ -1,6 +1,8 @@
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
+from salonix_backend.error_handling import TrialExpiredError
+
 from .models import TenantStaffMember
 
 
@@ -67,6 +69,35 @@ class IsActiveTenant(BasePermission):
             return False
 
         return True
+
+
+class HasActiveTrialOrSubscription(BasePermission):
+    """
+    BE-TRIAL-02: bloqueio brando pós-trial (sem checkout no registro).
+
+    Levanta TrialExpiredError (402, code=trial_expired) quando o trial de
+    14 dias já passou (Tenant.is_trial_expired()) e não há pagamento
+    confirmado. Nunca aplicar a endpoints de checkout/billing/auth -- o
+    tenant precisa continuar acessando esses para poder pagar e sair do
+    bloqueio.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Superusers e Ops ignoram essa regra
+        if request.user.is_superuser or getattr(request.user, "is_ops_user", False):
+            return True
+
+        tenant = getattr(request.user, "tenant", None)
+        if not tenant:
+            return True
+
+        if not tenant.is_trial_expired():
+            return True
+
+        raise TrialExpiredError()
 
 
 class HasProFeature(BasePermission):
