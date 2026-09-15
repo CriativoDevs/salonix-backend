@@ -1,5 +1,9 @@
+from datetime import timedelta
+
 import pytest
+from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 from users.models import Tenant, CustomUser
@@ -83,3 +87,22 @@ class TestTenantMetaPublic:
 
         response = self.client.get(f"{self.url}?tenant={self.tenant.slug}")
         assert response.status_code == status.HTTP_200_OK
+
+    def test_is_trial_expired_false_for_fresh_tenant(self):
+        """MOB-TRIAL-01: o app mobile recarrega o tenant via este endpoint
+        (público) em todo restart/refresh -- precisa de is_trial_expired
+        aqui também, não só no bootstrap de login (TenantSelfServiceSerializer),
+        senão o bloqueio desaparece ao reabrir o app."""
+        response = self.client.get(f"{self.url}?tenant={self.tenant.slug}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_trial_expired"] is False
+
+    def test_is_trial_expired_true_after_trial_window(self):
+        trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
+        Tenant.objects.filter(pk=self.tenant.pk).update(
+            created_at=timezone.now() - timedelta(days=trial_days + 1)
+        )
+
+        response = self.client.get(f"{self.url}?tenant={self.tenant.slug}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["is_trial_expired"] is True
