@@ -542,7 +542,25 @@ class SubscriptionService:
         interval: str = "monthly",
     ) -> Dict[str, Any]:
         """Cria uma sessão de checkout para assinatura."""
-        if plan not in cls.AVAILABLE_PLANS:
+        if plan == "founder":
+            # BE-TRIAL-05: validação explícita, não mais "por acidente" de
+            # "founder" estar ausente de AVAILABLE_PLANS. Alinhado com o
+            # checkout v1 (payments/views.py, CreateCheckoutSession): Founder
+            # só é atribuído no registo (vagas limitadas), nunca escolhido
+            # via checkout -- só um tenant JÁ Founder pode confirmar/renovar,
+            # nunca um tenant Basic "virar" Founder pelo payload do checkout.
+            from users.services import FounderService
+
+            tenant = getattr(user, "tenant", None)
+            if (
+                not tenant
+                or not tenant.is_founder
+                or not FounderService.can_assign_founder(tenant=tenant)
+            ):
+                raise ValueError(
+                    "O plano Founder não está mais disponível para você."
+                )
+        elif plan not in cls.AVAILABLE_PLANS:
             raise ValueError(f"Plano inválido: {plan}")
 
         # Obter price_id do Stripe
@@ -556,17 +574,10 @@ class SubscriptionService:
         customer_id = get_or_create_customer(user)
 
         try:
-            # BE-PLANS-02: subscrições `incomplete` (checkout abandonado) não consomem
-            # o trial — alinhado com o checkout legado (payments/views.py) e a overview.
-            has_existing = (
-                Subscription.objects.filter(user__tenant=user.tenant)
-                .exclude(status__in=["incomplete", "incomplete_expired"])
-                .exists()
-            )
-            trial_days = getattr(settings, "STRIPE_TRIAL_PERIOD_DAYS", None)
-            if trial_days is None:
-                trial_days = getattr(settings, "STRIPE_TRIAL_DAYS", 0)
-
+            # BE-TRIAL-05: mesmo fix do BE-TRIAL-04 (checkout v1) aplicado
+            # aqui. O trial de 14 dias vive inteiramente na plataforma
+            # (Tenant.is_trial_expired(), BE-TRIAL-01) -- conceder
+            # trial_period_days do Stripe duplicaria o período grátis.
             subscription_data: Dict[str, Any] = {
                 "metadata": {
                     "user_id": user.id,
@@ -574,11 +585,8 @@ class SubscriptionService:
                     "plan_code": plan,
                     "interval": interval,
                 },
+                "trial_from_plan": False,
             }
-            if trial_days and not has_existing:
-                subscription_data["trial_period_days"] = trial_days
-            else:
-                subscription_data["trial_from_plan"] = False
 
             # Criar checkout session
             session = stripe.checkout.Session.create(
