@@ -19,7 +19,7 @@ fi
 
 # Inicia o servidor da aplicação
 # Substitua 'salonix_backend.wsgi:application' pelo caminho correto do seu WSGI se for diferente
-# --workers 5: (2 x 2 vCPU) + 1, formula padrão do Gunicorn para a alocação atual do Railway (2 vCPU / 2GB)
+# --workers 2: reduzido de 5 (formula 2xvCPU+1) para cortar RAM ociosa -- tráfego atual é baixo
 # --timeout 30: default do Gunicorn, explícito para documentar a intenção
 echo "Iniciando Gunicorn..."
-exec gunicorn salonix_backend.wsgi:application --bind 0.0.0.0:$PORT --workers 5 --timeout 30 --worker-class sync
+exec gunicorn salonix_backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 30 --worker-class sync
