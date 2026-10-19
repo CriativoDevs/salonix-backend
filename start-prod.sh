@@ -20,6 +20,9 @@ fi
 # Inicia o servidor da aplicação
 # Substitua 'salonix_backend.wsgi:application' pelo caminho correto do seu WSGI se for diferente
 # --workers 2: reduzido de 5 (formula 2xvCPU+1) para cortar RAM ociosa -- tráfego atual é baixo
+# --threads 4 --worker-class gthread: endpoints SSE (ex: RealtimeCreditsSSEView) seguram
+# conexão longa; com worker sync puro, 2 clientes SSE simultâneos travariam os 2 workers
+# e starvariam toda a API transacional. gthread deixa cada worker atender várias conexões.
 # --timeout 30: default do Gunicorn, explícito para documentar a intenção
 echo "Iniciando Gunicorn..."
-exec gunicorn salonix_backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 30 --worker-class sync
+exec gunicorn salonix_backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --worker-class gthread --timeout 30
