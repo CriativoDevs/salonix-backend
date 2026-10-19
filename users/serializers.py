@@ -317,13 +317,21 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             tenant=tenant,
         )
 
-        TenantStaffMember.objects.create(
+        owner_staff_member = TenantStaffMember.objects.create(
             tenant=tenant,
             user=user,
             role=TenantStaffMember.Role.OWNER,
             status=TenantStaffMember.Status.ACTIVE,
             activated_at=timezone.now(),
         )
+
+        # BE-PROF-01: a maioria dos tenants é dono que atende sozinho
+        # (ex.: estúdio de tatuagem solo). Em vez de depender de criação
+        # manual do Professional pelo owner, ele já nasce com um
+        # Professional vinculado a todos os Services do tenant. Owner que
+        # só gerencia (não atende) pode remover depois via DELETE
+        # /api/professionals/<id>/.
+        owner_staff_member.ensure_professional_for_owner()
 
         audit_logger.info(
             "Tenant self-service criado com sucesso",

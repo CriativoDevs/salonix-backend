@@ -968,10 +968,18 @@ class TenantStaffMember(models.Model):
     def is_collaborator(self) -> bool:
         return self.role == self.Role.COLLABORATOR
 
-    def ensure_professional(self, *, auto_create: bool = True):
+    def ensure_professional(self, *, auto_create: bool = True, _allow_owner: bool = False):
         """
         Garante que colaboradores tenham um Professional associado.
         Reassocia registros existentes quando necessário.
+
+        `_allow_owner` é um parâmetro interno (prefixo "_" de propósito):
+        só deve ser usado via `ensure_professional_for_owner()`, chamado
+        explicitamente no registro de tenant novo (BE-PROF-01). Mantém o
+        comportamento padrão (apenas COLLABORATOR) para todas as outras
+        chamadas existentes (mark_activated, seed scripts, StaffUpdateSerializer),
+        evitando qualquer mudança retroativa de comportamento para owners
+        já existentes.
         """
         if not self.tenant_id or not self.user_id:
             return None
@@ -1000,14 +1008,20 @@ class TenantStaffMember(models.Model):
             if professional.tenant_id != self.tenant_id:
                 professional.tenant = self.tenant
                 fields_to_update.append("tenant")
-            if self.role == self.Role.COLLABORATOR and not professional.is_active:
+            is_owner_allowed = _allow_owner and self.role == self.Role.OWNER
+            if (
+                self.role == self.Role.COLLABORATOR or is_owner_allowed
+            ) and not professional.is_active:
                 professional.is_active = True
                 fields_to_update.append("is_active")
             if fields_to_update:
                 professional.save(update_fields=list(dict.fromkeys(fields_to_update)))
             return professional
 
-        if not auto_create or self.role != self.Role.COLLABORATOR:
+        role_allowed = self.role == self.Role.COLLABORATOR or (
+            _allow_owner and self.role == self.Role.OWNER
+        )
+        if not auto_create or not role_allowed:
             return None
 
         display_name = (
@@ -1023,6 +1037,35 @@ class TenantStaffMember(models.Model):
             staff_member=self,
             name=display_name[:100],
             is_active=True,
+        )
+        return professional
+
+    def ensure_professional_for_owner(self):
+        """
+        BE-PROF-01: owner solo (quem atende sozinho, ex. tatuador/barbeiro
+        individual) já nasce com um Professional próprio, vinculado a
+        todos os Services ativos do tenant — sem depender de criação
+        manual pelo owner na UI.
+
+        Chamado explicitamente apenas no registro de tenant novo
+        (TenantRegistrationSerializer.create, users/serializers.py), nunca
+        de forma retroativa em tenants já existentes, e nunca a partir de
+        mark_activated/ensure_professional genérico (que seguem exclusivos
+        de COLLABORATOR). O owner que só gerencia (não atende) pode
+        remover esse Professional depois via DELETE
+        /api/professionals/<id>/ (ProfessionalViewSet.destroy).
+        """
+        if self.role != self.Role.OWNER:
+            return None
+
+        professional = self.ensure_professional(auto_create=True, _allow_owner=True)
+        if not professional:
+            return None
+
+        from core.professional_utils import link_all_tenant_services_to_professional
+
+        link_all_tenant_services_to_professional(
+            tenant=self.tenant, professional=professional
         )
         return professional
 
