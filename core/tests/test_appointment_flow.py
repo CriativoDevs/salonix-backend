@@ -1,8 +1,15 @@
 import datetime
 import pytz
 import pytest
+from decimal import Decimal
 from rest_framework.test import APIClient
-from core.models import Service, Professional, ScheduleSlot, Appointment
+from core.models import (
+    Service,
+    Professional,
+    ProfessionalService,
+    ScheduleSlot,
+    Appointment,
+)
 from typing import cast
 from users.models import CustomUser, TenantStaffMember
 
@@ -62,6 +69,188 @@ def test_create_professional(user_fixture):
     assert professional_created.name == "Lucas Silva"
     assert professional_created.staff_member == collaborator_staff
     assert professional_created.user == collaborator_user
+    # Regressão BE-PROF-01: colaborador criado com outro staff ativo
+    # (o owner do tenant) no tenant NÃO deve disparar o auto-link de
+    # serviços, pois ele não é o único staff ativo.
+    assert ProfessionalService.objects.filter(professional=professional_created).count() == 0
+
+
+@pytest.mark.django_db
+def test_create_professional_auto_links_services_when_sole_active_staff(user_fixture):
+    """
+    BE-PROF-01: quando o owner é o ÚNICO staff ativo do tenant e cria seu
+    próprio Professional (fluxo manual), o backend deve vincular
+    automaticamente todos os Services do tenant via ProfessionalService,
+    evitando que o Professional fique "vazio" e invisível em telas do
+    frontend que filtram por serviço vinculado.
+    """
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    owner_staff = user_fixture.staff_member
+    tenant = user_fixture.tenant
+
+    service_a = Service.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        name="Corte",
+        duration_minutes=30,
+        price_eur=Decimal("20.00"),
+    )
+    service_b = Service.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        name="Barba",
+        duration_minutes=20,
+        price_eur=Decimal("15.00"),
+    )
+
+    payload = {
+        "name": "Owner Solo",
+        "bio": "Eu mesmo",
+        "is_active": True,
+        "staff_member": owner_staff.id,
+    }
+
+    response = client.post("/api/professionals/", data=payload, format="json")
+
+    assert response.status_code == 201
+    professional_created = Professional.objects.get(staff_member=owner_staff)
+    linked_service_ids = set(
+        ProfessionalService.objects.filter(
+            professional=professional_created, is_active=True
+        ).values_list("service_id", flat=True)
+    )
+    assert linked_service_ids == {service_a.id, service_b.id}
+
+
+@pytest.mark.django_db
+def test_create_professional_respects_explicit_service_ids(user_fixture):
+    """
+    Regressão: se o payload já trouxe `service_ids` explicitamente (seleção
+    manual de um subconjunto de serviços), o auto-link não deve sobrescrever
+    essa escolha vinculando também os demais serviços do tenant.
+    """
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    owner_staff = user_fixture.staff_member
+    tenant = user_fixture.tenant
+
+    service_a = Service.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        name="Corte",
+        duration_minutes=30,
+        price_eur=Decimal("20.00"),
+    )
+    service_b = Service.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        name="Barba",
+        duration_minutes=20,
+        price_eur=Decimal("15.00"),
+    )
+
+    payload = {
+        "name": "Owner Solo",
+        "is_active": True,
+        "staff_member": owner_staff.id,
+        "service_ids": [service_a.id],
+    }
+
+    response = client.post("/api/professionals/", data=payload, format="json")
+    assert response.status_code == 201
+
+    professional_created = Professional.objects.get(staff_member=owner_staff)
+    linked_service_ids = set(
+        ProfessionalService.objects.filter(
+            professional=professional_created
+        ).values_list("service_id", flat=True)
+    )
+    assert linked_service_ids == {service_a.id}
+    assert service_b.id not in linked_service_ids
+
+
+@pytest.mark.django_db
+def test_create_service_auto_links_to_sole_active_professional(user_fixture):
+    """
+    BE-PROF-01 (gap): quando o owner é o ÚNICO staff ativo do tenant e já
+    possui um Professional (ex.: criado no registro), um Service criado
+    DEPOIS também deve ser vinculado automaticamente a esse Professional
+    via ProfessionalService, evitando que o serviço novo fique invisível
+    para o Professional solo.
+    """
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    owner_staff = user_fixture.staff_member
+    tenant = user_fixture.tenant
+
+    professional = Professional.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        staff_member=owner_staff,
+        name="Owner Solo",
+        is_active=True,
+    )
+
+    payload = {"name": "Corte Masculino", "duration_minutes": 30, "price_eur": "15.00"}
+    response = client.post("/api/services/", data=payload, format="json")
+
+    assert response.status_code == 201
+    service_created = Service.objects.get(name="Corte Masculino")
+    link = ProfessionalService.objects.get(
+        tenant=tenant, professional=professional, service=service_created
+    )
+    assert link.is_active is True
+
+
+@pytest.mark.django_db
+def test_create_service_does_not_auto_link_with_multiple_active_staff(user_fixture):
+    """
+    Regressão: com 2+ staff ativos no tenant, criar um Service novo NÃO
+    deve vincular automaticamente a nenhum Professional — o vínculo
+    continua sendo escolha manual, comportamento preservado.
+    """
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    owner_staff = user_fixture.staff_member
+    tenant = user_fixture.tenant
+
+    owner_professional = Professional.objects.create(
+        tenant=tenant,
+        user=user_fixture,
+        staff_member=owner_staff,
+        name="Owner Solo",
+        is_active=True,
+    )
+
+    collaborator_user = CustomUser.objects.create_user(
+        username="collab_service_regression",
+        email="collab_service_regression@example.com",
+        password="testpass123",
+        tenant=tenant,
+    )
+    TenantStaffMember.objects.create(
+        tenant=tenant,
+        user=collaborator_user,
+        role=TenantStaffMember.Role.COLLABORATOR,
+        status=TenantStaffMember.Status.ACTIVE,
+    )
+
+    payload = {"name": "Corte Masculino", "duration_minutes": 30, "price_eur": "15.00"}
+    response = client.post("/api/services/", data=payload, format="json")
+
+    assert response.status_code == 201
+    service_created = Service.objects.get(name="Corte Masculino")
+    assert not ProfessionalService.objects.filter(
+        tenant=tenant, service=service_created
+    ).exists()
+    assert not ProfessionalService.objects.filter(
+        tenant=tenant, professional=owner_professional
+    ).exists()
 
 
 @pytest.mark.django_db

@@ -106,6 +106,11 @@ from reports.throttling import PerUserScopedRateThrottle
 from rest_framework import status as drf_status
 from users.models import TenantStaffMember, CustomUser
 from salonix_backend.validators import validate_phone_number, sanitize_text_input
+from salonix_backend.pii_utils import mask_email
+from core.professional_utils import (
+    get_sole_active_professional,
+    link_all_tenant_services_to_professional,
+)
 import secrets
 
 
@@ -2457,6 +2462,40 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
             },
         )
 
+        self._auto_link_service_to_sole_active_professional(
+            tenant=tenant, service=serializer.instance
+        )
+
+    def _auto_link_service_to_sole_active_professional(self, *, tenant, service):
+        """
+        BE-PROF-01 (gap): quando o tenant tem exatamente 1 staff ativo (owner
+        solo) e esse staff já possui um Professional, um Service criado
+        DEPOIS desse Professional existir também deve ser vinculado
+        automaticamente via ProfessionalService. Sem isso, o Service novo
+        fica invisível para o Professional solo até alguém vincular
+        manualmente. Com 2+ staff ativos, preserva o comportamento atual
+        (vínculo é escolha manual).
+        """
+        sole_professional = get_sole_active_professional(tenant)
+        if sole_professional is None:
+            return
+
+        _, created = ProfessionalService.objects.get_or_create(
+            tenant=tenant,
+            professional=sole_professional,
+            service=service,
+            defaults={"is_active": True},
+        )
+        if created:
+            logger.info(
+                "Service auto-linked to sole active professional",
+                extra={
+                    "service_id": service.id,
+                    "professional_id": sole_professional.id,
+                    "tenant_id": getattr(tenant, "id", None),
+                },
+            )
+
     def perform_update(self, serializer):
         tenant = getattr(self.request, "tenant", None) or getattr(
             self.request.user, "tenant", None
@@ -3389,6 +3428,47 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
                 "tenant_id": getattr(tenant, "id", None),
                 "user_id": self.request.user.id,
                 "professional_name": serializer.instance.name,
+            },
+        )
+
+        self._auto_link_services_if_sole_active_staff(
+            tenant=tenant,
+            staff_member=staff_member,
+            professional=serializer.instance,
+        )
+
+    def _auto_link_services_if_sole_active_staff(self, *, tenant, staff_member, professional):
+        """
+        BE-PROF-01: quando o staff_member do Professional criado é o único
+        staff ativo do tenant (cenário típico de owner solo que cria seu
+        próprio Professional manualmente), vincula automaticamente todos os
+        Services do tenant via ProfessionalService. Isso evita que o
+        Professional fique "vazio" (sem serviço vinculado) e, por isso,
+        invisível em telas do frontend que filtram por serviço (ex.: lista
+        de agendamento do webapp).
+        """
+        sole_professional = get_sole_active_professional(tenant)
+        if sole_professional is None or sole_professional.id != professional.id:
+            return
+
+        # Se já existe algum vínculo (ex.: payload trouxe service_ids
+        # explicitamente), respeita a escolha manual e não sobrescreve.
+        if ProfessionalService.objects.filter(
+            tenant=tenant, professional=professional
+        ).exists():
+            return
+
+        linked_count = link_all_tenant_services_to_professional(
+            tenant=tenant, professional=professional
+        )
+        if not linked_count:
+            return
+        logger.info(
+            "Professional auto-linked to all tenant services (sole active staff)",
+            extra={
+                "professional_id": professional.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "service_count": linked_count,
             },
         )
 
