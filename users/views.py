@@ -1984,8 +1984,11 @@ class RealtimeCreditsSSEView(APIView):
                 yield sse_event("heartbeat", "init")
 
             # Loop principal: heartbeat + detecção de novos eventos
+            # Limite de vida da conexão: evita thread/worker preso para sempre;
+            # cliente reconecta via EventSource usando Last-Event-ID (suportado acima).
+            deadline = time.monotonic() + 300  # 5 min
             try:
-                while True:
+                while time.monotonic() < deadline:
                     # Heartbeat a cada 15s
                     USERS_SSE_EVENTS_TOTAL.labels(
                         event="heartbeat", result="emitted"
