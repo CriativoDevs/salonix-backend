@@ -945,6 +945,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
     feature_flags = serializers.SerializerMethodField()
     logo_url = serializers.SerializerMethodField()
     auto_invite_enabled = serializers.BooleanField(read_only=True)
+    auto_generate_slots_enabled = serializers.BooleanField(read_only=True)
     profile = serializers.SerializerMethodField()
     is_trial_expired = serializers.SerializerMethodField()
 
@@ -970,6 +971,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "plan_tier",
             "feature_flags",
             "auto_invite_enabled",
+            "auto_generate_slots_enabled",
             "profile",
             "is_trial_expired",
         ]
@@ -993,6 +995,7 @@ class TenantMetaSerializer(serializers.ModelSerializer):
             "plan_tier",
             "feature_flags",
             "auto_invite_enabled",
+            "auto_generate_slots_enabled",
             "profile",
             "is_trial_expired",
         ]
@@ -1178,6 +1181,7 @@ class TenantBusinessHoursSerializer(serializers.ModelSerializer):
 
 class TenantModulesUpdateSerializer(serializers.Serializer):
     pwa_client_enabled = serializers.BooleanField(required=False)
+    auto_generate_slots_enabled = serializers.BooleanField(required=False)
 
 
 # ============================================================================
