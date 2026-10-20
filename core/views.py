@@ -4755,6 +4755,19 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             val = str(is_available).lower() in {"1", "true", "t", "yes", "y"}
             qs = qs.filter(is_available=val)
 
+        status_param = params.get("status")
+        if status_param:
+            valid_statuses = {c[0] for c in ScheduleSlot.STATUS_CHOICES}
+            if status_param not in valid_statuses:
+                raise ValidationError(
+                    {
+                        "status": [
+                            f"Valor inválido. Use um de: {', '.join(sorted(valid_statuses))}."
+                        ]
+                    }
+                )
+            qs = qs.filter(status=status_param)
+
         date_from = params.get("date_from")
         date_to = params.get("date_to")
         if date_from:
