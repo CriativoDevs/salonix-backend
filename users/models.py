@@ -49,6 +49,14 @@ class Tenant(models.Model):
         default=cast(Any, False),
         help_text="Envia automaticamente convite do PWA Cliente para novos clientes",
     )
+    auto_generate_slots_enabled = models.BooleanField(
+        default=cast(Any, False),
+        help_text=(
+            "Gera automaticamente slots do próximo mês (requer horário de "
+            "funcionamento configurado). Rodado via management command "
+            "auto_generate_monthly_slots (Cron Job no Railway)."
+        ),
+    )
 
     # Configurações
     timezone = models.CharField(
@@ -657,6 +665,7 @@ class Tenant(models.Model):
                 "pwa_client_enabled": self.pwa_client_enabled,
                 "rn_admin_enabled": self.rn_admin_enabled,
                 "rn_client_enabled": self.rn_client_enabled,
+                "auto_generate_slots_enabled": self.auto_generate_slots_enabled,
             },
             "notifications": {
                 "push_web": self.push_web_enabled,

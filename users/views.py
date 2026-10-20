@@ -1078,8 +1078,29 @@ class TenantModulesSettingsView(APIView):
             tenant.pwa_client_enabled = desired
             tenant.save(update_fields=["pwa_client_enabled", "updated_at"])
 
+        if "auto_generate_slots_enabled" in v:
+            desired_slots = bool(v["auto_generate_slots_enabled"])
+            if desired_slots and not TenantBusinessHours.objects.filter(
+                tenant=tenant, is_active=True
+            ).exists():
+                return Response(
+                    {
+                        "detail": (
+                            "Configure o horário de funcionamento antes de "
+                            "ativar a geração automática."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            tenant.auto_generate_slots_enabled = desired_slots
+            tenant.save(update_fields=["auto_generate_slots_enabled", "updated_at"])
+
         return Response(
-            {"pwa_client_enabled": tenant.pwa_client_enabled}, status=status.HTTP_200_OK
+            {
+                "pwa_client_enabled": tenant.pwa_client_enabled,
+                "auto_generate_slots_enabled": tenant.auto_generate_slots_enabled,
+            },
+            status=status.HTTP_200_OK,
         )
 
 
