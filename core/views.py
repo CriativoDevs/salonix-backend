@@ -4920,14 +4920,11 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         obj.delete()
         return Response(status=drf_status.HTTP_204_NO_CONTENT)
 
-    def perform_update(self, serializer):
-        obj = serializer.instance
-        tenant = getattr(self.request.user, "tenant", None)
-        professional = serializer.validated_data.get("professional", obj.professional)
+    def _check_write_permission(self, user, professional, tenant):
+        """Valida se o usuário pode escrever no slot do profissional informado."""
         if professional.tenant_id != tenant.id:
             raise PermissionDenied("Profissional não pertence ao tenant.")
 
-        user = self.request.user
         if user.has_staff_role(TenantStaffMember.Role.COLLABORATOR):
             staff_member = getattr(user, "staff_member", None)
             if not staff_member or professional.staff_member_id != staff_member.id:
@@ -4935,7 +4932,58 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
                     "Colaborador só pode alterar seus próprios slots."
                 )
 
+    def perform_update(self, serializer):
+        obj = serializer.instance
+        tenant = getattr(self.request.user, "tenant", None)
+        professional = serializer.validated_data.get("professional", obj.professional)
+        self._check_write_permission(self.request.user, professional, tenant)
         serializer.save()
+
+    @action(detail=True, methods=["post"], url_path="block")
+    def block(self, request, pk=None):
+        """
+        POST /api/slots/{id}/block/
+
+        Body opcional: { "reason": "..." }
+
+        Bloqueia o slot (indisponível para agendamento). Não permite bloquear
+        um slot já agendado (status="booked").
+        """
+        obj = self.get_object()
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None and not request.user.is_superuser:
+            raise PermissionDenied("Usuário sem tenant.")
+        if tenant:
+            self._check_write_permission(request.user, obj.professional, tenant)
+
+        if obj.status == "booked":
+            raise ValidationError(
+                "Não é possível bloquear um slot já agendado."
+            )
+
+        reason = request.data.get("reason", "")
+        obj.mark_blocked(reason)
+        return Response(self.get_serializer(obj).data)
+
+    @action(detail=True, methods=["post"], url_path="unblock")
+    def unblock(self, request, pk=None):
+        """
+        POST /api/slots/{id}/unblock/
+
+        Desbloqueia o slot, voltando-o para "available".
+        """
+        obj = self.get_object()
+        tenant = getattr(request.user, "tenant", None)
+        if tenant is None and not request.user.is_superuser:
+            raise PermissionDenied("Usuário sem tenant.")
+        if tenant:
+            self._check_write_permission(request.user, obj.professional, tenant)
+
+        if obj.status != "blocked":
+            raise ValidationError("Slot não está bloqueado.")
+
+        obj.mark_available()
+        return Response(self.get_serializer(obj).data)
 
     def get_object(self):
         obj = get_object_or_404(

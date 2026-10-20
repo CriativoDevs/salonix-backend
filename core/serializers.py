@@ -357,7 +357,16 @@ class ScheduleSlotSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ScheduleSlot
-        fields = ["id", "professional", "start_time", "end_time", "is_available"]
+        fields = [
+            "id",
+            "professional",
+            "start_time",
+            "end_time",
+            "is_available",
+            "status",
+            "blocked_reason",
+        ]
+        read_only_fields = ["status"]
 
     def validate(self, data):
         """Validar horários do slot."""
