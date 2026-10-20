@@ -58,6 +58,26 @@ def test_limit_offset_respected(user_fixture):
 
 
 @pytest.mark.django_db
+def test_status_filter(user_fixture):
+    client = APIClient()
+    client.force_authenticate(user=user_fixture)
+
+    prof = Professional.objects.create(user=user_fixture, name="Pro", bio="OK")
+    now = timezone.now()
+    _make_slot(prof, now, status="available")
+    _make_slot(prof, now + timedelta(hours=1), status="blocked")
+    _make_slot(prof, now + timedelta(hours=2), status="booked")
+
+    resp = client.get("/api/slots/", {"status": "blocked"})
+    assert resp.status_code == 200
+    assert resp["X-Total-Count"] == "1"
+    assert resp.data[0]["status"] == "blocked"
+
+    resp_invalid = client.get("/api/slots/", {"status": "nao_existe"})
+    assert resp_invalid.status_code == 400
+
+
+@pytest.mark.django_db
 def test_mixed_statuses_counted_in_total(user_fixture):
     # Garante que o total agregue available/blocked/booked -- é exatamente
     # o caso que estourou a paginação na tela de gestão (antes do fix).
