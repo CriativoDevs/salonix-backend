@@ -217,6 +217,7 @@ class ScheduleSlot(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="available"
     )
+    blocked_reason = models.CharField(max_length=140, blank=True, default="")
 
     class Meta:
         indexes = [
@@ -238,6 +239,12 @@ class ScheduleSlot(models.Model):
         self.is_available = True
         self.status = "available"
         self.save(update_fields=["is_available", "status"])
+
+    def mark_blocked(self, reason=""):
+        self.is_available = False
+        self.status = "blocked"
+        self.blocked_reason = reason
+        self.save(update_fields=["is_available", "status", "blocked_reason"])
 
 
 class Appointment(models.Model):
