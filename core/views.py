@@ -4764,6 +4764,24 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
 
         return qs
 
+    def list(self, request, *args, **kwargs):
+        # ScheduleSlot nunca teve paginacao real (sem pagination_class, sem
+        # override de list) -- devolvia o queryset inteiro. Passava
+        # despercebido enquanto o frontend filtrava por is_available=true
+        # (poucos resultados); sem esse filtro (bloqueio/reservado tambem
+        # listados), o volume real ficou visivel. Mesmo padrao manual
+        # limit/offset ja usado em SalonAppointmentViewSet.list.
+        qs = self.get_queryset()
+        limit, offset = get_limit_offset(request, default=20, max_limit=100)
+        total = qs.count()
+        sliced = qs[offset : offset + limit]
+        serializer = self.get_serializer(sliced, many=True)
+        resp = Response(serializer.data, status=drf_status.HTTP_200_OK)
+        set_pagination_headers(
+            resp, request, total_count=total, limit=limit, offset=offset
+        )
+        return resp
+
     def perform_create(self, serializer):
         # Sempre usar o tenant do usuário do salão
         tenant = getattr(self.request.user, "tenant", None)
