@@ -36,6 +36,13 @@ from core.models import (
     Feedback,
 )
 from users.models import Tenant, TenantStaffMember, TenantBusinessHours
+from core.services.slots import (
+    resolve_dates_for_period,
+    resolve_date_range,
+    build_slot_intervals,
+    compute_gaps,
+    chunk_interval,
+)
 from core.utils.client_access import create_client_access_data
 from notifications.services import (
     send_customer_pwa_invite,
@@ -4805,6 +4812,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         Gera slots em bulk para um profissional dentro do horário de funcionamento.
 
         Body: { professional_id, period ("day"|"week"|"month"), interval_minutes (default 30), date (YYYY-MM-DD, default hoje) }
+        Alternativa (BE-SLOTS-03): { professional_id, date_from, date_to, interval_minutes }
+        — se date_from/date_to forem fornecidos, têm precedência sobre period+date,
+        mas o formato antigo continua funcionando sem alterações (usado pelo app mobile).
         Retorna: { created: N, skipped: M }
         """
         import zoneinfo
@@ -4825,11 +4835,11 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         period = request.data.get("period")
         interval_minutes = request.data.get("interval_minutes", 30)
         date_str = request.data.get("date")
+        date_from_str = request.data.get("date_from")
+        date_to_str = request.data.get("date_to")
 
         if not professional_id:
             raise ValidationError({"professional_id": "Campo obrigatório."})
-        if period not in ("day", "week", "month"):
-            raise ValidationError({"period": "Deve ser 'day', 'week' ou 'month'."})
         try:
             interval_minutes = int(interval_minutes)
         except (TypeError, ValueError):
@@ -4843,26 +4853,32 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             raise ValidationError({"professional_id": "Profissional não encontrado para este tenant."})
 
         tz = zoneinfo.ZoneInfo(tenant.timezone or "Europe/Lisbon")
-        if date_str:
-            try:
-                base_date = date_type.fromisoformat(str(date_str))
-            except ValueError:
-                raise ValidationError({"date": "Data inválida. Use formato YYYY-MM-DD."})
-        else:
-            base_date = datetime.now(tz).date()
 
-        if period == "day":
-            dates = [base_date]
-        elif period == "week":
-            monday = base_date - timedelta(days=base_date.weekday())
-            dates = [monday + timedelta(days=i) for i in range(7)]
+        if date_from_str or date_to_str:
+            if not (date_from_str and date_to_str):
+                raise ValidationError({
+                    "date_from": "date_from e date_to devem ser fornecidos juntos."
+                })
+            try:
+                date_from = date_type.fromisoformat(str(date_from_str))
+                date_to = date_type.fromisoformat(str(date_to_str))
+            except ValueError:
+                raise ValidationError({"date_from": "Data inválida. Use formato YYYY-MM-DD."})
+            try:
+                dates = resolve_date_range(date_from, date_to)
+            except ValueError as exc:
+                raise ValidationError({"date_to": str(exc)})
         else:
-            first = base_date.replace(day=1)
-            if first.month == 12:
-                last = first.replace(year=first.year + 1, month=1, day=1) - timedelta(days=1)
+            if period not in ("day", "week", "month"):
+                raise ValidationError({"period": "Deve ser 'day', 'week' ou 'month'."})
+            if date_str:
+                try:
+                    base_date = date_type.fromisoformat(str(date_str))
+                except ValueError:
+                    raise ValidationError({"date": "Data inválida. Use formato YYYY-MM-DD."})
             else:
-                last = first.replace(month=first.month + 1, day=1) - timedelta(days=1)
-            dates = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+                base_date = datetime.now(tz).date()
+            dates = resolve_dates_for_period(base_date, period)
 
         bh_qs = TenantBusinessHours.objects.filter(tenant=tenant, is_active=True)
         if not bh_qs.exists():
@@ -4883,7 +4899,6 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             ).values_list("start_time", flat=True)
         )
 
-        interval = timedelta(minutes=interval_minutes)
         slots_to_create = []
         skipped_count = 0
         pending_starts = set()
@@ -4892,10 +4907,10 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             bh = bh_by_day.get(day.weekday())
             if not bh:
                 continue
-            current = datetime.combine(day, bh.start_time).replace(tzinfo=tz)
-            end_dt = datetime.combine(day, bh.end_time).replace(tzinfo=tz)
-            while current + interval <= end_dt:
-                slot_end = current + interval
+            intervals = build_slot_intervals(
+                tenant, professional, [day], bh.start_time, bh.end_time, interval_minutes
+            )
+            for current, slot_end in intervals:
                 if current in existing_starts or current in pending_starts:
                     skipped_count += 1
                 else:
@@ -4908,12 +4923,141 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
                         status="available",
                     ))
                     pending_starts.add(current)
-                current += interval
 
         if slots_to_create:
             ScheduleSlot.objects.bulk_create(slots_to_create)
 
         return Response({"created": len(slots_to_create), "skipped": skipped_count})
+
+    @action(detail=False, methods=["post"], url_path="bulk-block")
+    def bulk_block(self, request):
+        """
+        POST /api/slots/bulk-block/
+
+        Bloqueia um intervalo [start_time, end_time) para cada dia do range
+        [date_from, date_to] de um profissional — independente do horário de
+        funcionamento configurado (objetivo é garantir indisponibilidade).
+
+        Body: { professional_id, date_from, date_to, start_time, end_time,
+                interval_minutes (default 30), reason }
+
+        - Slots existentes "available" que se sobrepõem ao intervalo são bloqueados
+          (mark_blocked), reaproveitando o fluxo de BE-SLOTS-02.
+        - Slots existentes "booked" nunca são alterados (contabilizados em skipped_booked).
+        - Trechos sem nenhum slot cobrindo são criados já como "blocked", recortados
+          em `interval_minutes`.
+
+        Retorna: { blocked: N, created: M, skipped_booked: K }
+        """
+        from datetime import date as date_type, datetime, time as time_type
+
+        user = request.user
+        tenant = getattr(user, "tenant", None)
+        if not tenant:
+            raise ValidationError("Usuário sem tenant.")
+
+        if not (
+            user.is_superuser
+            or user.has_staff_role(TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER)
+        ):
+            raise PermissionDenied("Apenas owner ou manager podem bloquear slots em bulk.")
+
+        professional_id = request.data.get("professional_id")
+        date_from_str = request.data.get("date_from")
+        date_to_str = request.data.get("date_to")
+        start_time_str = request.data.get("start_time")
+        end_time_str = request.data.get("end_time")
+        interval_minutes = request.data.get("interval_minutes", 30)
+        reason = request.data.get("reason", "")
+
+        if not professional_id:
+            raise ValidationError({"professional_id": "Campo obrigatório."})
+        if not date_from_str or not date_to_str:
+            raise ValidationError({"date_from": "date_from e date_to são obrigatórios."})
+        if not start_time_str or not end_time_str:
+            raise ValidationError({"start_time": "start_time e end_time são obrigatórios."})
+
+        try:
+            interval_minutes = int(interval_minutes)
+        except (TypeError, ValueError):
+            raise ValidationError({"interval_minutes": "Deve ser um número inteiro."})
+        if not (15 <= interval_minutes <= 480):
+            raise ValidationError({"interval_minutes": "Deve ser entre 15 e 480 minutos."})
+
+        try:
+            professional = Professional.objects.get(id=professional_id, tenant=tenant)
+        except Professional.DoesNotExist:
+            raise ValidationError({"professional_id": "Profissional não encontrado para este tenant."})
+
+        try:
+            date_from = date_type.fromisoformat(str(date_from_str))
+            date_to = date_type.fromisoformat(str(date_to_str))
+        except ValueError:
+            raise ValidationError({"date_from": "Data inválida. Use formato YYYY-MM-DD."})
+
+        try:
+            dates = resolve_date_range(date_from, date_to)
+        except ValueError as exc:
+            raise ValidationError({"date_to": str(exc)})
+
+        try:
+            start_time = time_type.fromisoformat(str(start_time_str))
+            end_time = time_type.fromisoformat(str(end_time_str))
+        except ValueError:
+            raise ValidationError({"start_time": "Horário inválido. Use formato HH:MM."})
+        if end_time <= start_time:
+            raise ValidationError({"end_time": "end_time deve ser maior que start_time."})
+
+        import zoneinfo
+
+        tz = zoneinfo.ZoneInfo(tenant.timezone or "Europe/Lisbon")
+
+        blocked_count = 0
+        skipped_booked_count = 0
+        slots_to_create = []
+
+        for day in dates:
+            window_start = datetime.combine(day, start_time).replace(tzinfo=tz)
+            window_end = datetime.combine(day, end_time).replace(tzinfo=tz)
+
+            overlapping = ScheduleSlot.objects.filter(
+                tenant=tenant,
+                professional=professional,
+                start_time__lt=window_end,
+                end_time__gt=window_start,
+            )
+
+            covered_intervals = []
+            for slot in overlapping:
+                covered_intervals.append((slot.start_time, slot.end_time))
+                if slot.status == "available":
+                    slot.mark_blocked(reason)
+                    blocked_count += 1
+                elif slot.status == "booked":
+                    skipped_booked_count += 1
+                # slots já "blocked" permanecem como estão, sem contabilização.
+
+            gaps = compute_gaps(window_start, window_end, covered_intervals)
+            for gap_start, gap_end in gaps:
+                for chunk_start, chunk_end in chunk_interval(gap_start, gap_end, interval_minutes):
+                    slots_to_create.append(ScheduleSlot(
+                        tenant=tenant,
+                        professional=professional,
+                        start_time=chunk_start,
+                        end_time=chunk_end,
+                        is_available=False,
+                        status="blocked",
+                        blocked_reason=reason,
+                    ))
+
+        if slots_to_create:
+            ScheduleSlot.objects.bulk_create(slots_to_create)
+
+        return Response({
+            "blocked": blocked_count,
+            "created": len(slots_to_create),
+            "skipped_booked": skipped_booked_count,
+        })
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()  # get_object valida o tenant via mixin/checagem

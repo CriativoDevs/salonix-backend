@@ -306,3 +306,123 @@ class TestBulkGenerateMonth:
             "interval_minutes": 60, "date": str(MONDAY)
         }, format="json")
         assert ScheduleSlot.objects.filter(tenant=tenant_b).count() == 0
+
+
+@pytest.mark.django_db
+class TestBulkGenerateLegacyPeriodFormatRegression:
+    """
+    Garante que o formato antigo (period + date), usado pelo app mobile em
+    produção, continua funcionando sem alterações após a introdução de
+    date_from/date_to (BE-SLOTS-03).
+    """
+
+    def setup_method(self):
+        self.client = APIClient()
+
+    def test_legacy_period_day_still_works(self):
+        tenant, owner, professional = _make_setup("bg-legacy-day")
+        _add_bh(tenant, MON, "09:00", "12:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id, "period": "day",
+            "interval_minutes": 60, "date": str(MONDAY)
+        }, format="json")
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["created"] == 3
+        assert resp.data["skipped"] == 0
+
+    def test_legacy_period_week_still_works(self):
+        tenant, owner, professional = _make_setup("bg-legacy-week")
+        _add_bh(tenant, MON, "09:00", "12:00")
+        _add_bh(tenant, SAT, "10:00", "12:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id, "period": "week",
+            "interval_minutes": 60, "date": str(MONDAY)
+        }, format="json")
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["created"] == 5
+
+
+@pytest.mark.django_db
+class TestBulkGenerateDateFromDateTo:
+    def setup_method(self):
+        self.client = APIClient()
+
+    def test_date_from_date_to_generates_correct_range(self):
+        # Range de 2 dias (seg e ter), BH só na segunda, 09-12, 60min = 3 slots
+        tenant, owner, professional = _make_setup("bg-range-basic")
+        _add_bh(tenant, MON, "09:00", "12:00")
+        self.client.force_authenticate(user=owner)
+        tuesday = MONDAY + timedelta(days=1)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id,
+            "date_from": str(MONDAY), "date_to": str(tuesday),
+            "interval_minutes": 60,
+        }, format="json")
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["created"] == 3
+        assert ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count() == 3
+
+    def test_date_from_date_to_single_day(self):
+        tenant, owner, professional = _make_setup("bg-range-single")
+        _add_bh(tenant, MON, "09:00", "11:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id,
+            "date_from": str(MONDAY), "date_to": str(MONDAY),
+            "interval_minutes": 30,
+        }, format="json")
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["created"] == 4
+
+    def test_date_from_date_to_idempotent(self):
+        tenant, owner, professional = _make_setup("bg-range-idem")
+        _add_bh(tenant, MON, "09:00", "11:00")
+        self.client.force_authenticate(user=owner)
+        payload = {
+            "professional_id": professional.id,
+            "date_from": str(MONDAY), "date_to": str(MONDAY),
+            "interval_minutes": 60,
+        }
+        resp1 = self.client.post(URL, payload, format="json")
+        assert resp1.data["created"] == 2
+        resp2 = self.client.post(URL, payload, format="json")
+        assert resp2.data["created"] == 0
+        assert resp2.data["skipped"] == 2
+
+    def test_date_to_before_date_from_rejected(self):
+        tenant, owner, professional = _make_setup("bg-range-invalid")
+        _add_bh(tenant, MON, "09:00", "11:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id,
+            "date_from": str(MONDAY), "date_to": str(MONDAY - timedelta(days=1)),
+            "interval_minutes": 60,
+        }, format="json")
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_date_from_without_date_to_rejected(self):
+        tenant, owner, professional = _make_setup("bg-range-partial")
+        _add_bh(tenant, MON, "09:00", "11:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id,
+            "date_from": str(MONDAY),
+            "interval_minutes": 60,
+        }, format="json")
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_date_from_date_to_takes_precedence_over_period(self):
+        # Se date_from/date_to vierem junto com period, o range explícito vence.
+        tenant, owner, professional = _make_setup("bg-range-precedence")
+        _add_bh(tenant, MON, "09:00", "10:00")
+        self.client.force_authenticate(user=owner)
+        resp = self.client.post(URL, {
+            "professional_id": professional.id,
+            "period": "month",  # seria ignorado
+            "date_from": str(MONDAY), "date_to": str(MONDAY),
+            "interval_minutes": 60,
+        }, format="json")
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["created"] == 1  # só 1 dia, não o mês inteiro
