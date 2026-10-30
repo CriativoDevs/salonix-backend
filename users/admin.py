@@ -57,9 +57,7 @@ class PaymentStatusListFilter(admin.SimpleListFilter):
             return queryset
 
         matching_ids = [
-            tenant.pk
-            for tenant in queryset
-            if _tenant_payment_status(tenant) == value
+            tenant.pk for tenant in queryset if _tenant_payment_status(tenant) == value
         ]
         return queryset.filter(pk__in=matching_ids)
 
@@ -294,6 +292,7 @@ class TenantAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} tenant(s) desativado(s) com sucesso.")
 
     deactivate_tenants.short_description = "Desativar tenants selecionados"
+
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):

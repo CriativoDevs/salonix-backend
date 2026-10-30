@@ -81,10 +81,9 @@ class UserAuthLoggingIntegrationTest(TestCase):
 
         # Check that logs contain masked email, not raw email
         log_extras = self.handler.get_extras()
-        assert any(expected_masked == extra.get("email") for extra in log_extras), (
-            f"Expected masked email {expected_masked} in logs, "
-            f"got extras: {log_extras}"
-        )
+        assert any(
+            expected_masked == extra.get("email") for extra in log_extras
+        ), f"Expected masked email {expected_masked} in logs, got extras: {log_extras}"
 
         # Verify raw email is NOT in logs
         all_log_content = "\n".join(

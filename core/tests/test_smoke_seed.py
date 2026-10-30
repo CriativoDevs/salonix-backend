@@ -6,6 +6,7 @@ from core.models import Service, Appointment
 
 User = get_user_model()
 
+
 class SmokeSeedTest(TestCase):
     def test_seed_demo_is_idempotent_and_creates_data(self):
         """
@@ -42,9 +43,7 @@ class SmokeSeedTest(TestCase):
         self.assertEqual(default_tenant.name, "TimelyOne")
         self.assertEqual(default_tenant.plan_tier, Tenant.PLAN_BASIC)
         self.assertTrue(default_tenant.is_founder)
-        self.assertEqual(
-            default_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL
-        )
+        self.assertEqual(default_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL)
         self.assertTrue(Service.objects.filter(tenant=default_tenant).exists())
         self.assertTrue(Appointment.objects.filter(tenant=default_tenant).exists())
 
@@ -74,15 +73,15 @@ class SmokeSeedTest(TestCase):
         # Verificar CommLedger (Créditos)
         # O seed cria transações para o default_tenant
         ledger_count = CommLedger.objects.filter(tenant=default_tenant).count()
-        self.assertGreater(ledger_count, 0, "Deve haver histórico de créditos para o tenant default")
+        self.assertGreater(
+            ledger_count, 0, "Deve haver histórico de créditos para o tenant default"
+        )
 
         # Verificar Feature Flags do Basic
         basic_tenant = Tenant.objects.get(slug="basic-demo")
         self.assertEqual(basic_tenant.plan_tier, "basic")
         self.assertFalse(basic_tenant.comm_auto_renew)
-        self.assertEqual(
-            basic_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL
-        )
+        self.assertEqual(basic_tenant.billing_mode, Tenant.BILLING_MODE_PROMOTIONAL)
 
         # Nenhum tenant do seed deve usar o plano Pro (BE-PLANS-01: bloqueado
         # para venda/atribuição, não faz sentido como demo).
@@ -100,13 +99,23 @@ class SmokeSeedTest(TestCase):
 
         # As contagens não devem mudar (ou mudar minimamente se houver lógica temporal que força recriação,
         # mas o objetivo do seed é ser idempotente para as estruturas base)
-        
-        self.assertEqual(Tenant.objects.count(), count_tenants, "Tenants duplicados na segunda execução")
-        self.assertEqual(User.objects.count(), count_users, "Usuários duplicados na segunda execução")
+
+        self.assertEqual(
+            Tenant.objects.count(),
+            count_tenants,
+            "Tenants duplicados na segunda execução",
+        )
+        self.assertEqual(
+            User.objects.count(), count_users, "Usuários duplicados na segunda execução"
+        )
         # Services e Appointments podem ter lógica de get_or_create, vamos validar
-        self.assertEqual(Service.objects.count(), count_services, "Serviços duplicados na segunda execução")
-        
-        # Nota: Se o seed usar datas relativas fixas (ex: timezone.now() + 1 day), 
-        # a segunda execução pode criar novos slots/appointments se o 'now' mudar significativamente 
+        self.assertEqual(
+            Service.objects.count(),
+            count_services,
+            "Serviços duplicados na segunda execução",
+        )
+
+        # Nota: Se o seed usar datas relativas fixas (ex: timezone.now() + 1 day),
+        # a segunda execução pode criar novos slots/appointments se o 'now' mudar significativamente
         # ou se a lógica de busca não compensar. Mas num teste unitário, o tempo é "congelado" ou rápido.
         # Vamos assumir que get_or_create funciona bem.

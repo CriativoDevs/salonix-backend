@@ -5,16 +5,18 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('notifications', '0005_notification_appointment_notification_customer_and_more'),
-        ('users', '0040_tenantbusinesshours'),
+        (
+            "notifications",
+            "0005_notification_appointment_notification_customer_and_more",
+        ),
+        ("users", "0040_tenantbusinesshours"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterUniqueTogether(
-            name='notificationdevice',
-            unique_together={('tenant', 'user', 'device_type', 'token')},
+            name="notificationdevice",
+            unique_together={("tenant", "user", "device_type", "token")},
         ),
     ]

@@ -977,7 +977,9 @@ class TenantStaffMember(models.Model):
     def is_collaborator(self) -> bool:
         return self.role == self.Role.COLLABORATOR
 
-    def ensure_professional(self, *, auto_create: bool = True, _allow_owner: bool = False):
+    def ensure_professional(
+        self, *, auto_create: bool = True, _allow_owner: bool = False
+    ):
         """
         Garante que colaboradores tenham um Professional associado.
         Reassocia registros existentes quando necessário.

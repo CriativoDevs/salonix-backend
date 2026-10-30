@@ -57,9 +57,7 @@ class Command(BaseCommand):
         )
 
         for tenant in tenants.iterator():
-            bh_qs = TenantBusinessHours.objects.filter(
-                tenant=tenant, is_active=True
-            )
+            bh_qs = TenantBusinessHours.objects.filter(tenant=tenant, is_active=True)
             if not bh_qs.exists():
                 tenants_skipped_no_business_hours += 1
                 self.stdout.write(
@@ -74,18 +72,16 @@ class Command(BaseCommand):
             dates = resolve_dates_for_period(next_month_base, "month")
             tz = zoneinfo.ZoneInfo(tenant.timezone or "Europe/Lisbon")
 
-            professionals = Professional.objects.filter(
-                tenant=tenant, is_active=True
-            )
+            professionals = Professional.objects.filter(tenant=tenant, is_active=True)
 
             tenant_created = 0
             for professional in professionals:
-                period_start = datetime.combine(
-                    dates[0], datetime.min.time()
-                ).replace(tzinfo=tz)
-                period_end = datetime.combine(
-                    dates[-1], datetime.max.time()
-                ).replace(tzinfo=tz)
+                period_start = datetime.combine(dates[0], datetime.min.time()).replace(
+                    tzinfo=tz
+                )
+                period_end = datetime.combine(dates[-1], datetime.max.time()).replace(
+                    tzinfo=tz
+                )
                 existing_starts = set(
                     ScheduleSlot.objects.filter(
                         tenant=tenant,

@@ -18,7 +18,9 @@ def published_page():
         content="Conteudo completo.",
     )
     page.publish()
-    PageSEO.objects.create(page=page, meta_title="SEO Title", meta_description="SEO Desc")
+    PageSEO.objects.create(
+        page=page, meta_title="SEO Title", meta_description="SEO Desc"
+    )
     return page
 
 

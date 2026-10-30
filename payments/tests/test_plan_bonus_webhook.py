@@ -31,7 +31,7 @@ class PlanBonusWebhookTestCase(TestCase):
         Tenant.objects.filter(pk=self.tenant.pk).update(comm_credit_eur=Decimal("0.00"))
         self.tenant.comm_ledger.all().delete()
         self.tenant.refresh_from_db()
-        
+
         self.user.tenant = self.tenant
         self.user.save()
 

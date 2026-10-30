@@ -40,6 +40,4 @@ def test_birthday_voucher_log_is_registered_in_custom_admin_site():
     from vouchers.models import BirthdayVoucherLog
 
     assert BirthdayVoucherLog in admin_site._registry
-    assert isinstance(
-        admin_site._registry[BirthdayVoucherLog], BirthdayVoucherLogAdmin
-    )
+    assert isinstance(admin_site._registry[BirthdayVoucherLog], BirthdayVoucherLogAdmin)

@@ -38,7 +38,10 @@ def other_tenant(db):
 @pytest.fixture
 def owner(db, tenant):
     user = CustomUser.objects.create_user(
-        username="cv-owner", email="cv-owner@test.com", password="testpass123", tenant=tenant
+        username="cv-owner",
+        email="cv-owner@test.com",
+        password="testpass123",
+        tenant=tenant,
     )
     TenantStaffMember.objects.create(
         tenant=tenant,
@@ -52,7 +55,10 @@ def owner(db, tenant):
 @pytest.fixture
 def staff(db, tenant):
     user = CustomUser.objects.create_user(
-        username="cv-staff", email="cv-staff@test.com", password="testpass123", tenant=tenant
+        username="cv-staff",
+        email="cv-staff@test.com",
+        password="testpass123",
+        tenant=tenant,
     )
     TenantStaffMember.objects.create(
         tenant=tenant,
@@ -87,7 +93,9 @@ def customer(db, tenant):
 
 @pytest.fixture
 def other_tenant_customer(db, other_tenant):
-    return SalonCustomer.objects.create(tenant=other_tenant, name="Cliente de Outro Tenant")
+    return SalonCustomer.objects.create(
+        tenant=other_tenant, name="Cliente de Outro Tenant"
+    )
 
 
 @pytest.fixture

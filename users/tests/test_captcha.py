@@ -47,8 +47,9 @@ class TestCaptchaService:
         request.data = {"captcha_value": "bypass-secret", "captcha_key": "any-key"}
         request.headers = {}
 
-        with patch("django.conf.settings.CAPTCHA_ENABLED", True), patch(
-            "django.conf.settings.CAPTCHA_BYPASS_TOKEN", "bypass-secret"
+        with (
+            patch("django.conf.settings.CAPTCHA_ENABLED", True),
+            patch("django.conf.settings.CAPTCHA_BYPASS_TOKEN", "bypass-secret"),
         ):
             # Should not raise and not query DB
             enforce_captcha_or_raise(request)

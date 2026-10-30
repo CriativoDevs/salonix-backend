@@ -192,7 +192,6 @@ class CreditEndpointsTestCase(APITestCase):
         self.assertEqual(results[0]["transaction_type"], "consumption")
         self.assertEqual(results[0]["amount_eur"], "2.00")
 
-
     def test_consume_credits_view_success(self):
         """Testa endpoint de consumo de créditos com sucesso."""
         url = reverse("consume_credits")

@@ -13,9 +13,9 @@ PLAN_PRICE_SETTING_KEYS = {
         "yearly": "STRIPE_PRICE_PRO_YEARLY_ID",
     },
     "founder": {
-        "monthly": "STRIPE_PRICE_FOUNDER_MONTHLY_ID", # May not exist, but keeps structure
+        "monthly": "STRIPE_PRICE_FOUNDER_MONTHLY_ID",  # May not exist, but keeps structure
         "yearly": "STRIPE_PRICE_FOUNDER_YEARLY_ID",
-    }
+    },
 }
 
 LEGACY_PLAN_SETTING_KEYS = {
@@ -57,7 +57,7 @@ def get_legacy_price_map() -> dict[str, str]:
 def get_price_id_for_plan(plan_code: str, interval: str = "monthly") -> Optional[str]:
     plan = (plan_code or "").lower()
     interval = (interval or "monthly").lower()
-    
+
     if interval == "annual":
         interval = "yearly"
 
@@ -71,7 +71,7 @@ def get_price_id_for_plan(plan_code: str, interval: str = "monthly") -> Optional
     if interval == "monthly":
         legacy_mapping = get_legacy_price_map()
         return legacy_mapping.get(plan)
-        
+
     return None
 
 

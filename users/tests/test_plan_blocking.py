@@ -107,9 +107,7 @@ class TestPlanBlocked:
         assert resp_v2.status_code == 400
 
     @pytest.mark.django_db
-    def test_promotional_transition_never_converts_to_blocked_plan(
-        self, basic_tenant
-    ):
+    def test_promotional_transition_never_converts_to_blocked_plan(self, basic_tenant):
         from django.utils import timezone
         from datetime import timedelta
 

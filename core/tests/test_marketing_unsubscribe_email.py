@@ -8,7 +8,7 @@ from notifications.views import UNSUBSCRIBE_TOKEN_SALT
 
 
 @pytest.mark.django_db
-@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_marketing_email_contains_unsubscribe_link(settings):
     settings.ICS_BASE_URL = "http://testserver"
     settings.EMAIL_HOST = "localhost"
@@ -27,10 +27,10 @@ def test_marketing_email_contains_unsubscribe_link(settings):
 
     assert len(mail.outbox) == 1
     msg = mail.outbox[0]
-    
+
     # Verifica multipart
     assert isinstance(msg, mail.EmailMultiAlternatives)
-    
+
     # Verifica conteúdo
     plain = msg.body
     # HTML está nas alternatives

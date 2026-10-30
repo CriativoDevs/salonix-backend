@@ -42,12 +42,12 @@ def get_sole_active_professional(tenant) -> Professional | None:
         return None
 
     sole_staff = active_staff[0]
-    return Professional.objects.filter(
-        tenant=tenant, staff_member=sole_staff
-    ).first()
+    return Professional.objects.filter(tenant=tenant, staff_member=sole_staff).first()
 
 
-def link_all_tenant_services_to_professional(*, tenant, professional: Professional) -> int:
+def link_all_tenant_services_to_professional(
+    *, tenant, professional: Professional
+) -> int:
     """
     Vincula `professional` a todos os Services do tenant via
     ProfessionalService, pulando serviços já vinculados (ignore_conflicts).

@@ -277,9 +277,7 @@ class CreditPurchaseService:
             else getattr(stripe_customer, "invoice_settings", {})
         )
         payment_method_id = (
-            invoice_settings.get("default_payment_method")
-            if invoice_settings
-            else None
+            invoice_settings.get("default_payment_method") if invoice_settings else None
         )
         if not payment_method_id:
             cls._record_auto_renewal_failure(tenant, "no_payment_method", owner=owner)
@@ -557,9 +555,7 @@ class SubscriptionService:
                 or not tenant.is_founder
                 or not FounderService.can_assign_founder(tenant=tenant)
             ):
-                raise ValueError(
-                    "O plano Founder não está mais disponível para você."
-                )
+                raise ValueError("O plano Founder não está mais disponível para você.")
         elif plan not in cls.AVAILABLE_PLANS:
             raise ValueError(f"Plano inválido: {plan}")
 
@@ -1022,7 +1018,9 @@ class BillingService:
         # has_auto_renewal e sempre sobre a renovacao automatica de credito de
         # comunicacao (Tenant.comm_auto_renew), nunca sobre o status da assinatura.
         # O cancelamento/reativacao da assinatura tem fluxo proprio (aba Conta).
-        has_auto_renewal = user.tenant.has_auto_credit_renewal() if user.tenant else False
+        has_auto_renewal = (
+            user.tenant.has_auto_credit_renewal() if user.tenant else False
+        )
 
         # Próximo valor de cobrança
         next_billing_amount = None

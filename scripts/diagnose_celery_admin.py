@@ -3,6 +3,7 @@
 Script de diagnóstico do Django Admin para Celery Results.
 Uso: python manage.py runscript diagnose_celery_admin
 """
+
 from django.conf import settings
 from django.contrib import admin
 from django_celery_results.models import TaskResult, GroupResult

@@ -16,7 +16,14 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, TenantBusinessHours
+from .models import (
+    CustomUser,
+    UserFeatureFlags,
+    Tenant,
+    TenantStaffMember,
+    CommLedger,
+    TenantBusinessHours,
+)
 from .services import FounderService
 from salonix_backend.validators import (
     validate_phone_number,

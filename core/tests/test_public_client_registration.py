@@ -71,7 +71,9 @@ class TestPublicClientRegistrationView:
         assert response.status_code == status.HTTP_201_CREATED
         assert "customer_id" in response.data
 
-        customer = SalonCustomer.objects.get(tenant=self.tenant, email="maria@example.com")
+        customer = SalonCustomer.objects.get(
+            tenant=self.tenant, email="maria@example.com"
+        )
         assert customer.name == "Maria Silva"
         mock_send.assert_called_once()
         _, kwargs = mock_send.call_args
@@ -89,14 +91,18 @@ class TestPublicClientRegistrationView:
     def test_inactive_tenant_returns_404(self):
         self.tenant.is_active = False
         self.tenant.save()
-        response = self.client.post(self.url, {"name": "Maria Silva", "email": "m@x.com"})
+        response = self.client.post(
+            self.url, {"name": "Maria Silva", "email": "m@x.com"}
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_tenant_without_pwa_client_returns_404(self):
         self.tenant.pwa_client_enabled = False
         self.tenant.plan_tier = Tenant.PLAN_BASIC
         self.tenant.save()
-        response = self.client.post(self.url, {"name": "Maria Silva", "email": "m@x.com"})
+        response = self.client.post(
+            self.url, {"name": "Maria Silva", "email": "m@x.com"}
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @patch("core.views.send_customer_pwa_invite")

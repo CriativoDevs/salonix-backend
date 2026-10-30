@@ -114,12 +114,12 @@ def send_customer_pwa_invite(
     html_body = f"""
     <div style="font-family: Arial, sans-serif;">
       <p>Olá,</p>
-      <p>Para acessar sua área de cliente no <strong>{getattr(tenant, 'name', 'TimelyOne')}</strong>, utilize o link abaixo:</p>
+      <p>Para acessar sua área de cliente no <strong>{getattr(tenant, "name", "TimelyOne")}</strong>, utilize o link abaixo:</p>
       <p><a href="{link}" style="color:#2563eb;text-decoration:underline">Acessar</a></p>
       <p>Se você não solicitou este acesso, ignore esta mensagem.</p>
       <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
       <p style="font-size: 12px; color: #777;">
-        {getattr(tenant, 'name', 'TimelyOne')}<br>
+        {getattr(tenant, "name", "TimelyOne")}<br>
         Esta é uma mensagem automática.
       </p>
     </div>
@@ -701,10 +701,7 @@ class SMSDriver(NotificationDriverBase):
         if not charge_result["success"]:
             logger.warning(
                 f"Falha ao cobrar crédito de SMS para tenant {tenant.id}: {charge_result['error']}",
-                extra={
-                    "tenant_id": tenant.id,
-                    "reason": charge_result["error"]
-                }
+                extra={"tenant_id": tenant.id, "reason": charge_result["error"]},
             )
             return False
 
@@ -725,8 +722,8 @@ class SMSDriver(NotificationDriverBase):
                     "recipient": phone,
                     "cost_eur": float(cost_charged),
                     "twilio_sid": twilio_message.sid,
-                    "notification_type": notification_type
-                }
+                    "notification_type": notification_type,
+                },
             )
             return True
         except TwilioRestException as e:
@@ -1055,7 +1052,7 @@ def send_feedback_digest_email_if_due(tenant: Tenant) -> bool:
     html_body = f"""
     <div style=\"font-family: Arial, sans-serif;\">
       <p>Resumo de feedbacks recentes:</p>
-      <ul style=\"padding-left:16px;\">{''.join(html_lines)}</ul>
+      <ul style=\"padding-left:16px;\">{"".join(html_lines)}</ul>
     </div>
     """
     msg = EmailMultiAlternatives(subject, text_body, sender_email, [to_email])

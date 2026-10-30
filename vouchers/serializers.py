@@ -48,12 +48,8 @@ class VoucherSerializer(serializers.ModelSerializer):
         return value.strip().upper() if value else value
 
     def validate(self, attrs):
-        voucher_type = attrs.get(
-            "type", getattr(self.instance, "type", None)
-        )
-        service = attrs.get(
-            "service", getattr(self.instance, "service", None)
-        )
+        voucher_type = attrs.get("type", getattr(self.instance, "type", None))
+        service = attrs.get("service", getattr(self.instance, "service", None))
         value = attrs.get("value", getattr(self.instance, "value", None))
 
         if voucher_type == Voucher.VoucherType.FREE_SERVICE:
@@ -190,7 +186,9 @@ class BirthdayVoucherConfigSerializer(serializers.ModelSerializer):
                 )
         elif voucher_value is None:
             raise serializers.ValidationError(
-                {"voucher_value": "Obrigatório para vouchers do tipo 'percent'/'fixed'."}
+                {
+                    "voucher_value": "Obrigatório para vouchers do tipo 'percent'/'fixed'."
+                }
             )
 
         if self.instance is None:

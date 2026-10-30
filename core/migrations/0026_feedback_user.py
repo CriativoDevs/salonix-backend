@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("core", "0025_feedback_custom_category_alter_feedback_category"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

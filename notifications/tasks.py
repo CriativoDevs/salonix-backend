@@ -7,6 +7,7 @@ from .services import notification_service
 
 logger = logging.getLogger(__name__)
 
+
 @shared_task(name="notifications.tasks.send_appointment_reminders")
 def send_appointment_reminders():
     """
@@ -20,19 +21,17 @@ def send_appointment_reminders():
     end_window = now + timedelta(hours=25)
 
     appointments = Appointment.objects.filter(
-        status="scheduled",
-        slot__start_time__range=(start_window, end_window)
-    ).select_related('tenant', 'client', 'customer', 'service', 'slot')
+        status="scheduled", slot__start_time__range=(start_window, end_window)
+    ).select_related("tenant", "client", "customer", "service", "slot")
 
     count = 0
     for appt in appointments:
         # Verificar se já enviamos lembrete para este agendamento recentemente
         # Isso evita duplicidade se a janela de busca for maior que o intervalo da task
         from .models import NotificationLog
+
         already_sent = NotificationLog.objects.filter(
-            appointment=appt,
-            notification_type="appointment_reminder",
-            status="sent"
+            appointment=appt, notification_type="appointment_reminder", status="sent"
         ).exists()
 
         if already_sent:
@@ -40,10 +39,10 @@ def send_appointment_reminders():
 
         recipient_customer = getattr(appt, "customer", None)
         recipient_client = getattr(appt, "client", None)
-        
+
         # Preferir customer se disponível
         recipient = recipient_customer if recipient_customer else recipient_client
-        
+
         if not recipient:
             continue
 
@@ -53,7 +52,7 @@ def send_appointment_reminders():
             if recipient_customer
             else getattr(recipient_client, "username", "Cliente")
         )
-        
+
         start_time = appt.slot.start_time
         formatted_time = start_time.strftime("%H:%M")
         formatted_date = start_time.strftime("%d/%m/%Y")
@@ -64,12 +63,12 @@ def send_appointment_reminders():
 
         # Enviar canais: SMS e In-App (e Push se configurado no futuro)
         channels = ["sms", "in_app"]
-        
+
         metadata = {
             "appointment_id": appt.id,
             "customer_id": recipient_customer.id if recipient_customer else None,
             "service_name": appt.service.name,
-            "reminder_type": "24h"
+            "reminder_type": "24h",
         }
 
         # Adicionar dados de telefone explicitamente para o SMSDriver
@@ -90,7 +89,7 @@ def send_appointment_reminders():
                 notification_type="appointment_reminder",
                 title=title,
                 message=message,
-                metadata=metadata
+                metadata=metadata,
             )
             count += 1
         except Exception as e:
@@ -121,9 +120,7 @@ def send_marketing_campaign_task(self, campaign_id: int, customer_ids: list[int]
             id=campaign_id
         )
     except EmailMarketingCampaign.DoesNotExist:
-        logger.error(
-            "marketing_campaign_not_found", extra={"campaign_id": campaign_id}
-        )
+        logger.error("marketing_campaign_not_found", extra={"campaign_id": campaign_id})
         return
 
     customers = SalonCustomer.objects.filter(

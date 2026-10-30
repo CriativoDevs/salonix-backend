@@ -3,6 +3,7 @@
 Regression tests for BE-SEC-04 item 4: CORS/CSRF/security headers.
 Validates SecurityHeadersMiddleware and settings configuration.
 """
+
 import pytest
 from django.http import HttpRequest, HttpResponse
 from django.test import RequestFactory, override_settings

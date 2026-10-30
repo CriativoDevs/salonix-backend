@@ -4,27 +4,55 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('cms', '0001_initial'),
+        ("cms", "0001_initial"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='RoadmapItem',
+            name="RoadmapItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True)),
-                ('status', models.CharField(choices=[('planned', 'Planejado'), ('in_progress', 'Em andamento'), ('delivered', 'Entregue')], default='planned', max_length=20)),
-                ('order', models.PositiveIntegerField(default=0, help_text='Menor numero aparece primeiro.')),
-                ('is_visible', models.BooleanField(default=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("planned", "Planejado"),
+                            ("in_progress", "Em andamento"),
+                            ("delivered", "Entregue"),
+                        ],
+                        default="planned",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "order",
+                    models.PositiveIntegerField(
+                        default=0, help_text="Menor numero aparece primeiro."
+                    ),
+                ),
+                ("is_visible", models.BooleanField(default=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'ordering': ('order', 'created_at'),
-                'indexes': [models.Index(fields=['is_visible', 'order'], name='cms_roadmap_visible_order_idx')],
+                "ordering": ("order", "created_at"),
+                "indexes": [
+                    models.Index(
+                        fields=["is_visible", "order"],
+                        name="cms_roadmap_visible_order_idx",
+                    )
+                ],
             },
         ),
     ]

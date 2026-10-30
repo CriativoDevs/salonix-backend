@@ -645,9 +645,7 @@ class MarketingCampaignListCreateView(TenantIsolatedMixin, generics.ListCreateAP
             tenant=tenant,
             created_at__year=now.year,
             created_at__month=now.month,
-        ).aggregate(
-            free=Sum("free_sent_count"), credit=Sum("credit_sent_count")
-        )
+        ).aggregate(free=Sum("free_sent_count"), credit=Sum("credit_sent_count"))
         return (aggregate["free"] or 0) + (aggregate["credit"] or 0)
 
     def create(self, request, *args, **kwargs):
@@ -732,9 +730,7 @@ class MarketingCampaignListCreateView(TenantIsolatedMixin, generics.ListCreateAP
             )
 
         if to_send:
-            send_marketing_campaign_task.delay(
-                campaign.id, [c.id for c in to_send]
-            )
+            send_marketing_campaign_task.delay(campaign.id, [c.id for c in to_send])
 
         logger.info(
             "marketing_campaign_created",

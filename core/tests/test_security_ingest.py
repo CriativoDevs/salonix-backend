@@ -7,6 +7,7 @@ Covers:
 - MIME / encoding validation
 - PublicSlotListView filter input validation
 """
+
 import io
 import csv
 import uuid
@@ -17,7 +18,11 @@ from rest_framework.test import APIClient
 
 from users.models import CustomUser, Tenant, TenantStaffMember
 from core.models import (
-    Appointment, Professional, SalonCustomer, ScheduleSlot, Service,
+    Appointment,
+    Professional,
+    SalonCustomer,
+    ScheduleSlot,
+    Service,
 )
 
 
@@ -34,11 +39,15 @@ def _make_tenant():
 
 def _make_owner(tenant):
     user = CustomUser.objects.create_user(
-        username=f"u-{_slug()}", email=f"u-{_slug()}@x.com",
-        password="x", tenant=tenant,
+        username=f"u-{_slug()}",
+        email=f"u-{_slug()}@x.com",
+        password="x",
+        tenant=tenant,
     )
     TenantStaffMember.objects.create(
-        tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        tenant=tenant,
+        user=user,
+        role=TenantStaffMember.Role.OWNER,
     )
     return user
 
@@ -63,16 +72,25 @@ def _make_appointment_fixture(tenant, user):
     """Creates a minimal appointment fixture for import tests."""
     start = timezone.make_aware(timezone.datetime(2030, 1, 10, 10, 0))
     svc = Service.objects.create(
-        tenant=tenant, user=user, name="Svc", duration_minutes=30, price_eur=10,
+        tenant=tenant,
+        user=user,
+        name="Svc",
+        duration_minutes=30,
+        price_eur=10,
     )
     prof = Professional.objects.create(tenant=tenant, user=user, name="Prof")
     cust = SalonCustomer.objects.create(
-        tenant=tenant, name="Cust", email=f"c-{_slug()}@x.com",
+        tenant=tenant,
+        name="Cust",
+        email=f"c-{_slug()}@x.com",
     )
     slot = ScheduleSlot.objects.create(
-        tenant=tenant, professional=prof,
-        start_time=start, end_time=start + timezone.timedelta(minutes=30),
-        is_available=True, status="available",
+        tenant=tenant,
+        professional=prof,
+        start_time=start,
+        end_time=start + timezone.timedelta(minutes=30),
+        is_available=True,
+        status="available",
     )
     return svc, prof, cust, slot
 
@@ -90,7 +108,13 @@ def test_import_appointments_notes_sqli_payload_sanitized():
 
     sqli_notes = "'; DROP TABLE appointments; --\x00\x1f"
     rows = [
-        ["customer_email", "service_name", "professional_name", "start_datetime", "notes"],
+        [
+            "customer_email",
+            "service_name",
+            "professional_name",
+            "start_datetime",
+            "notes",
+        ],
         [cust.email, svc.name, prof.name, start_str, sqli_notes],
     ]
     f = _upload(_csv_bytes(rows))
@@ -115,7 +139,13 @@ def test_import_appointments_notes_control_chars_removed():
 
     notes_with_ctrl = "normal text\x01\x08\x1b\x7fmore text"
     rows = [
-        ["customer_email", "service_name", "professional_name", "start_datetime", "notes"],
+        [
+            "customer_email",
+            "service_name",
+            "professional_name",
+            "start_datetime",
+            "notes",
+        ],
         [cust.email, svc.name, prof.name, "2030-01-10 10:00", notes_with_ctrl],
     ]
     f = _upload(_csv_bytes(rows))
@@ -136,7 +166,13 @@ def test_import_appointments_notes_oversized_truncated():
 
     long_notes = "A" * 2000
     rows = [
-        ["customer_email", "service_name", "professional_name", "start_datetime", "notes"],
+        [
+            "customer_email",
+            "service_name",
+            "professional_name",
+            "start_datetime",
+            "notes",
+        ],
         [cust.email, svc.name, prof.name, "2030-01-10 10:00", long_notes],
     ]
     f = _upload(_csv_bytes(rows))
@@ -192,7 +228,9 @@ def test_import_csv_accepts_exactly_max_rows():
         [f"Name{i}", f"u{i}@x.com", ""] for i in range(5000)
     ]
     f = _upload(_csv_bytes(rows))
-    r = _auth(user).post("/api/import/customers/?dry_run=true", {"file": f}, format="multipart")
+    r = _auth(user).post(
+        "/api/import/customers/?dry_run=true", {"file": f}, format="multipart"
+    )
     assert r.status_code == 200
 
 
@@ -248,7 +286,11 @@ def test_import_csv_rejects_non_utf8_encoding():
     f = SimpleUploadedFile("import.csv", data, content_type="text/csv")
     r = _auth(user).post("/api/import/customers/", {"file": f}, format="multipart")
     assert r.status_code == 400
-    assert "utf" in str(r.data).lower() or "encoding" in str(r.data).lower() or "utf-8" in str(r.data).lower()
+    assert (
+        "utf" in str(r.data).lower()
+        or "encoding" in str(r.data).lower()
+        or "utf-8" in str(r.data).lower()
+    )
 
 
 @pytest.mark.django_db
@@ -260,7 +302,9 @@ def test_import_csv_accepts_utf8_bom():
     bom = b"\xef\xbb\xbf"
     data = bom + "name,email,phone\nAna,a@x.com,\n".encode("utf-8")
     f = SimpleUploadedFile("import.csv", data, content_type="text/csv")
-    r = _auth(user).post("/api/import/customers/?dry_run=true", {"file": f}, format="multipart")
+    r = _auth(user).post(
+        "/api/import/customers/?dry_run=true", {"file": f}, format="multipart"
+    )
     assert r.status_code == 200
 
 
@@ -277,14 +321,19 @@ def test_public_slots_rejects_non_integer_professional_id():
 @pytest.mark.django_db
 def test_public_slots_rejects_invalid_date_from():
     """date_from with an invalid format returns 400."""
-    r = APIClient().get("/api/public/slots/", {"professional_id": "1", "date_from": "not-a-date"})
+    r = APIClient().get(
+        "/api/public/slots/", {"professional_id": "1", "date_from": "not-a-date"}
+    )
     assert r.status_code == 400
 
 
 @pytest.mark.django_db
 def test_public_slots_rejects_invalid_date_to():
     """date_to with an invalid format returns 400."""
-    r = APIClient().get("/api/public/slots/", {"professional_id": "1", "date_to": "<script>alert(1)</script>"})
+    r = APIClient().get(
+        "/api/public/slots/",
+        {"professional_id": "1", "date_to": "<script>alert(1)</script>"},
+    )
     assert r.status_code == 400
 
 
@@ -295,6 +344,7 @@ def test_public_slots_rejects_invalid_date_to():
 def test_rejection_emits_structured_log_on_invalid_mime():
     """A rejected upload calls _import_logger.warning with reason and no sensitive data."""
     from unittest.mock import patch
+
     tenant = _make_tenant()
     user = _make_owner(tenant)
 
@@ -319,6 +369,7 @@ def test_rejection_emits_structured_log_on_invalid_mime():
 def test_rejection_emits_structured_log_on_binary_content():
     """Binary file rejection emits log with magic_prefix hex, not raw bytes."""
     from unittest.mock import patch
+
     tenant = _make_tenant()
     user = _make_owner(tenant)
 
@@ -339,6 +390,7 @@ def test_rejection_emits_structured_log_on_binary_content():
 def test_rejection_emits_structured_log_on_too_many_rows():
     """Row-limit rejection emits log with row_count, not row content."""
     from unittest.mock import patch
+
     tenant = _make_tenant()
     user = _make_owner(tenant)
 
@@ -361,6 +413,7 @@ def test_rejection_emits_structured_log_on_too_many_rows():
 def test_rejection_prometheus_counter_increments():
     """Each rejection increments the CSV_IMPORT_REJECTIONS_TOTAL counter."""
     from unittest.mock import patch, MagicMock
+
     tenant = _make_tenant()
     user = _make_owner(tenant)
 

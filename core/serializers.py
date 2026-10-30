@@ -437,11 +437,15 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if slot is None:
             # Caminho de auto-criação: exige start_time, end_time e professional
             if not start_time:
-                errors["start_time"] = "Informe start_time quando slot não for fornecido."
+                errors["start_time"] = (
+                    "Informe start_time quando slot não for fornecido."
+                )
             if not end_time:
                 errors["end_time"] = "Informe end_time quando slot não for fornecido."
             if not professional:
-                errors["professional"] = "Informe professional quando slot não for fornecido."
+                errors["professional"] = (
+                    "Informe professional quando slot não for fornecido."
+                )
 
             if not errors:
                 if end_time <= start_time:
@@ -457,7 +461,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
                         status="booked",
                     ).exists()
                     if overlap:
-                        errors["start_time"] = "O profissional já tem um agendamento neste horário."
+                        errors["start_time"] = (
+                            "O profissional já tem um agendamento neste horário."
+                        )
         else:
             # Caminho tradicional: slot fornecido
             if not slot.is_available:
@@ -709,7 +715,11 @@ class BulkAppointmentSerializer(serializers.Serializer):
                 except Exception:
                     eff_pid_int = None
 
-                if eff_pid_int is not None and slot and slot.professional_id != eff_pid_int:
+                if (
+                    eff_pid_int is not None
+                    and slot
+                    and slot.professional_id != eff_pid_int
+                ):
                     wrong_professional.append(slot.id)
                 if slot and (
                     not slot.is_available
@@ -720,7 +730,9 @@ class BulkAppointmentSerializer(serializers.Serializer):
                     past.append(slot.id)
 
             if unavailable:
-                raise serializers.ValidationError(f"Slots não disponíveis: {unavailable}")
+                raise serializers.ValidationError(
+                    f"Slots não disponíveis: {unavailable}"
+                )
             if wrong_professional:
                 raise serializers.ValidationError(
                     f"Slots não pertencem ao profissional informado: {wrong_professional}"
@@ -738,11 +750,17 @@ class BulkAppointmentSerializer(serializers.Serializer):
 
             item_errors: dict[str, str] = {}
             if not start_time:
-                item_errors["start_time"] = "Informe start_time quando slot_id não for fornecido."
+                item_errors["start_time"] = (
+                    "Informe start_time quando slot_id não for fornecido."
+                )
             if not end_time:
-                item_errors["end_time"] = "Informe end_time quando slot_id não for fornecido."
+                item_errors["end_time"] = (
+                    "Informe end_time quando slot_id não for fornecido."
+                )
             if not eff_pid:
-                item_errors["professional_id"] = "Informe professional_id quando slot_id não for fornecido."
+                item_errors["professional_id"] = (
+                    "Informe professional_id quando slot_id não for fornecido."
+                )
             if item_errors:
                 raise serializers.ValidationError(item_errors)
 
@@ -765,7 +783,9 @@ class BulkAppointmentSerializer(serializers.Serializer):
                 overlap_qs = overlap_qs.filter(tenant=tenant)
             if overlap_qs.exists():
                 raise serializers.ValidationError(
-                    {"start_time": "O profissional já tem um agendamento neste horário."}
+                    {
+                        "start_time": "O profissional já tem um agendamento neste horário."
+                    }
                 )
 
         return value
@@ -961,9 +981,13 @@ class MixedBulkAppointmentRequestSerializer(serializers.Serializer):
                 end_time = item.get("end_time")
                 item_errors: dict[str, str] = {}
                 if not start_time:
-                    item_errors["start_time"] = "Informe start_time quando slot_id não for fornecido."
+                    item_errors["start_time"] = (
+                        "Informe start_time quando slot_id não for fornecido."
+                    )
                 if not end_time:
-                    item_errors["end_time"] = "Informe end_time quando slot_id não for fornecido."
+                    item_errors["end_time"] = (
+                        "Informe end_time quando slot_id não for fornecido."
+                    )
                 if item_errors:
                     raise serializers.ValidationError(item_errors)
                 if end_time <= start_time:

@@ -209,8 +209,10 @@ class TestRequiresMobileAccessPermission:
         request = _make_request(factory, app_type="admin")
         request.user = user
 
-        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
-                pytest.raises(PermissionDenied) as exc_info:
+        with (
+            patch.object(Tenant, "can_use_native_admin", return_value=False),
+            pytest.raises(PermissionDenied) as exc_info,
+        ):
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         detail = exc_info.value.detail
@@ -261,8 +263,10 @@ class TestRequiresMobileAccessPermission:
         request = _make_request(factory, app_type="client")
         request.user = user
 
-        with patch.object(Tenant, "can_use_native_client", return_value=False), \
-                pytest.raises(PermissionDenied) as exc_info:
+        with (
+            patch.object(Tenant, "can_use_native_client", return_value=False),
+            pytest.raises(PermissionDenied) as exc_info,
+        ):
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         detail = exc_info.value.detail
@@ -304,14 +308,18 @@ class TestRequiresMobileAccessPermission:
 
         request_admin = _make_request(factory, app_type="admin")
         request_admin.user = user
-        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
-                pytest.raises(PermissionDenied) as admin_exc:
+        with (
+            patch.object(Tenant, "can_use_native_admin", return_value=False),
+            pytest.raises(PermissionDenied) as admin_exc,
+        ):
             RequiresMobileAccess().has_permission(request_admin, MockMobileView())
 
         request_client = _make_request(factory, app_type="client")
         request_client.user = user
-        with patch.object(Tenant, "can_use_native_client", return_value=False), \
-                pytest.raises(PermissionDenied) as client_exc:
+        with (
+            patch.object(Tenant, "can_use_native_client", return_value=False),
+            pytest.raises(PermissionDenied) as client_exc,
+        ):
             RequiresMobileAccess().has_permission(request_client, MockMobileView())
 
         assert admin_exc.value.detail["detail"] != client_exc.value.detail["detail"]
@@ -330,8 +338,10 @@ class TestRequiresMobileAccessPermission:
         request = _make_request(factory, app_type="ADMIN")
         request.user = user
 
-        with patch.object(Tenant, "can_use_native_admin", return_value=False), \
-                pytest.raises(PermissionDenied) as exc_info:
+        with (
+            patch.object(Tenant, "can_use_native_admin", return_value=False),
+            pytest.raises(PermissionDenied) as exc_info,
+        ):
             RequiresMobileAccess().has_permission(request, MockMobileView())
 
         assert exc_info.value.detail["code"] == "PLAN_UPGRADE_REQUIRED"

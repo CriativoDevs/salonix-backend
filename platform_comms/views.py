@@ -72,7 +72,9 @@ class PlatformAnnouncementListView(generics.ListAPIView):
             ).values_list("announcement_id", flat=True)
         )
         new_receipts = [
-            PlatformAnnouncementReceipt(announcement=announcement, user=user, tenant=tenant)
+            PlatformAnnouncementReceipt(
+                announcement=announcement, user=user, tenant=tenant
+            )
             for announcement in queryset
             if announcement.pk not in existing_ids
         ]

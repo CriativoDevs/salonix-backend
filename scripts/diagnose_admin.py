@@ -53,9 +53,9 @@ print("4️⃣ Apps visíveis no admin sidebar:")
 app_list = admin.site.get_app_list(request=None)
 if app_list:
     for app in app_list:
-        print(f'   📦 {app.get("name", "Unknown")} ({app.get("app_label", "?")})')
+        print(f"   📦 {app.get('name', 'Unknown')} ({app.get('app_label', '?')})")
         for model in app.get("models", []):
-            print(f'      - {model.get("name", "?")}')
+            print(f"      - {model.get('name', '?')}")
 else:
     print("   ⚠️  Não foi possível listar (precisa de request)")
 print()

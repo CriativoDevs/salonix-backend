@@ -18,18 +18,33 @@ MONDAY = date(2026, 6, 1)  # segunda-feira
 
 
 def _make_setup(slug):
-    tenant = Tenant.objects.create(name=f"Salon {slug}", slug=slug, is_active=True, timezone="Europe/Lisbon")
+    tenant = Tenant.objects.create(
+        name=f"Salon {slug}", slug=slug, is_active=True, timezone="Europe/Lisbon"
+    )
     owner = CustomUser.objects.create_user(
-        username=f"owner_{slug}", email=f"owner_{slug}@example.com", password="Pass123!", tenant=tenant
+        username=f"owner_{slug}",
+        email=f"owner_{slug}@example.com",
+        password="Pass123!",
+        tenant=tenant,
     )
     staff = TenantStaffMember.objects.create(
-        tenant=tenant, user=owner, role=TenantStaffMember.Role.OWNER, status=TenantStaffMember.Status.ACTIVE
+        tenant=tenant,
+        user=owner,
+        role=TenantStaffMember.Role.OWNER,
+        status=TenantStaffMember.Status.ACTIVE,
     )
     prof_user = CustomUser.objects.create_user(
-        username=f"prof_{slug}", email=f"prof_{slug}@example.com", password="Pass123!", tenant=tenant
+        username=f"prof_{slug}",
+        email=f"prof_{slug}@example.com",
+        password="Pass123!",
+        tenant=tenant,
     )
     professional = Professional.objects.create(
-        tenant=tenant, user=prof_user, staff_member=staff, name="Ana Lima", is_active=True
+        tenant=tenant,
+        user=prof_user,
+        staff_member=staff,
+        name="Ana Lima",
+        is_active=True,
     )
     return tenant, owner, professional
 
@@ -52,17 +67,24 @@ class TestBulkGeneratePermissions:
     def test_collaborator_rejected(self):
         tenant, _, professional = _make_setup("bg-perm-collab")
         collab = CustomUser.objects.create_user(
-            username="collab_bg", email="collab_bg@x.com", password="Pass123!", tenant=tenant
+            username="collab_bg",
+            email="collab_bg@x.com",
+            password="Pass123!",
+            tenant=tenant,
         )
         TenantStaffMember.objects.create(
-            tenant=tenant, user=collab, role=TenantStaffMember.Role.COLLABORATOR,
-            status=TenantStaffMember.Status.ACTIVE
+            tenant=tenant,
+            user=collab,
+            role=TenantStaffMember.Role.COLLABORATOR,
+            status=TenantStaffMember.Status.ACTIVE,
         )
         _add_bh(tenant, MON)
         self.client.force_authenticate(user=collab)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day", "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {"professional_id": professional.id, "period": "day", "date": str(MONDAY)},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
     def test_manager_allowed(self):
@@ -71,14 +93,18 @@ class TestBulkGeneratePermissions:
             username="mgr_bg", email="mgr_bg@x.com", password="Pass123!", tenant=tenant
         )
         TenantStaffMember.objects.create(
-            tenant=tenant, user=manager, role=TenantStaffMember.Role.MANAGER,
-            status=TenantStaffMember.Status.ACTIVE
+            tenant=tenant,
+            user=manager,
+            role=TenantStaffMember.Role.MANAGER,
+            status=TenantStaffMember.Status.ACTIVE,
         )
         _add_bh(tenant, MON)
         self.client.force_authenticate(user=manager)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day", "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {"professional_id": professional.id, "period": "day", "date": str(MONDAY)},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
 
 
@@ -96,45 +122,67 @@ class TestBulkGenerateValidation:
     def test_missing_professional_id(self):
         _tenant, owner, _prof = _make_setup("bg-val-noprof")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {"period": "day", "date": str(MONDAY)}, format="json")
+        resp = self.client.post(
+            URL, {"period": "day", "date": str(MONDAY)}, format="json"
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_invalid_period(self):
         _tenant, owner, professional = _make_setup("bg-val-period")
         _add_bh(_tenant, MON)
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "quarter", "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "quarter",
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_interval_below_minimum(self):
         _tenant, owner, professional = _make_setup("bg-val-intlow")
         _add_bh(_tenant, MON)
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 10, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 10,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_interval_above_maximum(self):
         _tenant, owner, professional = _make_setup("bg-val-inthigh")
         _add_bh(_tenant, MON)
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 600, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 600,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_invalid_date_format(self):
         _tenant, owner, professional = _make_setup("bg-val-date")
         _add_bh(_tenant, MON)
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day", "date": "01/06/2026"
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {"professional_id": professional.id, "period": "day", "date": "01/06/2026"},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_professional_from_other_tenant_rejected(self):
@@ -142,17 +190,21 @@ class TestBulkGenerateValidation:
         tenant_b, _owner_b, prof_b = _make_setup("bg-val-iso-b")
         _add_bh(tenant_a, MON)
         self.client.force_authenticate(user=owner_a)
-        resp = self.client.post(URL, {
-            "professional_id": prof_b.id, "period": "day", "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {"professional_id": prof_b.id, "period": "day", "date": str(MONDAY)},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_no_business_hours_returns_error(self):
         tenant, owner, professional = _make_setup("bg-val-nobh")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day", "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {"professional_id": professional.id, "period": "day", "date": str(MONDAY)},
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
@@ -166,24 +218,41 @@ class TestBulkGenerateDay:
         tenant, owner, professional = _make_setup("bg-day-basic")
         _add_bh(tenant, MON, "09:00", "12:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 3
         assert resp.data["skipped"] == 0
-        assert ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count() == 3
+        assert (
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
+            == 3
+        )
 
     def test_day_with_30min_interval(self):
         # 09:00-11:00, 30 min → 4 slots
         tenant, owner, professional = _make_setup("bg-day-30")
         _add_bh(tenant, MON, "09:00", "11:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 30, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 30,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 4
 
@@ -192,10 +261,16 @@ class TestBulkGenerateDay:
         tenant, owner, professional = _make_setup("bg-day-noday")
         _add_bh(tenant, SUN, "09:00", "12:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 0
         assert resp.data["skipped"] == 0
@@ -205,15 +280,22 @@ class TestBulkGenerateDay:
         _add_bh(tenant, MON, "09:00", "12:00")
         self.client.force_authenticate(user=owner)
         payload = {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 60, "date": str(MONDAY)
+            "professional_id": professional.id,
+            "period": "day",
+            "interval_minutes": 60,
+            "date": str(MONDAY),
         }
         resp1 = self.client.post(URL, payload, format="json")
         assert resp1.data["created"] == 3
         resp2 = self.client.post(URL, payload, format="json")
         assert resp2.data["created"] == 0
         assert resp2.data["skipped"] == 3
-        assert ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count() == 3
+        assert (
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
+            == 3
+        )
 
 
 @pytest.mark.django_db
@@ -228,10 +310,16 @@ class TestBulkGenerateWeek:
         _add_bh(tenant, MON, "09:00", "12:00")
         _add_bh(tenant, SAT, "10:00", "12:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "week",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "week",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 5  # 3 + 2
 
@@ -241,10 +329,16 @@ class TestBulkGenerateWeek:
         _add_bh(tenant, MON, "09:00", "10:00")  # 1 slot
         wednesday = MONDAY + timedelta(days=2)
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "week",
-            "interval_minutes": 60, "date": str(wednesday)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "week",
+                "interval_minutes": 60,
+                "date": str(wednesday),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 1
 
@@ -253,8 +347,10 @@ class TestBulkGenerateWeek:
         _add_bh(tenant, MON, "09:00", "11:00")
         self.client.force_authenticate(user=owner)
         payload = {
-            "professional_id": professional.id, "period": "week",
-            "interval_minutes": 60, "date": str(MONDAY)
+            "professional_id": professional.id,
+            "period": "week",
+            "interval_minutes": 60,
+            "date": str(MONDAY),
         }
         resp1 = self.client.post(URL, payload, format="json")
         created = resp1.data["created"]
@@ -274,10 +370,16 @@ class TestBulkGenerateMonth:
         tenant, owner, professional = _make_setup("bg-month-mon")
         _add_bh(tenant, MON, "09:00", "10:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "month",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "month",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 5
 
@@ -286,8 +388,10 @@ class TestBulkGenerateMonth:
         _add_bh(tenant, MON, "09:00", "10:00")
         self.client.force_authenticate(user=owner)
         payload = {
-            "professional_id": professional.id, "period": "month",
-            "interval_minutes": 60, "date": str(MONDAY)
+            "professional_id": professional.id,
+            "period": "month",
+            "interval_minutes": 60,
+            "date": str(MONDAY),
         }
         resp1 = self.client.post(URL, payload, format="json")
         created = resp1.data["created"]
@@ -301,10 +405,16 @@ class TestBulkGenerateMonth:
         _add_bh(tenant_a, MON, "09:00", "10:00")
         _add_bh(tenant_b, MON, "09:00", "10:00")
         self.client.force_authenticate(user=owner_a)
-        self.client.post(URL, {
-            "professional_id": prof_a.id, "period": "month",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        self.client.post(
+            URL,
+            {
+                "professional_id": prof_a.id,
+                "period": "month",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert ScheduleSlot.objects.filter(tenant=tenant_b).count() == 0
 
 
@@ -323,10 +433,16 @@ class TestBulkGenerateLegacyPeriodFormatRegression:
         tenant, owner, professional = _make_setup("bg-legacy-day")
         _add_bh(tenant, MON, "09:00", "12:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "day",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "day",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 3
         assert resp.data["skipped"] == 0
@@ -336,10 +452,16 @@ class TestBulkGenerateLegacyPeriodFormatRegression:
         _add_bh(tenant, MON, "09:00", "12:00")
         _add_bh(tenant, SAT, "10:00", "12:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id, "period": "week",
-            "interval_minutes": 60, "date": str(MONDAY)
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "week",
+                "interval_minutes": 60,
+                "date": str(MONDAY),
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 5
 
@@ -355,24 +477,39 @@ class TestBulkGenerateDateFromDateTo:
         _add_bh(tenant, MON, "09:00", "12:00")
         self.client.force_authenticate(user=owner)
         tuesday = MONDAY + timedelta(days=1)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id,
-            "date_from": str(MONDAY), "date_to": str(tuesday),
-            "interval_minutes": 60,
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "date_from": str(MONDAY),
+                "date_to": str(tuesday),
+                "interval_minutes": 60,
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 3
-        assert ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count() == 3
+        assert (
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
+            == 3
+        )
 
     def test_date_from_date_to_single_day(self):
         tenant, owner, professional = _make_setup("bg-range-single")
         _add_bh(tenant, MON, "09:00", "11:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id,
-            "date_from": str(MONDAY), "date_to": str(MONDAY),
-            "interval_minutes": 30,
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "date_from": str(MONDAY),
+                "date_to": str(MONDAY),
+                "interval_minutes": 30,
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 4
 
@@ -382,7 +519,8 @@ class TestBulkGenerateDateFromDateTo:
         self.client.force_authenticate(user=owner)
         payload = {
             "professional_id": professional.id,
-            "date_from": str(MONDAY), "date_to": str(MONDAY),
+            "date_from": str(MONDAY),
+            "date_to": str(MONDAY),
             "interval_minutes": 60,
         }
         resp1 = self.client.post(URL, payload, format="json")
@@ -395,22 +533,31 @@ class TestBulkGenerateDateFromDateTo:
         tenant, owner, professional = _make_setup("bg-range-invalid")
         _add_bh(tenant, MON, "09:00", "11:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id,
-            "date_from": str(MONDAY), "date_to": str(MONDAY - timedelta(days=1)),
-            "interval_minutes": 60,
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "date_from": str(MONDAY),
+                "date_to": str(MONDAY - timedelta(days=1)),
+                "interval_minutes": 60,
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_date_from_without_date_to_rejected(self):
         tenant, owner, professional = _make_setup("bg-range-partial")
         _add_bh(tenant, MON, "09:00", "11:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id,
-            "date_from": str(MONDAY),
-            "interval_minutes": 60,
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "date_from": str(MONDAY),
+                "interval_minutes": 60,
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_date_from_date_to_takes_precedence_over_period(self):
@@ -418,11 +565,16 @@ class TestBulkGenerateDateFromDateTo:
         tenant, owner, professional = _make_setup("bg-range-precedence")
         _add_bh(tenant, MON, "09:00", "10:00")
         self.client.force_authenticate(user=owner)
-        resp = self.client.post(URL, {
-            "professional_id": professional.id,
-            "period": "month",  # seria ignorado
-            "date_from": str(MONDAY), "date_to": str(MONDAY),
-            "interval_minutes": 60,
-        }, format="json")
+        resp = self.client.post(
+            URL,
+            {
+                "professional_id": professional.id,
+                "period": "month",  # seria ignorado
+                "date_from": str(MONDAY),
+                "date_to": str(MONDAY),
+                "interval_minutes": 60,
+            },
+            format="json",
+        )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["created"] == 1  # só 1 dia, não o mês inteiro

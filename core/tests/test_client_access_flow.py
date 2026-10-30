@@ -121,10 +121,10 @@ class TestClientAccessFlow:
         }
 
         # Mocking captcha enforcement if needed, but let's try with dev-bypass first
-        with patch("core.views.send_customer_pwa_invite") as mock_send, patch(
-            "core.views.enforce_captcha_or_raise"
-        ) as mock_captcha:
-
+        with (
+            patch("core.views.send_customer_pwa_invite") as mock_send,
+            patch("core.views.enforce_captcha_or_raise") as mock_captcha,
+        ):
             response = self.client.post(url, data, format="json")
 
             assert response.status_code == status.HTTP_200_OK

@@ -270,9 +270,7 @@ def build_tenant_data_export(tenant: Tenant) -> dict:
             "plan_tier": tenant.plan_tier,
             "exported_at": timezone.now().isoformat(),
             "export_version": "1.0",
-            "note": (
-                "Faturacao: apenas referencias/IDs Stripe; sem dados de cartao."
-            ),
+            "note": ("Faturacao: apenas referencias/IDs Stripe; sem dados de cartao."),
         },
         "data": {},
     }

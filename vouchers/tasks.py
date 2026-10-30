@@ -96,7 +96,12 @@ def send_birthday_vouchers() -> dict:
     duplicado, nenhum e-mail duplicado).
     """
     from core.models import SalonCustomer
-    from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+    from vouchers.models import (
+        BirthdayVoucherConfig,
+        BirthdayVoucherLog,
+        ClientVoucher,
+        Voucher,
+    )
 
     today = timezone.localdate()
     vouchers_sent = 0

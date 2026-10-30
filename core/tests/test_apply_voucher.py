@@ -29,7 +29,10 @@ def other_tenant(db):
 @pytest.fixture
 def salon_owner(db, tenant):
     user = CustomUser.objects.create_user(
-        username="owner-av", password="pass", email="owner-av@example.com", tenant=tenant
+        username="owner-av",
+        password="pass",
+        email="owner-av@example.com",
+        tenant=tenant,
     )
     TenantStaffMember.objects.create(
         tenant=tenant,
@@ -60,7 +63,10 @@ def other_owner(db, other_tenant):
 @pytest.fixture
 def client_user(db, tenant):
     return CustomUser.objects.create_user(
-        username="client-av", password="pass", email="client-av@example.com", tenant=tenant
+        username="client-av",
+        password="pass",
+        email="client-av@example.com",
+        tenant=tenant,
     )
 
 
@@ -213,9 +219,7 @@ class TestApplyVoucher:
 
     def test_apply_voucher_nonexistent_client_voucher(self, appointment, salon_owner):
         c = auth_client(salon_owner)
-        resp = c.post(
-            url(appointment), {"client_voucher_id": 999999}, format="json"
-        )
+        resp = c.post(url(appointment), {"client_voucher_id": 999999}, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "client_voucher_id" in resp.data["error"]["details"]
 

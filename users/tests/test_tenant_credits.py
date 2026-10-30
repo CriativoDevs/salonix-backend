@@ -5,6 +5,7 @@ from users.models import Tenant, CommLedger
 
 User = get_user_model()
 
+
 @pytest.mark.django_db
 class TestTenantInitialCredits:
     def test_basic_plan_initial_credits(self):
@@ -12,14 +13,14 @@ class TestTenantInitialCredits:
         tenant = Tenant.objects.create(
             name="Tenant Basic",
             slug="tenant-basic-credits",
-            plan_tier=Tenant.PLAN_BASIC
+            plan_tier=Tenant.PLAN_BASIC,
         )
-        
+
         # Recarrega do banco para garantir que pegou a atualização do signal
         tenant.refresh_from_db()
-        
+
         assert tenant.comm_credit_eur == Decimal("5.00")
-        
+
         # Verifica Ledger
         ledger_entry = CommLedger.objects.filter(tenant=tenant).first()
         assert ledger_entry is not None
@@ -32,9 +33,7 @@ class TestTenantInitialCredits:
     def test_pro_plan_initial_credits(self):
         """BE-PLANS-01 (#481): Pro bloqueado não recebe crédito inicial."""
         tenant = Tenant.objects.create(
-            name="Tenant Pro",
-            slug="tenant-pro-credits",
-            plan_tier=Tenant.PLAN_PRO
+            name="Tenant Pro", slug="tenant-pro-credits", plan_tier=Tenant.PLAN_PRO
         )
 
         tenant.refresh_from_db()
@@ -47,19 +46,19 @@ class TestTenantInitialCredits:
         tenant = Tenant.objects.create(
             name="Tenant Update",
             slug="tenant-update-credits",
-            plan_tier=Tenant.PLAN_BASIC
+            plan_tier=Tenant.PLAN_BASIC,
         )
-        
+
         tenant.refresh_from_db()
         initial_credit = tenant.comm_credit_eur
         assert initial_credit == Decimal("5.00")
-        
+
         # Atualiza o tenant
         tenant.name = "Tenant Update Changed"
         tenant.save()
-        
+
         tenant.refresh_from_db()
         assert tenant.comm_credit_eur == initial_credit
-        
+
         # Deve ter apenas 1 entrada no ledger
         assert CommLedger.objects.filter(tenant=tenant).count() == 1

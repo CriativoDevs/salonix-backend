@@ -28,7 +28,9 @@ def resolve_dates_for_period(base_date: date_type, period: str) -> list[date_typ
     if period == "month":
         first = base_date.replace(day=1)
         if first.month == 12:
-            last = first.replace(year=first.year + 1, month=1, day=1) - timedelta(days=1)
+            last = first.replace(year=first.year + 1, month=1, day=1) - timedelta(
+                days=1
+            )
         else:
             last = first.replace(month=first.month + 1, day=1) - timedelta(days=1)
         return [first + timedelta(days=i) for i in range((last - first).days + 1)]
@@ -44,9 +46,7 @@ def resolve_date_range(date_from: date_type, date_to: date_type) -> list[date_ty
         raise ValueError("date_to deve ser maior ou igual a date_from.")
     span_days = (date_to - date_from).days
     if span_days > MAX_BULK_RANGE_DAYS:
-        raise ValueError(
-            f"Intervalo máximo permitido é de {MAX_BULK_RANGE_DAYS} dias."
-        )
+        raise ValueError(f"Intervalo máximo permitido é de {MAX_BULK_RANGE_DAYS} dias.")
     return [date_from + timedelta(days=i) for i in range(span_days + 1)]
 
 

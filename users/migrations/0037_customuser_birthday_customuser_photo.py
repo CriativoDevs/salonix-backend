@@ -5,20 +5,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0036_alter_tenant_comm_auto_renew_alter_tenant_plan_tier_and_more'),
+        ("users", "0036_alter_tenant_comm_auto_renew_alter_tenant_plan_tier_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='customuser',
-            name='birthday',
-            field=models.DateField(blank=True, help_text='Data de aniversário opcional do membro da equipa', null=True),
+            model_name="customuser",
+            name="birthday",
+            field=models.DateField(
+                blank=True,
+                help_text="Data de aniversário opcional do membro da equipa",
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='customuser',
-            name='photo',
-            field=models.ImageField(blank=True, help_text='Foto opcional do membro da equipa', null=True, upload_to='staff_photos/', validators=[users.validators.validate_profile_image]),
+            model_name="customuser",
+            name="photo",
+            field=models.ImageField(
+                blank=True,
+                help_text="Foto opcional do membro da equipa",
+                null=True,
+                upload_to="staff_photos/",
+                validators=[users.validators.validate_profile_image],
+            ),
         ),
     ]

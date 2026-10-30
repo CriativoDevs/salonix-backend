@@ -101,7 +101,9 @@ class TestAutoGenerateMonthlySlots:
         call_command("auto_generate_monthly_slots")
 
         assert (
-            ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count()
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
             == 0
         )
 
@@ -114,7 +116,9 @@ class TestAutoGenerateMonthlySlots:
         call_command("auto_generate_monthly_slots")
 
         assert (
-            ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count()
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
             == 0
         )
 
@@ -147,7 +151,9 @@ class TestAutoGenerateMonthlySlots:
         call_command("auto_generate_monthly_slots")
 
         assert (
-            ScheduleSlot.objects.filter(tenant=tenant, professional=professional).count()
+            ScheduleSlot.objects.filter(
+                tenant=tenant, professional=professional
+            ).count()
             == 0
         )
 

@@ -97,9 +97,12 @@ class TestMarketingCampaignCreate:
         _consented_customer(tenant_fixture, "a@example.com")
         api_client.force_authenticate(user=owner_user)
 
-        with patch(
-            "notifications.views.send_marketing_campaign_task.delay"
-        ) as mock_delay, patch("core.email_utils.send_marketing_email") as mock_send:
+        with (
+            patch(
+                "notifications.views.send_marketing_campaign_task.delay"
+            ) as mock_delay,
+            patch("core.email_utils.send_marketing_email") as mock_send,
+        ):
             resp = api_client.post(
                 URL, {"subject": "Promo", "body": "Corpo"}, format="json"
             )
@@ -114,7 +117,9 @@ class TestMarketingCampaignCreate:
     ):
         eligible = _consented_customer(tenant_fixture, "eligible@example.com")
         no_consent = SalonCustomer.objects.create(
-            tenant=tenant_fixture, name="Sem Consentimento", email="no-consent@example.com"
+            tenant=tenant_fixture,
+            name="Sem Consentimento",
+            email="no-consent@example.com",
         )
         unsub_customer = SalonCustomer.objects.create(
             tenant=tenant_fixture, name="Unsubscribed", email="unsub@example.com"
@@ -144,9 +149,7 @@ class TestMarketingCampaignCreate:
         sent_ids = mock_delay.call_args[0][1]
         assert sent_ids == [eligible.id]
 
-    def test_free_monthly_limit_respected(
-        self, api_client, owner_user, tenant_fixture
-    ):
+    def test_free_monthly_limit_respected(self, api_client, owner_user, tenant_fixture):
         # 3 campanhas anteriores neste mês já consumiram 48 do free de 50.
         EmailMarketingCampaign.objects.create(
             tenant=tenant_fixture,
@@ -273,7 +276,9 @@ class TestMarketingCampaignCreate:
 
 @pytest.mark.django_db
 class TestMarketingCampaignHistory:
-    def test_lists_only_own_tenant_campaigns(self, api_client, owner_user, tenant_fixture):
+    def test_lists_only_own_tenant_campaigns(
+        self, api_client, owner_user, tenant_fixture
+    ):
         other_tenant = Tenant.objects.create(slug="other-mkt", name="Other Mkt Tenant")
         EmailMarketingCampaign.objects.create(
             tenant=tenant_fixture, subject="Minha campanha", body="x"
@@ -286,7 +291,9 @@ class TestMarketingCampaignHistory:
         resp = api_client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        results = data["results"] if isinstance(data, dict) and "results" in data else data
+        results = (
+            data["results"] if isinstance(data, dict) and "results" in data else data
+        )
         subjects = [c["subject"] for c in results]
         assert "Minha campanha" in subjects
         assert "Campanha de outro tenant" not in subjects
@@ -310,7 +317,9 @@ class TestMarketingCampaignHistory:
         resp = api_client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        results = data["results"] if isinstance(data, dict) and "results" in data else data
+        results = (
+            data["results"] if isinstance(data, dict) and "results" in data else data
+        )
         campaign = results[0]
         assert campaign["eligible_count"] == 10
         assert campaign["skipped_no_consent_count"] == 4

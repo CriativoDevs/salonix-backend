@@ -58,9 +58,7 @@ class TestPlatformAnnouncementListView:
         response = api_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_returns_active_announcement_for_tenant(
-        self, api_client, user_fixture
-    ):
+    def test_returns_active_announcement_for_tenant(self, api_client, user_fixture):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
 
@@ -179,9 +177,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
         response = api_client.post(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_mark_read_creates_receipt_and_sets_read(
-        self, api_client, user_fixture
-    ):
+    def test_mark_read_creates_receipt_and_sets_read(self, api_client, user_fixture):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
 
@@ -244,14 +240,14 @@ class TestPlatformAnnouncementReceiptEndpoints:
         response = api_client.post(url)
 
         assert response.status_code == status.HTTP_200_OK, response.data
-        assert (
-            response.data["status"] == PlatformAnnouncementReceipt.STATUS_DISMISSED
-        )
+        assert response.data["status"] == PlatformAnnouncementReceipt.STATUS_DISMISSED
 
     def test_mark_read_for_one_user_does_not_affect_other_user(
         self, api_client, user_fixture, other_tenant_user, other_tenant
     ):
-        announcement = make_announcement(audience_scope=PlatformAnnouncement.AUDIENCE_ALL)
+        announcement = make_announcement(
+            audience_scope=PlatformAnnouncement.AUDIENCE_ALL
+        )
 
         api_client.force_authenticate(user=user_fixture)
         url = reverse("platform-announcement-mark-read", args=[announcement.pk])

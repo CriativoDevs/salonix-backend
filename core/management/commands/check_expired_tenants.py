@@ -61,7 +61,7 @@ class Command(BaseCommand):
             )
             for tenant_id, slug, deletion_date in expired:
                 self.stdout.write(
-                    f"  - ID {tenant_id} | {slug} | " f"Expirado em: {deletion_date}"
+                    f"  - ID {tenant_id} | {slug} | Expirado em: {deletion_date}"
                 )
         else:
             # Executa a task Celery

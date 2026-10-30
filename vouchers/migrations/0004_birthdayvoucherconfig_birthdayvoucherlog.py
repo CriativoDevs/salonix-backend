@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("core", "0028_saloncustomer_birthday_saloncustomer_photo"),
         ("users", "0041_comm_auto_renew_package_and_last_purchase"),

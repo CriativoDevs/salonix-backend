@@ -49,10 +49,18 @@ from reports.admin import ExportJobAdmin, DailyReportAggregateAdmin
 from cms.models import PublicPage, PageSEO, RoadmapItem
 from cms.admin import PublicPageAdmin, RoadmapItemAdmin
 from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementReceipt
-from platform_comms.admin import PlatformAnnouncementAdmin, PlatformAnnouncementReceiptAdmin
+from platform_comms.admin import (
+    PlatformAnnouncementAdmin,
+    PlatformAnnouncementReceiptAdmin,
+)
 from inventory.models import InventoryItem, StockMovement
 from inventory.admin import InventoryItemAdmin, StockMovementAdmin
-from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+from vouchers.models import (
+    BirthdayVoucherConfig,
+    BirthdayVoucherLog,
+    ClientVoucher,
+    Voucher,
+)
 from raffles.models import Raffle
 from raffles.admin import RaffleAdmin
 from vouchers.admin import (

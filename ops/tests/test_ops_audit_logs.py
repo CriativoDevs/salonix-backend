@@ -39,10 +39,12 @@ class TestOpsAuditLogsEndpoints:
             if isinstance(response.data, dict)
             else response.data
         )
-        
+
         # Filter only test actions to ignore side-effect logs (like login attempts)
-        test_logs = [r for r in results if r["action"] in ["test_action_1", "test_action_2"]]
-        
+        test_logs = [
+            r for r in results if r["action"] in ["test_action_1", "test_action_2"]
+        ]
+
         assert len(test_logs) == 2
         # Ordered by -created_at, so the last created comes first
         assert test_logs[0]["action"] == "test_action_2"

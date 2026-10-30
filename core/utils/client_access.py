@@ -3,6 +3,7 @@ from django.core import signing
 from django.utils import timezone
 import uuid
 
+
 def generate_client_access_payload(tenant, customer):
     """
     Gera o payload padrão para o token de acesso do cliente.
@@ -14,11 +15,13 @@ def generate_client_access_payload(tenant, customer):
         "jti": uuid.uuid4().hex,
     }
 
+
 def generate_client_access_token(payload):
     """
     Assina o payload gerando o token seguro.
     """
     return signing.dumps(payload, salt="CLIENT_PWA_INVITE_SALT")
+
 
 def generate_client_access_link(tenant, token):
     """
@@ -29,6 +32,7 @@ def generate_client_access_link(tenant, token):
     tenant_qs = f"tenant={slug}" if slug else ""
     sep = "&" if tenant_qs else ""
     return f"{base}/client/access?{tenant_qs}{sep}token={token}"
+
 
 def create_client_access_data(tenant, customer):
     """

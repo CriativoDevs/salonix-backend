@@ -520,12 +520,13 @@ class Command(BaseCommand):
             bruno_professional = Professional.objects.filter(
                 staff_member=bruno_staff
             ).first()
-            professionals = [
-                p for p in [alice_professional, bruno_professional] if p
-            ]
+            professionals = [p for p in [alice_professional, bruno_professional] if p]
 
             def _upsert_appointment(
-                slot: ScheduleSlot, service: Service, customer: SalonCustomer, status: str
+                slot: ScheduleSlot,
+                service: Service,
+                customer: SalonCustomer,
+                status: str,
             ):
                 appt, created = Appointment.objects.get_or_create(
                     slot=slot,

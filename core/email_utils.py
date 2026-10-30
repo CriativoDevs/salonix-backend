@@ -197,13 +197,23 @@ def send_appointment_confirmation_email(
         <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
           <p>{_("Olá %(client_name)s,") % {"client_name": client_name}}</p>
           <p>{
-        _('Seu agendamento para o serviço "%(service_name)s" foi confirmado com sucesso!')
+        _(
+            'Seu agendamento para o serviço "%(service_name)s" foi confirmado com sucesso!'
+        )
         % {"service_name": service_name}
     }</p>
-          <p>{_("📅 Data e hora: %(formatted_date)s") % {"formatted_date": formatted_date}}</p>
+          <p>{
+        _("📅 Data e hora: %(formatted_date)s") % {"formatted_date": formatted_date}
+    }</p>
           {calendar_html}
-          <p>{_("Caso precise remarcar ou cancelar, entre em contato conosco com antecedência.")}</p>
-          <p>{_("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}}</p>
+          <p>{
+        _(
+            "Caso precise remarcar ou cancelar, entre em contato conosco com antecedência."
+        )
+    }</p>
+          <p>{
+        _("Obrigado por escolher %(salon_name)s! 💈") % {"salon_name": salon_name}
+    }</p>
         </div>
         """
 
@@ -436,7 +446,9 @@ def _marketing_from_email(salon_name: str) -> str:
     _, address = email.utils.parseaddr(base)
     address = address or base
     display_name = (
-        f"{salon_name} via TimelyOne" if salon_name and salon_name != "TimelyOne" else "TimelyOne"
+        f"{salon_name} via TimelyOne"
+        if salon_name and salon_name != "TimelyOne"
+        else "TimelyOne"
     )
     return email.utils.formataddr((display_name, address))
 
@@ -593,9 +605,7 @@ def send_tenant_welcome_email(
 ):
     """Email de boas-vindas no registo do tenant, com badges das stores."""
     subject = _("Bem-vindo ao TimelyOne")
-    greeting = (
-        _("Olá %(name)s,") % {"name": owner_name} if owner_name else _("Olá,")
-    )
+    greeting = _("Olá %(name)s,") % {"name": owner_name} if owner_name else _("Olá,")
 
     body_plain = f"""
 {greeting}
@@ -652,9 +662,7 @@ def send_voucher_email(
     elif voucher_type == "fixed":
         value_line = _("Desconto: €%(value)s") % {"value": voucher_value}
     else:
-        value_line = _("Serviço grátis: %(service)s") % {
-            "service": service_name or ""
-        }
+        value_line = _("Serviço grátis: %(service)s") % {"service": service_name or ""}
 
     validity_line = (
         _("Válido até: %(date)s") % {"date": valid_until.strftime("%d/%m/%Y")}
@@ -985,14 +993,13 @@ _AUTO_RENEWAL_FAILURE_REASON_MESSAGES = {
         "não conseguimos processar a compra automática."
     ),
     "no_payment_customer": (
-        "Ainda não existe nenhum método de pagamento associado à tua conta no "
-        "Stripe."
+        "Ainda não existe nenhum método de pagamento associado à tua conta no Stripe."
     ),
     "no_payment_method": (
         "Não encontrámos um cartão predefinido guardado para cobrança automática."
     ),
     "invalid_price_id": (
-        "O pacote de crédito configurado para renovação automática já não é " "válido."
+        "O pacote de crédito configurado para renovação automática já não é válido."
     ),
     "charge_failed": ("A cobrança no teu cartão foi recusada pelo banco/emissor."),
 }

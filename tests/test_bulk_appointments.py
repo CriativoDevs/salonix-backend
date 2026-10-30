@@ -556,10 +556,18 @@ class TestBulkAppointmentStartEndTime(TestCase):
         st1 = self._st(days=1, hour=10)
         st2 = self._st(days=2, hour=10)
 
-        data = self._payload([
-            {"start_time": st1.isoformat(), "end_time": (st1 + timedelta(hours=1)).isoformat()},
-            {"start_time": st2.isoformat(), "end_time": (st2 + timedelta(hours=1)).isoformat()},
-        ])
+        data = self._payload(
+            [
+                {
+                    "start_time": st1.isoformat(),
+                    "end_time": (st1 + timedelta(hours=1)).isoformat(),
+                },
+                {
+                    "start_time": st2.isoformat(),
+                    "end_time": (st2 + timedelta(hours=1)).isoformat(),
+                },
+            ]
+        )
 
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_201_CREATED, resp.json()
@@ -569,9 +577,12 @@ class TestBulkAppointmentStartEndTime(TestCase):
         assert body["success"] is True
 
         # Slots foram criados
-        assert ScheduleSlot.objects.filter(
-            professional=self.professional, tenant=self.tenant, status="booked"
-        ).count() == 2
+        assert (
+            ScheduleSlot.objects.filter(
+                professional=self.professional, tenant=self.tenant, status="booked"
+            ).count()
+            == 2
+        )
 
         # Agendamentos vinculados aos slots
         for appt_id in body["appointment_ids"]:
@@ -585,9 +596,9 @@ class TestBulkAppointmentStartEndTime(TestCase):
         st = self._st(days=3, hour=11)
         et = st + timedelta(hours=1)
 
-        data = self._payload([
-            {"start_time": st.isoformat(), "end_time": et.isoformat()}
-        ])
+        data = self._payload(
+            [{"start_time": st.isoformat(), "end_time": et.isoformat()}]
+        )
 
         resp1 = self.api.post(self.url, data, format="json")
         assert resp1.status_code == status.HTTP_201_CREATED
@@ -595,7 +606,10 @@ class TestBulkAppointmentStartEndTime(TestCase):
         # O slot já está booked; segunda request deve falhar (sobreposição detectada no serializer)
         resp2 = self.api.post(self.url, data, format="json")
         assert resp2.status_code == status.HTTP_400_BAD_REQUEST
-        assert "agendamento" in str(resp2.json()).lower() or "horário" in str(resp2.json()).lower()
+        assert (
+            "agendamento" in str(resp2.json()).lower()
+            or "horário" in str(resp2.json()).lower()
+        )
 
     # ------------------------------------------------------------------
     # 2. Bulk misto: alguns com slot_id, outros com start_time/end_time
@@ -611,13 +625,15 @@ class TestBulkAppointmentStartEndTime(TestCase):
         )
         auto_st = self._st(days=5, hour=14)
 
-        data = self._payload([
-            {"slot_id": existing_slot.id},
-            {
-                "start_time": auto_st.isoformat(),
-                "end_time": (auto_st + timedelta(hours=1)).isoformat(),
-            },
-        ])
+        data = self._payload(
+            [
+                {"slot_id": existing_slot.id},
+                {
+                    "start_time": auto_st.isoformat(),
+                    "end_time": (auto_st + timedelta(hours=1)).isoformat(),
+                },
+            ]
+        )
 
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_201_CREATED, resp.json()
@@ -641,9 +657,7 @@ class TestBulkAppointmentStartEndTime(TestCase):
     # ------------------------------------------------------------------
 
     def test_missing_start_time_returns_400(self):
-        data = self._payload([
-            {"end_time": self._st(days=1, hour=11).isoformat()}
-        ])
+        data = self._payload([{"end_time": self._st(days=1, hour=11).isoformat()}])
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "start_time" in str(resp.json())
@@ -657,20 +671,27 @@ class TestBulkAppointmentStartEndTime(TestCase):
 
     def test_past_start_time_returns_400(self):
         past = timezone.now() - timedelta(hours=2)
-        data = self._payload([
-            {
-                "start_time": past.isoformat(),
-                "end_time": (past + timedelta(hours=1)).isoformat(),
-            }
-        ])
+        data = self._payload(
+            [
+                {
+                    "start_time": past.isoformat(),
+                    "end_time": (past + timedelta(hours=1)).isoformat(),
+                }
+            ]
+        )
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_end_before_start_returns_400(self):
         st = self._st(days=1, hour=10)
-        data = self._payload([
-            {"start_time": st.isoformat(), "end_time": (st - timedelta(hours=1)).isoformat()}
-        ])
+        data = self._payload(
+            [
+                {
+                    "start_time": st.isoformat(),
+                    "end_time": (st - timedelta(hours=1)).isoformat(),
+                }
+            ]
+        )
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -687,9 +708,9 @@ class TestBulkAppointmentStartEndTime(TestCase):
             status="booked",
             tenant=self.tenant,
         )
-        data = self._payload([
-            {"start_time": st.isoformat(), "end_time": et.isoformat()}
-        ])
+        data = self._payload(
+            [{"start_time": st.isoformat(), "end_time": et.isoformat()}]
+        )
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -700,7 +721,10 @@ class TestBulkAppointmentStartEndTime(TestCase):
         data = {
             "service_id": self.service.id,
             "appointments": [
-                {"start_time": st.isoformat(), "end_time": (st + timedelta(hours=1)).isoformat()}
+                {
+                    "start_time": st.isoformat(),
+                    "end_time": (st + timedelta(hours=1)).isoformat(),
+                }
             ],
         }
         resp = self.api.post(self.url, data, format="json")
@@ -719,13 +743,15 @@ class TestBulkAppointmentStartEndTime(TestCase):
         """
         st = self._st(days=8, hour=10)
 
-        data = self._payload([
-            {
-                "start_time": st.isoformat(),
-                "end_time": (st + timedelta(hours=1)).isoformat(),
-            },
-            {"slot_id": 99999},  # inexistente — falha no serializer
-        ])
+        data = self._payload(
+            [
+                {
+                    "start_time": st.isoformat(),
+                    "end_time": (st + timedelta(hours=1)).isoformat(),
+                },
+                {"slot_id": 99999},  # inexistente — falha no serializer
+            ]
+        )
 
         resp = self.api.post(self.url, data, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
@@ -785,10 +811,12 @@ class TestBulkAppointmentStartEndTime(TestCase):
         slot_bad.status = "booked"
         slot_bad.save()
 
-        data = self._payload([
-            {"slot_id": slot_ok.id},
-            {"slot_id": slot_bad.id},
-        ])
+        data = self._payload(
+            [
+                {"slot_id": slot_ok.id},
+                {"slot_id": slot_bad.id},
+            ]
+        )
 
         resp = self.api.post(self.url, data, format="json")
         # Serializer rejeita porque slot_bad está indisponível
@@ -839,9 +867,14 @@ class TestBulkAppointmentStartEndTime(TestCase):
         """
         st = self._st(days=13, hour=10)
 
-        data = self._payload([
-            {"start_time": st.isoformat(), "end_time": (st + timedelta(hours=1)).isoformat()}
-        ])
+        data = self._payload(
+            [
+                {
+                    "start_time": st.isoformat(),
+                    "end_time": (st + timedelta(hours=1)).isoformat(),
+                }
+            ]
+        )
 
         with patch("core.models.Appointment.objects.create") as mock_create:
             mock_create.side_effect = Exception("DB failure")

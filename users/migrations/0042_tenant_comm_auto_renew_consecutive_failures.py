@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0041_comm_auto_renew_package_and_last_purchase'),
+        ("users", "0041_comm_auto_renew_package_and_last_purchase"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='tenant',
-            name='comm_auto_renew_consecutive_failures',
-            field=models.PositiveIntegerField(default=0, help_text='Contador de falhas consecutivas da renovação automática de crédito (BE-CREDITS-03). Zerado a cada sucesso; a partir de 2 falhas seguidas o owner é notificado por e-mail.'),
+            model_name="tenant",
+            name="comm_auto_renew_consecutive_failures",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Contador de falhas consecutivas da renovação automática de crédito (BE-CREDITS-03). Zerado a cada sucesso; a partir de 2 falhas seguidas o owner é notificado por e-mail.",
+            ),
         ),
     ]

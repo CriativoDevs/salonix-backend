@@ -138,9 +138,7 @@ class RaffleViewSet(TenantIsolatedMixin, ModelViewSet):
         add_all = input_serializer.validated_data.get("all", False)
 
         if add_all:
-            clients = SalonCustomer.objects.filter(
-                tenant=raffle.tenant, is_active=True
-            )
+            clients = SalonCustomer.objects.filter(tenant=raffle.tenant, is_active=True)
             raffle.participants.add(*clients)
         else:
             clients = list(
