@@ -173,9 +173,7 @@ class TestStockMovementListCreate:
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_staff_can_list_movements(
-        self, api_client, staff_user, movement_fixture
-    ):
+    def test_staff_can_list_movements(self, api_client, staff_user, movement_fixture):
         api_client.force_authenticate(user=staff_user)
         response = api_client.get(self.url)
         assert response.status_code == status.HTTP_200_OK

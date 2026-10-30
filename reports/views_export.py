@@ -159,7 +159,10 @@ def _job_payload(job, request):
             "type": "object",
             "properties": {
                 "job_id": {"type": "string", "format": "uuid"},
-                "status": {"type": "string", "enum": ["pending", "processing", "done", "failed"]},
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "processing", "done", "failed"],
+                },
                 "report_type": {"type": "string"},
                 "created_at": {"type": "string", "format": "date-time"},
                 "expires_at": {"type": "string", "format": "date-time"},

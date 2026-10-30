@@ -7,6 +7,7 @@ Estratégia:
 - Dados de hoje (se no range): query live sobre Appointment.
 - Se cobertura incompleta: fallback para query direta no range completo.
 """
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ _TRUNC = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}
 
 def _is_covered(tenant_id: int, start_date: date, end_date: date) -> bool:
     from reports.models import DailyReportAggregate
+
     if start_date > end_date:
         return False
     expected = (end_date - start_date).days + 1
@@ -166,16 +168,20 @@ def get_revenue_series(tenant_id: int, start_dt, end_dt, interval: str = "day") 
         )
         for r in today_qs:
             bucket = r["bucket"]
-            existing = next((row for row in rows if row["period_start"] == bucket), None)
+            existing = next(
+                (row for row in rows if row["period_start"] == bucket), None
+            )
             if existing:
                 existing["revenue"] += r["revenue"] or 0
                 existing["appointment_count"] += r["appointment_count"] or 0
             else:
-                rows.append({
-                    "period_start": bucket,
-                    "revenue": r["revenue"] or 0,
-                    "appointment_count": r["appointment_count"] or 0,
-                })
+                rows.append(
+                    {
+                        "period_start": bucket,
+                        "revenue": r["revenue"] or 0,
+                        "appointment_count": r["appointment_count"] or 0,
+                    }
+                )
         rows.sort(key=lambda x: x["period_start"] or date.min)
 
     return rows

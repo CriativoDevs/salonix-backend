@@ -6,6 +6,7 @@ Usage (management command or shell):
     run_backfill()                          # all tenants, all history
     run_backfill(tenant=t, since=date(2024,1,1))
 """
+
 import logging
 from datetime import date, timedelta
 
@@ -36,7 +37,9 @@ def _aggregate_day(tenant_id: int, day: date) -> dict:
     }
 
 
-def backfill_tenant(tenant_id: int, since: date | None = None, until: date | None = None):
+def backfill_tenant(
+    tenant_id: int, since: date | None = None, until: date | None = None
+):
     """Recalcula agregados diários para um tenant no intervalo [since, until]."""
     if until is None:
         until = date.today() - timedelta(days=1)
@@ -68,12 +71,20 @@ def backfill_tenant(tenant_id: int, since: date | None = None, until: date | Non
 
     logger.info(
         "backfill_tenant_done",
-        extra={"tenant_id": tenant_id, "since": since, "until": until, "rows_created": created, "rows_updated": updated},
+        extra={
+            "tenant_id": tenant_id,
+            "since": since,
+            "until": until,
+            "rows_created": created,
+            "rows_updated": updated,
+        },
     )
     return {"created": created, "updated": updated}
 
 
-def run_backfill(tenant: Tenant | None = None, since: date | None = None, until: date | None = None):
+def run_backfill(
+    tenant: Tenant | None = None, since: date | None = None, until: date | None = None
+):
     """Executa backfill para todos os tenants (ou um específico)."""
     tenants = [tenant] if tenant else list(Tenant.objects.filter(is_active=True))
     results = {}

@@ -28,6 +28,7 @@ from reports.openapi import (
     RESP_OVERVIEW_JSON,
     RESP_TOP_SERVICES_JSON,
     RESP_REVENUE_JSON,
+    RESP_INVENTORY_REPORT_JSON,
     RESP_CSV_OVERVIEW,
     RESP_CSV_TOP_SERVICES,
     RESP_CSV_REVENUE,
@@ -406,17 +407,28 @@ class OverviewReportView(_BaseReports):
         tenant = getattr(request.user, "tenant", None)
 
         from reports.aggregator import get_overview_data
+
         data = get_overview_data(tenant.id if tenant else None, start, end)
 
         done_count = data["appointments_completed"]
         revenue = data["revenue_total"]
         avg_ticket = (revenue / done_count) if done_count else 0
+
+        # BE-REPORTS-01 (#569): seção opcional de COGS/margem, populada só
+        # quando o tenant tem estoque ativo (ver inventory.services).
+        from reports.inventory_reports import get_cogs_and_margin
+
+        margin_data = get_cogs_and_margin(tenant, start, end, revenue)
+
         return Response(
             {
                 "appointments_total": data["appointments_total"],
                 "appointments_completed": done_count,
                 "revenue_total": revenue,
                 "avg_ticket": avg_ticket,
+                "stock_active": margin_data["stock_active"],
+                "product_cost_total": margin_data["product_cost_total"],
+                "margin_total": margin_data["margin_total"],
             }
         )
 
@@ -551,7 +563,10 @@ class RevenueSeriesReportView(_BaseReports):
         tenant = getattr(request.user, "tenant", None)
 
         from reports.aggregator import get_revenue_series
-        all_rows = get_revenue_series(tenant.id if tenant else None, start, end, interval)
+
+        all_rows = get_revenue_series(
+            tenant.id if tenant else None, start, end, interval
+        )
 
         total = len(all_rows)
         page = all_rows[offset : offset + limit]
@@ -560,6 +575,41 @@ class RevenueSeriesReportView(_BaseReports):
         return _set_pagination_headers(
             resp, total=total, limit=limit, offset=offset, request=request
         )
+
+
+class InventoryReportView(_BaseReports):
+    """Relatório de estoque isolado (BE-REPORTS-01, #569).
+
+    Valor total em stock, giro/turnover por item e itens em alerta de
+    estoque baixo. Não depende de cruzamento com bookings/vendas.
+
+    Gate: tenants sem estoque ativo (nenhum `InventoryItem` cadastrado)
+    recebem 200 com todas as seções vazias, nunca erro — ver
+    `inventory.services.tenant_has_active_stock`.
+    """
+
+    throttle_classes = (PerUserScopedRateThrottle,)
+    throttle_scope = "reports"
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Relatório de estoque (valor total, giro, itens em alerta)",
+        parameters=[PARAM_FROM, PARAM_TO],
+        responses={
+            200: RESP_INVENTORY_REPORT_JSON,
+            403: OpenApiTypes.OBJECT,
+        },
+    )
+    @observe_request(endpoint="/api/reports/inventory/")
+    def get(self, request):
+        start, end = _date_range(request)
+        tenant = getattr(request.user, "tenant", None)
+
+        from reports.inventory_reports import get_stock_report_data
+
+        data = get_stock_report_data(tenant, start, end)
+        data["period"] = {"start": start, "end": end}
+        return Response(data)
 
 
 class ExportOverviewCSVView(_BaseReports):
@@ -1362,9 +1412,7 @@ class RetentionReportView(_BaseReports):
             return _invalid_filter_response(exc)
 
         prof_filter = (
-            {"professional_id": professional_id}
-            if professional_id is not None
-            else {}
+            {"professional_id": professional_id} if professional_id is not None else {}
         )
 
         qs = Appointment.objects.filter(

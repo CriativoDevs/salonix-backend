@@ -8,33 +8,91 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('users', '0039_tenant_promotional_transition_rules'),
+        ("users", "0039_tenant_promotional_transition_rules"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ExportJob',
+            name="ExportJob",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('report_type', models.CharField(choices=[('top_services', 'Top Services'), ('revenue', 'Revenue'), ('basic', 'Basic'), ('advanced', 'Advanced')], max_length=32)),
-                ('parameters', models.JSONField(default=dict)),
-                ('status', models.CharField(choices=[('pending', 'Pending'), ('processing', 'Processing'), ('done', 'Done'), ('failed', 'Failed')], default='pending', max_length=16)),
-                ('file_path', models.CharField(blank=True, max_length=512)),
-                ('error_message', models.TextField(blank=True)),
-                ('expires_at', models.DateTimeField(default=reports.models._default_expires_at)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('requested_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='export_jobs', to=settings.AUTH_USER_MODEL)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='export_jobs', to='users.tenant')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4,
+                        editable=False,
+                        primary_key=True,
+                        serialize=False,
+                    ),
+                ),
+                (
+                    "report_type",
+                    models.CharField(
+                        choices=[
+                            ("top_services", "Top Services"),
+                            ("revenue", "Revenue"),
+                            ("basic", "Basic"),
+                            ("advanced", "Advanced"),
+                        ],
+                        max_length=32,
+                    ),
+                ),
+                ("parameters", models.JSONField(default=dict)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("processing", "Processing"),
+                            ("done", "Done"),
+                            ("failed", "Failed"),
+                        ],
+                        default="pending",
+                        max_length=16,
+                    ),
+                ),
+                ("file_path", models.CharField(blank=True, max_length=512)),
+                ("error_message", models.TextField(blank=True)),
+                (
+                    "expires_at",
+                    models.DateTimeField(default=reports.models._default_expires_at),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "requested_by",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="export_jobs",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="export_jobs",
+                        to="users.tenant",
+                    ),
+                ),
             ],
             options={
-                'ordering': ('-created_at',),
-                'indexes': [models.Index(fields=['tenant'], name='reports_exportjob_tenant_idx'), models.Index(fields=['tenant', 'status'], name='rep_exportjob_tstatus_idx'), models.Index(fields=['expires_at'], name='rep_exportjob_expires_idx')],
+                "ordering": ("-created_at",),
+                "indexes": [
+                    models.Index(
+                        fields=["tenant"], name="reports_exportjob_tenant_idx"
+                    ),
+                    models.Index(
+                        fields=["tenant", "status"], name="rep_exportjob_tstatus_idx"
+                    ),
+                    models.Index(
+                        fields=["expires_at"], name="rep_exportjob_expires_idx"
+                    ),
+                ],
             },
         ),
     ]

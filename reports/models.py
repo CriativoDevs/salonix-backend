@@ -49,12 +49,8 @@ class ExportJob(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["tenant"], name="reports_exportjob_tenant_idx"),
-            models.Index(
-                fields=["tenant", "status"], name="rep_exportjob_tstatus_idx"
-            ),
-            models.Index(
-                fields=["expires_at"], name="rep_exportjob_expires_idx"
-            ),
+            models.Index(fields=["tenant", "status"], name="rep_exportjob_tstatus_idx"),
+            models.Index(fields=["expires_at"], name="rep_exportjob_expires_idx"),
         ]
         ordering = ("-created_at",)
 

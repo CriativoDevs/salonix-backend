@@ -19,6 +19,7 @@ User = get_user_model()
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
+
 def _make_tenant(suffix=None, plan=Tenant.PLAN_PRO):
     s = suffix or uuid.uuid4().hex[:8]
     return Tenant.objects.create(
@@ -44,11 +45,34 @@ def _make_user(tenant, *, is_pro=True):
 
 def _make_appointment(tenant, user):
     now = timezone.now()
-    svc = Service.objects.create(tenant=tenant, user=user, name="Svc", duration_minutes=30, price_eur=Decimal("50"))
+    svc = Service.objects.create(
+        tenant=tenant,
+        user=user,
+        name="Svc",
+        duration_minutes=30,
+        price_eur=Decimal("50"),
+    )
     prof = Professional.objects.create(tenant=tenant, user=user, name="Prof")
-    cust = SalonCustomer.objects.create(tenant=tenant, name="Cust", email=f"c-{uuid.uuid4().hex[:6]}@t.com")
-    slot = ScheduleSlot.objects.create(tenant=tenant, professional=prof, start_time=now, end_time=now + timedelta(minutes=30), is_available=False, status="booked")
-    return Appointment.objects.create(tenant=tenant, client=user, customer=cust, service=svc, professional=prof, slot=slot, status="completed")
+    cust = SalonCustomer.objects.create(
+        tenant=tenant, name="Cust", email=f"c-{uuid.uuid4().hex[:6]}@t.com"
+    )
+    slot = ScheduleSlot.objects.create(
+        tenant=tenant,
+        professional=prof,
+        start_time=now,
+        end_time=now + timedelta(minutes=30),
+        is_available=False,
+        status="booked",
+    )
+    return Appointment.objects.create(
+        tenant=tenant,
+        client=user,
+        customer=cust,
+        service=svc,
+        professional=prof,
+        slot=slot,
+        status="completed",
+    )
 
 
 def _client(user):
@@ -59,12 +83,15 @@ def _client(user):
 
 # ── Create job ────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.django_db
 def test_create_job_returns_202():
     tenant = _make_tenant()
     user = _make_user(tenant)
     with patch("reports.views_export.generate_csv_export.delay"):
-        r = _client(user).post("/api/reports/exports/", {"report_type": "basic"}, format="json")
+        r = _client(user).post(
+            "/api/reports/exports/", {"report_type": "basic"}, format="json"
+        )
     assert r.status_code == 202
     assert "job_id" in r.data
     assert r.data["status"] == "pending"
@@ -76,7 +103,9 @@ def test_create_job_invalid_type_returns_400():
     tenant = _make_tenant()
     user = _make_user(tenant)
     with patch("reports.views_export.generate_csv_export.delay"):
-        r = _client(user).post("/api/reports/exports/", {"report_type": "invalid"}, format="json")
+        r = _client(user).post(
+            "/api/reports/exports/", {"report_type": "invalid"}, format="json"
+        )
     assert r.status_code == 400
 
 
@@ -86,7 +115,9 @@ def test_create_job_advanced_type_allowed_for_basic_tenant():
     tenant = _make_tenant(plan=Tenant.PLAN_BASIC)
     user = _make_user(tenant, is_pro=False)
     with patch("reports.views_export.generate_csv_export.delay"):
-        r = _client(user).post("/api/reports/exports/", {"report_type": "advanced"}, format="json")
+        r = _client(user).post(
+            "/api/reports/exports/", {"report_type": "advanced"}, format="json"
+        )
     assert r.status_code == 202
 
 
@@ -95,18 +126,23 @@ def test_create_job_dispatches_celery_task():
     tenant = _make_tenant()
     user = _make_user(tenant)
     with patch("reports.views_export.generate_csv_export.delay") as mock_delay:
-        r = _client(user).post("/api/reports/exports/", {"report_type": "basic"}, format="json")
+        r = _client(user).post(
+            "/api/reports/exports/", {"report_type": "basic"}, format="json"
+        )
     assert r.status_code == 202
     mock_delay.assert_called_once_with(r.data["job_id"])
 
 
 # ── Status endpoint ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.django_db
 def test_status_pending_job():
     tenant = _make_tenant()
     user = _make_user(tenant)
-    job = ExportJob.objects.create(tenant=tenant, requested_by=user, report_type="basic")
+    job = ExportJob.objects.create(
+        tenant=tenant, requested_by=user, report_type="basic"
+    )
     r = _client(user).get(f"/api/reports/exports/{job.id}/")
     assert r.status_code == 200
     assert r.data["status"] == "pending"
@@ -122,8 +158,11 @@ def test_status_done_job_has_download_url(tmp_path):
     abs_path.parent.mkdir(parents=True)
     abs_path.write_text("data")
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.DONE, file_path=rel,
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path=rel,
     )
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         r = _client(user).get(f"/api/reports/exports/{job.id}/")
@@ -137,8 +176,11 @@ def test_status_failed_job_has_error_message():
     tenant = _make_tenant()
     user = _make_user(tenant)
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.FAILED, error_message="boom",
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.FAILED,
+        error_message="boom",
     )
     r = _client(user).get(f"/api/reports/exports/{job.id}/")
     assert r.status_code == 200
@@ -146,6 +188,7 @@ def test_status_failed_job_has_error_message():
 
 
 # ── Download endpoint ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.django_db
 def test_download_done_job_returns_csv(tmp_path):
@@ -156,8 +199,11 @@ def test_download_done_job_returns_csv(tmp_path):
     abs_path.parent.mkdir(parents=True)
     abs_path.write_text("col1,col2\nval1,val2")
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.DONE, file_path=rel,
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path=rel,
     )
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         r = _client(user).get(f"/api/reports/exports/{job.id}/download/")
@@ -174,8 +220,11 @@ def test_download_expired_job_returns_410(tmp_path):
     abs_path.parent.mkdir(parents=True)
     abs_path.write_text("data")
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.DONE, file_path=rel,
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path=rel,
         expires_at=timezone.now() - timedelta(hours=1),
     )
     with override_settings(MEDIA_ROOT=str(tmp_path)):
@@ -187,12 +236,15 @@ def test_download_expired_job_returns_410(tmp_path):
 def test_download_pending_job_returns_404():
     tenant = _make_tenant()
     user = _make_user(tenant)
-    job = ExportJob.objects.create(tenant=tenant, requested_by=user, report_type="basic")
+    job = ExportJob.objects.create(
+        tenant=tenant, requested_by=user, report_type="basic"
+    )
     r = _client(user).get(f"/api/reports/exports/{job.id}/download/")
     assert r.status_code == 404
 
 
 # ── Tenant isolation ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.django_db
 def test_other_tenant_cannot_see_job():
@@ -216,8 +268,11 @@ def test_other_tenant_cannot_download_job(tmp_path):
     abs_path.parent.mkdir(parents=True)
     abs_path.write_text("secret data")
     job = ExportJob.objects.create(
-        tenant=t1, requested_by=u1, report_type="basic",
-        status=ExportJob.Status.DONE, file_path=rel,
+        tenant=t1,
+        requested_by=u1,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path=rel,
     )
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         r = _client(u2).get(f"/api/reports/exports/{job.id}/download/")
@@ -225,6 +280,7 @@ def test_other_tenant_cannot_download_job(tmp_path):
 
 
 # ── Cleanup task ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.django_db
 def test_cleanup_deletes_expired_jobs_and_files(tmp_path):
@@ -239,12 +295,17 @@ def test_cleanup_deletes_expired_jobs_and_files(tmp_path):
     abs_path.write_text("data")
 
     expired_job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.DONE, file_path=rel,
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path=rel,
         expires_at=timezone.now() - timedelta(hours=1),
     )
     active_job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
     )
 
     with override_settings(MEDIA_ROOT=str(tmp_path)):
@@ -264,8 +325,11 @@ def test_cleanup_handles_missing_file_gracefully(tmp_path):
     tenant = _make_tenant()
     user = _make_user(tenant)
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
-        status=ExportJob.Status.DONE, file_path="exports/nonexistent/file.csv",
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
+        status=ExportJob.Status.DONE,
+        file_path="exports/nonexistent/file.csv",
         expires_at=timezone.now() - timedelta(hours=1),
     )
     with override_settings(MEDIA_ROOT=str(tmp_path)):
@@ -278,6 +342,7 @@ def test_cleanup_handles_missing_file_gracefully(tmp_path):
 
 # ── Celery task (sync execution) ──────────────────────────────────────────────
 
+
 @pytest.mark.django_db
 def test_generate_csv_export_task_basic(tmp_path):
     from reports.tasks import generate_csv_export
@@ -285,7 +350,9 @@ def test_generate_csv_export_task_basic(tmp_path):
     tenant = _make_tenant()
     user = _make_user(tenant)
     _make_appointment(tenant, user)
-    job = ExportJob.objects.create(tenant=tenant, requested_by=user, report_type="basic")
+    job = ExportJob.objects.create(
+        tenant=tenant, requested_by=user, report_type="basic"
+    )
 
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         generate_csv_export(str(job.id))
@@ -305,7 +372,9 @@ def test_generate_csv_export_task_top_services(tmp_path):
     tenant = _make_tenant()
     user = _make_user(tenant)
     _make_appointment(tenant, user)
-    job = ExportJob.objects.create(tenant=tenant, requested_by=user, report_type="top_services")
+    job = ExportJob.objects.create(
+        tenant=tenant, requested_by=user, report_type="top_services"
+    )
 
     with override_settings(MEDIA_ROOT=str(tmp_path)):
         generate_csv_export(str(job.id))
@@ -322,7 +391,9 @@ def test_generate_csv_export_task_marks_failed_on_error(tmp_path):
     tenant = _make_tenant()
     user = _make_user(tenant)
     job = ExportJob.objects.create(
-        tenant=tenant, requested_by=user, report_type="basic",
+        tenant=tenant,
+        requested_by=user,
+        report_type="basic",
         parameters={"from": "invalid-date"},
     )
 
