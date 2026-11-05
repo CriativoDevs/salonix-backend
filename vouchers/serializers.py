@@ -90,6 +90,9 @@ class ClientVoucherSerializer(serializers.ModelSerializer):
     voucher_value = serializers.DecimalField(
         source="voucher.value", max_digits=10, decimal_places=2, read_only=True
     )
+    voucher_service_name = serializers.CharField(
+        source="voucher.service.name", read_only=True, default=None
+    )
     status = serializers.CharField(read_only=True)
 
     class Meta:
@@ -100,6 +103,7 @@ class ClientVoucherSerializer(serializers.ModelSerializer):
             "voucher_code",
             "voucher_type",
             "voucher_value",
+            "voucher_service_name",
             "client",
             "assigned_at",
             "used_at",
