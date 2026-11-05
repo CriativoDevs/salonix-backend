@@ -1,7 +1,7 @@
 import pytest
 from decimal import Decimal
 from django.contrib.auth import get_user_model
-from users.models import Tenant, UserFeatureFlags
+from users.models import Tenant
 
 User = get_user_model()
 

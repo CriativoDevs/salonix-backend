@@ -2,7 +2,7 @@
 Testes do management command `auto_generate_monthly_slots` (BE-SLOTS-04, #559).
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from django.core.management import call_command

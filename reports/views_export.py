@@ -3,7 +3,6 @@ import os
 
 from django.conf import settings
 from django.http import FileResponse, Http404
-from django.utils import timezone
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated

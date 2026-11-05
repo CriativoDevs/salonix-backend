@@ -76,8 +76,6 @@ from core.serializers import (
     ClientSetPasswordSerializer,
 )
 from core.mixins import TenantIsolatedMixin
-from vouchers.models import ClientVoucher
-from vouchers.serializers import ClientVoucherSerializer
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -87,7 +85,6 @@ from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.cache import cache
-import uuid
 from django.utils.dateparse import parse_datetime, parse_date
 from django.core import signing
 from django.conf import settings
@@ -106,12 +103,8 @@ from users.throttling import (
     FeedbackCreateThrottle,
 )
 from users.security import enforce_captcha_or_raise
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
 from reports.throttling import PerUserScopedRateThrottle
-from rest_framework import status as drf_status
-from users.models import TenantStaffMember, CustomUser
+from users.models import CustomUser
 from salonix_backend.validators import validate_phone_number, sanitize_text_input
 from salonix_backend.pii_utils import mask_email
 from core.professional_utils import (
@@ -4909,7 +4902,7 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         Retorna: { created: N, skipped: M }
         """
         import zoneinfo
-        from datetime import date as date_type, datetime, timedelta
+        from datetime import date as date_type, datetime
 
         user = request.user
         tenant = getattr(user, "tenant", None)

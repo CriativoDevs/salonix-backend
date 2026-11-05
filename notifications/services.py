@@ -1,5 +1,4 @@
 import logging
-import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Optional, Any
@@ -8,7 +7,6 @@ import time as pytime
 import pytz
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django.core import signing
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from twilio.rest import Client as TwilioClient
@@ -20,7 +18,7 @@ from salonix_backend.validators import sanitize_phone_number
 from .models import Notification, NotificationDevice, NotificationLog
 from .credit_service import credit_service
 from users.services import sms_rate_limiter
-from salonix_backend.error_handling import BusinessError, ErrorCodes
+from salonix_backend.error_handling import BusinessError
 from prometheus_client import Counter, REGISTRY
 
 User = get_user_model()

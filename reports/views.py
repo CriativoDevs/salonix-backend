@@ -3,11 +3,10 @@ from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework import status
 from reports.throttling import PerUserScopedRateThrottle
-from users.feature_flags import RequiresFeatureFlag
 
 from django.conf import settings
 from django.db import models
-from django.db.models import Sum, Count, F, Case, When, Value, BooleanField, Q, Min
+from django.db.models import Sum, Count, F, Case, When, Value, BooleanField, Min
 from django.db.models.functions import TruncDay, TruncMonth
 from django.http import HttpResponse
 from typing import Any, Optional
@@ -1231,7 +1230,6 @@ def _compute_monthly_cohort(
       ]
     """
     from core.models import SalonCustomer
-    from datetime import datetime as dt_class
 
     # Clientes do tenant com primeira visita no range
     customers = (

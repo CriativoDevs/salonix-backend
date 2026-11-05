@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from core.email_utils import _send_email_safe
-import time
 import threading
 
 

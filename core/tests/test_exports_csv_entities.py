@@ -3,8 +3,6 @@ import io
 import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
-from django.urls import reverse
-from django.conf import settings
 
 from users.models import CustomUser, Tenant, TenantStaffMember
 from core.models import SalonCustomer

@@ -40,7 +40,7 @@ count = TaskResult.objects.count()
 print(f"3️⃣ Tasks no banco: {count}")
 if count > 0:
     print("   ✅ Há tasks para mostrar")
-    print(f"   Últimas 3 tasks:")
+    print("   Últimas 3 tasks:")
     for task in TaskResult.objects.order_by("-date_done")[:3]:
         status_icon = "✅" if task.status == "SUCCESS" else "❌"
         print(f"      {status_icon} {task.task_name} - {task.status}")

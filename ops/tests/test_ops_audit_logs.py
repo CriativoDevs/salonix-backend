@@ -3,7 +3,6 @@ from django.urls import reverse
 from rest_framework import status
 from users.models import CustomUser
 from ops.models import OpsSupportAuditLog
-from django.utils import timezone
 
 
 @pytest.mark.django_db

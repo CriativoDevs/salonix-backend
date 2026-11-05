@@ -5,7 +5,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework import serializers
 from captcha.models import CaptchaStore
 from captcha.helpers import captcha_image_url
-from django.conf import settings
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 

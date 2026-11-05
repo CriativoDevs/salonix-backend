@@ -1,6 +1,4 @@
 import pytest
-from django.utils import timezone
-from datetime import timedelta
 from cms.models import PublicPage, PageSEO
 
 

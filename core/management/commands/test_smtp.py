@@ -2,7 +2,6 @@ from django.core.management.base import BaseCommand
 from django.core.mail import send_mail
 from django.conf import settings
 import smtplib
-import socket
 
 
 class Command(BaseCommand):
@@ -22,7 +21,7 @@ class Command(BaseCommand):
         to_email = options["email"]
         use_native = options["native"]
 
-        self.stdout.write(f"Testing SMTP configuration...")
+        self.stdout.write("Testing SMTP configuration...")
         self.stdout.write(f"HOST: {settings.EMAIL_HOST}")
         self.stdout.write(f"PORT: {settings.EMAIL_PORT}")
         self.stdout.write(f"USER: {settings.EMAIL_HOST_USER}")
@@ -43,7 +42,7 @@ class Command(BaseCommand):
                     self.stdout.write("Logging in...")
                     server.login(settings.EMAIL_HOST_USER, settings.EMAIL_HOST_PASSWORD)
 
-                    msg = f"Subject: Test Email (Native)\n\nThis is a test email from TimelyOne using native smtplib."
+                    msg = "Subject: Test Email (Native)\n\nThis is a test email from TimelyOne using native smtplib."
                     self.stdout.write(f"Sending to {to_email}...")
                     server.sendmail(settings.EMAIL_HOST_USER, [to_email], msg)
                     self.stdout.write(

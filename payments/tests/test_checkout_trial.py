@@ -1,10 +1,9 @@
-from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from django.urls import reverse
 from django.test import override_settings
 from rest_framework.test import APITestCase
 from users.models import CustomUser, Tenant, TenantStaffMember
-from payments.models import Subscription, PaymentCustomer
+from payments.models import Subscription
 
 
 @override_settings(

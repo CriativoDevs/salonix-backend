@@ -21,7 +21,6 @@ from rest_framework.exceptions import (
     ValidationError,
     AuthenticationFailed,
     PermissionDenied,
-    Throttled,
 )
 
 from drf_spectacular.utils import (
@@ -29,7 +28,6 @@ from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiResponse,
     OpenApiParameter,
-    inline_serializer,
 )
 from drf_spectacular.types import OpenApiTypes
 
@@ -54,7 +52,7 @@ from .permissions import (
     RequiresMobileAccess,
     HasActiveTrialOrSubscription,
 )
-from salonix_backend.pii_utils import mask_email, mask_user_repr
+from salonix_backend.pii_utils import mask_email
 
 from .serializers import (
     EmailTokenObtainPairSerializer,

@@ -2,7 +2,6 @@ import uuid
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.utils import timezone
 from django.test import override_settings

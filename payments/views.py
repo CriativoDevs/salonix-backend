@@ -203,7 +203,7 @@ class CreateCheckoutSession(APIView):
                 },
                 status=503,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error creating subscription session")
             return Response({"detail": "Erro interno ao processar pedido."}, status=500)
 
@@ -1280,7 +1280,7 @@ class CreateCreditCheckoutSessionView(APIView):
                 },
                 status=503,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error creating credit checkout session")
             return Response({"detail": "Erro interno ao processar pedido."}, status=500)
 

@@ -5,12 +5,10 @@ from typing import Any, Dict, Optional
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count
-from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
-from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.exceptions import TokenError
 
 from ops.models import (
     OpsAlert,

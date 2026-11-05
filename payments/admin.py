@@ -2,7 +2,6 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from .models import PaymentCustomer, Subscription, CreditPayment, StripeWebhookEvent
-from .services import SubscriptionService, get_plan_code_from_price
 
 
 @admin.register(PaymentCustomer)

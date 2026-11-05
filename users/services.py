@@ -336,7 +336,7 @@ class FounderService:
                             return False
             except ImportError:
                 print(
-                    f"[FounderService.can_assign_founder] Erro ao importar - assumindo elegível"
+                    "[FounderService.can_assign_founder] Erro ao importar - assumindo elegível"
                 )
                 # Se erro ao importar, assume que pode (fail-open para não bloquear checkout)
                 pass

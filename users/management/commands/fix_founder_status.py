@@ -75,7 +75,7 @@ class Command(BaseCommand):
                 else:
                     tenant.save(update_fields=["is_founder", "updated_at"])
                     self.stdout.write(
-                        self.style.SUCCESS(f"    ✓ Corrigido: is_founder=False")
+                        self.style.SUCCESS("    ✓ Corrigido: is_founder=False")
                     )
                 fixed_count += 1
 

@@ -1,4 +1,3 @@
-import os
 import uuid
 import pytest
 from datetime import timedelta

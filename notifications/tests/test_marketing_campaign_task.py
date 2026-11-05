@@ -6,7 +6,6 @@ uma campanha já aprovada/contabilizada pela view.
 from unittest.mock import patch
 
 import pytest
-from django.utils import timezone
 
 from core.models import SalonCustomer
 from notifications.models import EmailMarketingCampaign

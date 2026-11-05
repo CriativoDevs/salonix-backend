@@ -46,7 +46,7 @@ from payments.models import Subscription, PaymentCustomer
 from payments.admin import PaymentCustomerAdmin, SubscriptionAdmin
 from reports.models import ExportJob, DailyReportAggregate
 from reports.admin import ExportJobAdmin, DailyReportAggregateAdmin
-from cms.models import PublicPage, PageSEO, RoadmapItem
+from cms.models import PublicPage, RoadmapItem
 from cms.admin import PublicPageAdmin, RoadmapItemAdmin
 from platform_comms.models import PlatformAnnouncement, PlatformAnnouncementReceipt
 from platform_comms.admin import (

@@ -4,10 +4,7 @@ Integration tests for PII masking in logging across views.
 Tests that logging points in views.py files properly mask PII data.
 """
 
-import json
 import logging
-from io import StringIO
-from unittest import mock
 
 import pytest
 from django.test import TestCase, Client

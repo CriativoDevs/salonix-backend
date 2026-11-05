@@ -4,7 +4,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory
 from users.security import enforce_captcha_or_raise
 from captcha.models import CaptchaStore
-from django.utils import timezone
 from users.views_captcha import CaptchaGenerateView
 
 

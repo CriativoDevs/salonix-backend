@@ -390,7 +390,6 @@ def send_deletion_reminders():
     """
     from datetime import timedelta
     from core.email_utils import send_deletion_reminder_email
-    from users.models import CustomUser
 
     logger.info("[DELETION_REMINDERS] Iniciando envio de lembretes")
 

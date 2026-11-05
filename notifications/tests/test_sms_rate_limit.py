@@ -3,7 +3,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
-from django.conf import settings
 from notifications.services import SMSDriver
 
 User = get_user_model()
