@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+from vouchers.models import (
+    BirthdayVoucherConfig,
+    BirthdayVoucherLog,
+    ClientVoucher,
+    Voucher,
+)
 
 
 @admin.register(Voucher)

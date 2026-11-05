@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from core.email_utils import _send_email_safe
-import time
 import threading
 
 
@@ -17,10 +16,10 @@ def test_send_email_safe_with_retries():
     # Criamos um evento para sinalizar quando a thread terminar
     done_event = threading.Event()
 
-    with patch("core.email_utils.EmailMultiAlternatives") as mock_email_class, patch(
-        "time.sleep", return_value=None
+    with (
+        patch("core.email_utils.EmailMultiAlternatives") as mock_email_class,
+        patch("time.sleep", return_value=None),
     ):
-
         mock_instance = MagicMock()
         mock_email_class.return_value = mock_instance
 

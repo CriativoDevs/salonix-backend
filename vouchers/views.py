@@ -138,7 +138,11 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         current_assignments = ClientVoucher.objects.filter(voucher=voucher).count()
         if current_assignments >= voucher.max_uses:
             raise ValidationError(
-                {"voucher": ["Limite de atribuições (max_uses) atingido para este voucher."]}
+                {
+                    "voucher": [
+                        "Limite de atribuições (max_uses) atingido para este voucher."
+                    ]
+                }
             )
 
         return ClientVoucher.objects.create(
@@ -206,9 +210,7 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         client = self._get_client_in_tenant(voucher, client_id)
 
         if not client.email:
-            raise ValidationError(
-                {"client_id": ["Cliente não tem e-mail cadastrado."]}
-            )
+            raise ValidationError({"client_id": ["Cliente não tem e-mail cadastrado."]})
 
         client_voucher = ClientVoucher.objects.filter(
             voucher=voucher, client=client

@@ -9,11 +9,15 @@ from salonix_backend.settings import first_csv_value
 
 
 def test_first_csv_value_with_single_url():
-    assert first_csv_value("https://api.timelyone.today") == "https://api.timelyone.today"
+    assert (
+        first_csv_value("https://api.timelyone.today") == "https://api.timelyone.today"
+    )
 
 
 def test_first_csv_value_with_multiple_urls_picks_first():
-    raw = "https://salonix-backend-production.up.railway.app,https://api.timelyone.today"
+    raw = (
+        "https://salonix-backend-production.up.railway.app,https://api.timelyone.today"
+    )
     assert first_csv_value(raw) == "https://salonix-backend-production.up.railway.app"
 
 

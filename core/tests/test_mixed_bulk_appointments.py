@@ -360,9 +360,12 @@ class TestMixedBulkStartEndTime(TestCase):
         assert all(r["status"] == "created" for r in body["results"])
 
         # Slots foram criados e estão booked
-        assert ScheduleSlot.objects.filter(
-            professional=self.prof, tenant=self.tenant, status="booked"
-        ).count() == 2
+        assert (
+            ScheduleSlot.objects.filter(
+                professional=self.prof, tenant=self.tenant, status="booked"
+            ).count()
+            == 2
+        )
 
     # ------------------------------------------------------------------
     # 2. Mixed-bulk misto: slot_id + start_time/end_time

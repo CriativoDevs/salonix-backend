@@ -166,7 +166,9 @@ class ClientVoucher(models.Model):
             )
         ]
         indexes = [
-            models.Index(fields=["tenant", "client"], name="clientvoucher_tenant_cli_idx"),
+            models.Index(
+                fields=["tenant", "client"], name="clientvoucher_tenant_cli_idx"
+            ),
         ]
 
     def __str__(self):

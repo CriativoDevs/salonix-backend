@@ -99,7 +99,9 @@ class CommunicationCreditService:
         if communication_type == "sms" and (
             tenant.is_in_trial() or not tenant.has_active_paid_subscription()
         ):
-            result["reason"] = "SMS disponível após período de teste com subscrição paga ativa"
+            result["reason"] = (
+                "SMS disponível após período de teste com subscrição paga ativa"
+            )
             return result
 
         # Verificar saldo suficiente

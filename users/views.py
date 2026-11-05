@@ -21,7 +21,6 @@ from rest_framework.exceptions import (
     ValidationError,
     AuthenticationFailed,
     PermissionDenied,
-    Throttled,
 )
 
 from drf_spectacular.utils import (
@@ -29,7 +28,6 @@ from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiResponse,
     OpenApiParameter,
-    inline_serializer,
 )
 from drf_spectacular.types import OpenApiTypes
 
@@ -40,10 +38,21 @@ import time
 import secrets
 
 from salonix_backend.error_handling import TenantError, ErrorCodes
-from .models import UserFeatureFlags, Tenant, TenantStaffMember, CommLedger, CustomUser, TenantBusinessHours
+from .models import (
+    UserFeatureFlags,
+    Tenant,
+    TenantStaffMember,
+    CommLedger,
+    CustomUser,
+    TenantBusinessHours,
+)
 from .services import CreditService, TenantService, FounderService
-from .permissions import IsActiveTenant, RequiresMobileAccess, HasActiveTrialOrSubscription
-from salonix_backend.pii_utils import mask_email, mask_user_repr
+from .permissions import (
+    IsActiveTenant,
+    RequiresMobileAccess,
+    HasActiveTrialOrSubscription,
+)
+from salonix_backend.pii_utils import mask_email
 
 from .serializers import (
     EmailTokenObtainPairSerializer,
@@ -169,8 +178,7 @@ class UserRegistrationView(generics.CreateAPIView):
                 if to_email:
                     send_tenant_welcome_email(
                         to_email,
-                        owner_name=data.get("username")
-                        or request.data.get("username"),
+                        owner_name=data.get("username") or request.data.get("username"),
                         salon_name=data.get("salon_name")
                         or request.data.get("salon_name")
                         or "TimelyOne",
@@ -822,10 +830,12 @@ class TenantBusinessHoursView(APIView):
 
         with db_transaction.atomic():
             TenantBusinessHours.objects.filter(tenant=tenant).delete()
-            TenantBusinessHours.objects.bulk_create([
-                TenantBusinessHours(tenant=tenant, **item)
-                for item in serializer.validated_data
-            ])
+            TenantBusinessHours.objects.bulk_create(
+                [
+                    TenantBusinessHours(tenant=tenant, **item)
+                    for item in serializer.validated_data
+                ]
+            )
 
         hours = TenantBusinessHours.objects.filter(tenant=tenant)
         return Response(TenantBusinessHoursSerializer(hours, many=True).data)
@@ -1080,9 +1090,12 @@ class TenantModulesSettingsView(APIView):
 
         if "auto_generate_slots_enabled" in v:
             desired_slots = bool(v["auto_generate_slots_enabled"])
-            if desired_slots and not TenantBusinessHours.objects.filter(
-                tenant=tenant, is_active=True
-            ).exists():
+            if (
+                desired_slots
+                and not TenantBusinessHours.objects.filter(
+                    tenant=tenant, is_active=True
+                ).exists()
+            ):
                 return Response(
                     {
                         "detail": (

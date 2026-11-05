@@ -5,29 +5,58 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('users', '0041_comm_auto_renew_package_and_last_purchase'),
+        ("users", "0041_comm_auto_renew_package_and_last_purchase"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='InventoryItem',
+            name="InventoryItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('unit', models.CharField(help_text='Unidade de medida (ex.: unidade, cx, frasco).', max_length=50)),
-                ('quantity', models.PositiveIntegerField(default=0)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='inventory_items', to='users.tenant')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                (
+                    "unit",
+                    models.CharField(
+                        help_text="Unidade de medida (ex.: unidade, cx, frasco).",
+                        max_length=50,
+                    ),
+                ),
+                ("quantity", models.PositiveIntegerField(default=0)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="inventory_items",
+                        to="users.tenant",
+                    ),
+                ),
             ],
             options={
-                'ordering': ('name',),
-                'indexes': [models.Index(fields=['tenant', 'name'], name='inv_item_tenant_name_idx')],
-                'constraints': [models.UniqueConstraint(fields=('tenant', 'name'), name='inventory_item_unique_tenant_name')],
+                "ordering": ("name",),
+                "indexes": [
+                    models.Index(
+                        fields=["tenant", "name"], name="inv_item_tenant_name_idx"
+                    )
+                ],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("tenant", "name"),
+                        name="inventory_item_unique_tenant_name",
+                    )
+                ],
             },
         ),
     ]

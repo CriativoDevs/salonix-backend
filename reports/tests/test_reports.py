@@ -648,7 +648,8 @@ def test_retention_cohort_monthly_structure():
     """
     from users.models import Tenant
     from core.models import SalonCustomer
-    import uuid, datetime
+    import uuid
+    import datetime
     from django.utils.timezone import make_aware
 
     suffix = str(uuid.uuid4())[:8]
@@ -748,7 +749,8 @@ def test_retention_short_range_one_day():
     """
     from users.models import Tenant
     from core.models import SalonCustomer
-    import uuid, datetime
+    import uuid
+    import datetime
     from django.utils.timezone import make_aware
 
     suffix = str(uuid.uuid4())[:8]

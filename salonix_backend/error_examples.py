@@ -16,7 +16,6 @@ from .error_handling import (
     BusinessError,
     ErrorCodes,
     FeatureDisabledError,
-    SalonixError,
     TenantError,
     create_error_response,
     handle_business_errors,

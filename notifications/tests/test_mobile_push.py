@@ -3,10 +3,9 @@ Testes para Mobile Push Notifications (Expo Push Service).
 Cobre MobilePushDriver, endpoint de teste, e signals de appointment.
 """
 
-import json
 import pytest
 from unittest.mock import patch, Mock
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -483,12 +482,7 @@ class AppointmentPushSignalsTestCase(TestCase):
     def test_appointment_deleted_sends_push(self, mock_post):
         """Deve enviar push quando appointment é deletado"""
         # Desativar signals temporariamente para evitar criação de notificações orfãs no delete
-        from django.db.models.signals import post_save, post_delete
         from core.models import Appointment
-        from notifications.signals import (
-            send_appointment_notifications,
-            send_appointment_deleted_notification,
-        )
 
         # Criar device
         NotificationDevice.objects.create(

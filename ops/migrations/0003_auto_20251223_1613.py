@@ -76,7 +76,6 @@ def seed_notification_templates(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("ops", "0002_alter_opssupportauditlog_action_opsglobalsetting_and_more"),
     ]

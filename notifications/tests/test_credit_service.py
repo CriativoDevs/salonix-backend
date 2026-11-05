@@ -251,9 +251,7 @@ class CommunicationCreditServiceTest(TestCase):
         self._prep_insufficient_balance_with_auto_renew()
 
         def _fake_charge(tenant):
-            Tenant.objects.filter(pk=tenant.pk).update(
-                comm_credit_eur=Decimal("10.05")
-            )
+            Tenant.objects.filter(pk=tenant.pk).update(comm_credit_eur=Decimal("10.05"))
             tenant.comm_credit_eur = Decimal("10.05")
             return {"success": True, "credits_purchased": Decimal("10.00")}
 
@@ -265,7 +263,9 @@ class CommunicationCreditServiceTest(TestCase):
         self.assertTrue(result["can_send"])
 
         self.tenant.refresh_from_db()
-        self.assertEqual(self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date())
+        self.assertEqual(
+            self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date()
+        )
 
     @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
     def test_can_send_message_auto_renewal_failure_falls_back_to_insufficient(
@@ -283,7 +283,9 @@ class CommunicationCreditServiceTest(TestCase):
         self.assertIn("Saldo insuficiente", result["reason"])
 
         self.tenant.refresh_from_db()
-        self.assertEqual(self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date())
+        self.assertEqual(
+            self.tenant.comm_auto_renew_last_purchase_at, timezone.now().date()
+        )
 
     @patch("payments.services.CreditPurchaseService.charge_auto_renewal")
     def test_can_send_message_does_not_auto_renew_twice_same_day(self, mock_charge):

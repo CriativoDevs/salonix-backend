@@ -72,7 +72,10 @@ def test_create_professional(user_fixture):
     # Regressão BE-PROF-01: colaborador criado com outro staff ativo
     # (o owner do tenant) no tenant NÃO deve disparar o auto-link de
     # serviços, pois ele não é o único staff ativo.
-    assert ProfessionalService.objects.filter(professional=professional_created).count() == 0
+    assert (
+        ProfessionalService.objects.filter(professional=professional_created).count()
+        == 0
+    )
 
 
 @pytest.mark.django_db

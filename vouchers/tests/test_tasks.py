@@ -6,7 +6,12 @@ from django.utils import timezone
 
 from core.models import SalonCustomer
 from users.models import Tenant
-from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+from vouchers.models import (
+    BirthdayVoucherConfig,
+    BirthdayVoucherLog,
+    ClientVoucher,
+    Voucher,
+)
 from vouchers.tasks import send_birthday_vouchers, send_voucher_email_task
 
 
@@ -79,9 +84,7 @@ class TestSendVoucherEmailTask:
             type=Voucher.VoucherType.FIXED,
             value=5,
         )
-        client = SalonCustomer.objects.create(
-            tenant=tenant_fixture, name="Sem Email"
-        )
+        client = SalonCustomer.objects.create(tenant=tenant_fixture, name="Sem Email")
         client_voucher = ClientVoucher.objects.create(
             tenant=tenant_fixture, voucher=voucher, client=client
         )
@@ -110,7 +113,9 @@ def other_tenant(db):
 
 @pytest.mark.django_db
 class TestSendBirthdayVouchersTask:
-    def test_sends_voucher_to_client_born_today_when_config_active(self, tenant_fixture):
+    def test_sends_voucher_to_client_born_today_when_config_active(
+        self, tenant_fixture
+    ):
         today = timezone.localdate()
         config = BirthdayVoucherConfig.objects.create(
             tenant=tenant_fixture,
@@ -145,9 +150,7 @@ class TestSendBirthdayVouchersTask:
 
     def test_config_not_selected_is_skipped(self, tenant_fixture):
         today = timezone.localdate()
-        BirthdayVoucherConfig.objects.create(
-            tenant=tenant_fixture, is_selected=False
-        )
+        BirthdayVoucherConfig.objects.create(tenant=tenant_fixture, is_selected=False)
         SalonCustomer.objects.create(
             tenant=tenant_fixture,
             name="Aniversariante",
@@ -163,9 +166,7 @@ class TestSendBirthdayVouchersTask:
         assert not ClientVoucher.objects.exists()
         assert not BirthdayVoucherLog.objects.exists()
 
-    def test_job_uses_selected_template_when_tenant_has_multiple(
-        self, tenant_fixture
-    ):
+    def test_job_uses_selected_template_when_tenant_has_multiple(self, tenant_fixture):
         today = timezone.localdate()
         BirthdayVoucherConfig.objects.create(
             tenant=tenant_fixture,
@@ -211,9 +212,11 @@ class TestSendBirthdayVouchersTask:
 
     def test_ignores_clients_not_born_today(self, tenant_fixture):
         today = timezone.localdate()
-        not_today = (today + datetime.timedelta(days=1)).replace(
-            year=1990
-        ) if today.month != 12 or today.day != 31 else datetime.date(1990, 1, 1)
+        not_today = (
+            (today + datetime.timedelta(days=1)).replace(year=1990)
+            if today.month != 12 or today.day != 31
+            else datetime.date(1990, 1, 1)
+        )
         BirthdayVoucherConfig.objects.create(tenant=tenant_fixture, is_selected=True)
         SalonCustomer.objects.create(
             tenant=tenant_fixture,
@@ -263,10 +266,16 @@ class TestSendBirthdayVouchersTask:
     def test_tenant_isolation(self, tenant_fixture, other_tenant):
         today = timezone.localdate()
         BirthdayVoucherConfig.objects.create(
-            tenant=tenant_fixture, voucher_type=Voucher.VoucherType.PERCENT, voucher_value=10, is_selected=True
+            tenant=tenant_fixture,
+            voucher_type=Voucher.VoucherType.PERCENT,
+            voucher_value=10,
+            is_selected=True,
         )
         BirthdayVoucherConfig.objects.create(
-            tenant=other_tenant, voucher_type=Voucher.VoucherType.FIXED, voucher_value=5, is_selected=True
+            tenant=other_tenant,
+            voucher_type=Voucher.VoucherType.FIXED,
+            voucher_value=5,
+            is_selected=True,
         )
         client_a = SalonCustomer.objects.create(
             tenant=tenant_fixture,

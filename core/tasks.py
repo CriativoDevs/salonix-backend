@@ -270,9 +270,7 @@ def build_tenant_data_export(tenant: Tenant) -> dict:
             "plan_tier": tenant.plan_tier,
             "exported_at": timezone.now().isoformat(),
             "export_version": "1.0",
-            "note": (
-                "Faturacao: apenas referencias/IDs Stripe; sem dados de cartao."
-            ),
+            "note": ("Faturacao: apenas referencias/IDs Stripe; sem dados de cartao."),
         },
         "data": {},
     }
@@ -392,7 +390,6 @@ def send_deletion_reminders():
     """
     from datetime import timedelta
     from core.email_utils import send_deletion_reminder_email
-    from users.models import CustomUser
 
     logger.info("[DELETION_REMINDERS] Iniciando envio de lembretes")
 

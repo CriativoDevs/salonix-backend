@@ -31,9 +31,7 @@ def test_is_trial_expired_false_within_trial_window(tenant_fixture):
 @pytest.mark.django_db
 def test_is_trial_expired_true_after_trial_window(tenant_fixture):
     trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
-    _set_created_at(
-        tenant_fixture, timezone.now() - timedelta(days=trial_days + 1)
-    )
+    _set_created_at(tenant_fixture, timezone.now() - timedelta(days=trial_days + 1))
 
     assert tenant_fixture.is_trial_expired() is True
 
@@ -43,9 +41,7 @@ def test_is_trial_expired_false_when_paid_subscription_active(
     tenant_fixture, user_fixture
 ):
     trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
-    _set_created_at(
-        tenant_fixture, timezone.now() - timedelta(days=trial_days + 1)
-    )
+    _set_created_at(tenant_fixture, timezone.now() - timedelta(days=trial_days + 1))
     ff = user_fixture.featureflags
     ff.pro_status = UserFeatureFlags.STATUS_ACTIVE
     ff.save(update_fields=["pro_status"])
@@ -56,9 +52,7 @@ def test_is_trial_expired_false_when_paid_subscription_active(
 @pytest.mark.django_db
 def test_is_trial_expired_false_for_promotional_billing(tenant_fixture):
     trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
-    _set_created_at(
-        tenant_fixture, timezone.now() - timedelta(days=trial_days + 1)
-    )
+    _set_created_at(tenant_fixture, timezone.now() - timedelta(days=trial_days + 1))
     tenant_fixture.billing_mode = Tenant.BILLING_MODE_PROMOTIONAL
     tenant_fixture.save(update_fields=["billing_mode"])
 
@@ -68,9 +62,7 @@ def test_is_trial_expired_false_for_promotional_billing(tenant_fixture):
 @pytest.mark.django_db
 def test_is_trial_expired_true_exactly_at_boundary(tenant_fixture):
     trial_days = settings.STRIPE_TRIAL_PERIOD_DAYS
-    _set_created_at(
-        tenant_fixture, timezone.now() - timedelta(days=trial_days)
-    )
+    _set_created_at(tenant_fixture, timezone.now() - timedelta(days=trial_days))
 
     assert tenant_fixture.is_trial_expired() is True
 

@@ -24,7 +24,9 @@ def other_tenant(db):
 @pytest.fixture
 def owner_user(db, tenant_fixture):
     user = User.objects.create_user(
-        username="voucher-owner1", email="voucher-owner1@test.com", password="testpass123"
+        username="voucher-owner1",
+        email="voucher-owner1@test.com",
+        password="testpass123",
     )
     TenantStaffMember.objects.create(
         tenant=tenant_fixture,
@@ -38,7 +40,9 @@ def owner_user(db, tenant_fixture):
 @pytest.fixture
 def manager_user(db, tenant_fixture):
     user = User.objects.create_user(
-        username="voucher-manager1", email="voucher-manager1@test.com", password="testpass123"
+        username="voucher-manager1",
+        email="voucher-manager1@test.com",
+        password="testpass123",
     )
     TenantStaffMember.objects.create(
         tenant=tenant_fixture,
@@ -53,7 +57,9 @@ def manager_user(db, tenant_fixture):
 def staff_user(db, tenant_fixture):
     """Staff comum (não owner/manager)."""
     user = User.objects.create_user(
-        username="voucher-staff1", email="voucher-staff1@test.com", password="testpass123"
+        username="voucher-staff1",
+        email="voucher-staff1@test.com",
+        password="testpass123",
     )
     TenantStaffMember.objects.create(
         tenant=tenant_fixture,
@@ -151,9 +157,7 @@ class TestVoucherListCreate:
 
     def test_code_generated_automatically_when_omitted(self, api_client, owner_user):
         api_client.force_authenticate(user=owner_user)
-        response = api_client.post(
-            self.url, {"type": "percent", "value": "10.00"}
-        )
+        response = api_client.post(self.url, {"type": "percent", "value": "10.00"})
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
         assert data["code"]
@@ -161,16 +165,12 @@ class TestVoucherListCreate:
 
     def test_manager_can_create_voucher(self, api_client, manager_user):
         api_client.force_authenticate(user=manager_user)
-        response = api_client.post(
-            self.url, {"type": "fixed", "value": "5.00"}
-        )
+        response = api_client.post(self.url, {"type": "fixed", "value": "5.00"})
         assert response.status_code == status.HTTP_201_CREATED
 
     def test_staff_cannot_create_voucher(self, api_client, staff_user):
         api_client.force_authenticate(user=staff_user)
-        response = api_client.post(
-            self.url, {"type": "fixed", "value": "5.00"}
-        )
+        response = api_client.post(self.url, {"type": "fixed", "value": "5.00"})
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert not Voucher.objects.filter(type="fixed", value=5).exists()
 
@@ -279,7 +279,9 @@ class TestVoucherRetrieveUpdate:
         voucher_fixture.refresh_from_db()
         assert voucher_fixture.value == 50
 
-    def test_manager_can_update_voucher(self, api_client, manager_user, voucher_fixture):
+    def test_manager_can_update_voucher(
+        self, api_client, manager_user, voucher_fixture
+    ):
         api_client.force_authenticate(user=manager_user)
         response = api_client.patch(self.url(voucher_fixture), {"max_uses": 3})
         assert response.status_code == status.HTTP_200_OK
@@ -320,7 +322,9 @@ class TestVoucherDestroy:
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert not Voucher.objects.filter(id=voucher_fixture.id).exists()
 
-    def test_manager_can_delete_voucher(self, api_client, manager_user, voucher_fixture):
+    def test_manager_can_delete_voucher(
+        self, api_client, manager_user, voucher_fixture
+    ):
         api_client.force_authenticate(user=manager_user)
         response = api_client.delete(self.url(voucher_fixture))
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -350,7 +354,9 @@ def customer_fixture(db, tenant_fixture):
 
 @pytest.fixture
 def other_customer_fixture(db, other_tenant):
-    return SalonCustomer.objects.create(tenant=other_tenant, name="Cliente Outro Tenant")
+    return SalonCustomer.objects.create(
+        tenant=other_tenant, name="Cliente Outro Tenant"
+    )
 
 
 @pytest.mark.django_db
@@ -407,7 +413,9 @@ class TestVoucherAssign:
         self, api_client, owner_user, voucher_fixture, customer_fixture
     ):
         ClientVoucher.objects.create(
-            tenant=voucher_fixture.tenant, voucher=voucher_fixture, client=customer_fixture
+            tenant=voucher_fixture.tenant,
+            voucher=voucher_fixture,
+            client=customer_fixture,
         )
         api_client.force_authenticate(user=owner_user)
         response = api_client.post(
@@ -422,9 +430,7 @@ class TestVoucherAssign:
             == 1
         )
 
-    def test_respects_max_uses(
-        self, api_client, owner_user, tenant_fixture
-    ):
+    def test_respects_max_uses(self, api_client, owner_user, tenant_fixture):
         voucher = Voucher.objects.create(
             tenant=tenant_fixture,
             code="LIMITED1",
@@ -436,10 +442,14 @@ class TestVoucherAssign:
         customer_b = SalonCustomer.objects.create(tenant=tenant_fixture, name="B")
 
         api_client.force_authenticate(user=owner_user)
-        first_response = api_client.post(self.url(voucher), {"client_id": customer_a.id})
+        first_response = api_client.post(
+            self.url(voucher), {"client_id": customer_a.id}
+        )
         assert first_response.status_code == status.HTTP_201_CREATED
 
-        second_response = api_client.post(self.url(voucher), {"client_id": customer_b.id})
+        second_response = api_client.post(
+            self.url(voucher), {"client_id": customer_b.id}
+        )
         assert second_response.status_code == status.HTTP_400_BAD_REQUEST
         assert "voucher" in second_response.json()["error"]["details"]
         assert ClientVoucher.objects.filter(voucher=voucher).count() == 1
@@ -472,9 +482,7 @@ class TestVoucherAssign:
             voucher=other_voucher_fixture, client=customer_fixture
         ).exists()
 
-    def test_assign_requires_client_id(
-        self, api_client, owner_user, voucher_fixture
-    ):
+    def test_assign_requires_client_id(self, api_client, owner_user, voucher_fixture):
         api_client.force_authenticate(user=owner_user)
         response = api_client.post(self.url(voucher_fixture), {})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -483,9 +491,7 @@ class TestVoucherAssign:
         self, api_client, owner_user, voucher_fixture
     ):
         api_client.force_authenticate(user=owner_user)
-        response = api_client.post(
-            self.url(voucher_fixture), {"client_id": 999999}
-        )
+        response = api_client.post(self.url(voucher_fixture), {"client_id": 999999})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "client_id" in response.json()["error"]["details"]
 
@@ -499,9 +505,7 @@ def customer_with_email_fixture(db, tenant_fixture):
 
 @pytest.fixture
 def customer_without_email_fixture(db, tenant_fixture):
-    return SalonCustomer.objects.create(
-        tenant=tenant_fixture, name="Cliente Sem Email"
-    )
+    return SalonCustomer.objects.create(tenant=tenant_fixture, name="Cliente Sem Email")
 
 
 @pytest.mark.django_db
@@ -591,9 +595,12 @@ class TestVoucherSendEmail:
                 {"client_id": customer_with_email_fixture.id},
             )
         assert response.status_code == status.HTTP_202_ACCEPTED
-        assert ClientVoucher.objects.filter(
-            voucher=voucher_fixture, client=customer_with_email_fixture
-        ).count() == 1
+        assert (
+            ClientVoucher.objects.filter(
+                voucher=voucher_fixture, client=customer_with_email_fixture
+            ).count()
+            == 1
+        )
 
     def test_sending_again_does_not_duplicate_assignment(
         self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
@@ -611,12 +618,13 @@ class TestVoucherSendEmail:
 
         assert first.status_code == status.HTTP_202_ACCEPTED
         assert second.status_code == status.HTTP_202_ACCEPTED
-        assert ClientVoucher.objects.filter(
-            voucher=voucher_fixture, client=customer_with_email_fixture
-        ).count() == 1
         assert (
-            first.json()["id"] == second.json()["id"]
+            ClientVoucher.objects.filter(
+                voucher=voucher_fixture, client=customer_with_email_fixture
+            ).count()
+            == 1
         )
+        assert first.json()["id"] == second.json()["id"]
 
     def test_sending_again_still_dispatches_task_for_deliberate_resend(
         self, api_client, owner_user, voucher_fixture, customer_with_email_fixture
@@ -822,7 +830,9 @@ class TestBirthdayVoucherConfigList:
         )
 
         api_client.force_authenticate(user=owner_user)
-        response = api_client.post(self.url, {"voucher_value": "10.00", "is_selected": True})
+        response = api_client.post(
+            self.url, {"voucher_value": "10.00", "is_selected": True}
+        )
         assert response.status_code == status.HTTP_201_CREATED
 
         first.refresh_from_db()

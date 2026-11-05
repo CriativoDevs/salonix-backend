@@ -18,6 +18,7 @@ class CheckoutSessionRequestSerializer(serializers.Serializer):
                 "Este plano não está disponível no momento."
             )
         return value
+
     interval = serializers.ChoiceField(
         choices=["monthly", "annual"],
         required=False,

@@ -101,15 +101,18 @@ class DataExportTest(APITestCase):
 
         self.client.force_authenticate(user=self.owner)
         # Cache isolado + rate baixo (patch direto no dict que o throttle le).
-        with override_settings(
-            CACHES={
-                "default": {
-                    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-                    "LOCATION": "data-export-throttle",
+        with (
+            override_settings(
+                CACHES={
+                    "default": {
+                        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                        "LOCATION": "data-export-throttle",
+                    }
                 }
-            }
-        ), mock.patch.dict(
-            ScopedRateThrottle.THROTTLE_RATES, {"data_export": "2/min"}
+            ),
+            mock.patch.dict(
+                ScopedRateThrottle.THROTTLE_RATES, {"data_export": "2/min"}
+            ),
         ):
             assert self.client.get(self.url).status_code == status.HTTP_200_OK
             assert self.client.get(self.url).status_code == status.HTTP_200_OK

@@ -74,9 +74,7 @@ def _patch_stripe_success(monkeypatch, default_payment_method="pm_default_card")
         def retrieve(customer_id):
             return {
                 "id": customer_id,
-                "invoice_settings": {
-                    "default_payment_method": default_payment_method
-                },
+                "invoice_settings": {"default_payment_method": default_payment_method},
             }
 
     class _StripeErrorModule:
@@ -100,9 +98,7 @@ def _patch_stripe_declined(monkeypatch, default_payment_method="pm_default_card"
         def retrieve(customer_id):
             return {
                 "id": customer_id,
-                "invoice_settings": {
-                    "default_payment_method": default_payment_method
-                },
+                "invoice_settings": {"default_payment_method": default_payment_method},
             }
 
     class _FailingPaymentIntent:
@@ -280,7 +276,10 @@ def test_charge_auto_renewal_second_consecutive_failure_notifies_owner(
     tenant.comm_auto_renew_price_id = settings.STRIPE_PRICE_CREDITS_10_ID
     tenant.comm_auto_renew_consecutive_failures = 1
     tenant.save(
-        update_fields=["comm_auto_renew_price_id", "comm_auto_renew_consecutive_failures"]
+        update_fields=[
+            "comm_auto_renew_price_id",
+            "comm_auto_renew_consecutive_failures",
+        ]
     )
     PaymentCustomer.objects.create(user=owner, stripe_customer_id="cus_second_fail")
     _patch_stripe_declined(monkeypatch)

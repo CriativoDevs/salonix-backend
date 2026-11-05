@@ -2,7 +2,6 @@ from datetime import timedelta
 
 import pytest
 from django.conf import settings
-from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient

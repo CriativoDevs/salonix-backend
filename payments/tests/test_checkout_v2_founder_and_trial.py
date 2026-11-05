@@ -82,9 +82,10 @@ def test_founder_checkout_rejected_explicitly_for_non_founder_tenant(basic_tenan
 def test_founder_checkout_allowed_for_eligible_founder_tenant(founder_tenant):
     _, user = founder_tenant
 
-    with patch("payments.services.get_or_create_customer", return_value="cus_1"), patch(
-        "payments.services.stripe"
-    ) as mock_stripe:
+    with (
+        patch("payments.services.get_or_create_customer", return_value="cus_1"),
+        patch("payments.services.stripe") as mock_stripe,
+    ):
         mock_stripe.checkout.Session.create.return_value = MagicMock(
             id="sess_1", url="https://checkout.stripe.com/sess_1"
         )
@@ -107,9 +108,10 @@ def test_checkout_v2_never_grants_stripe_trial(basic_tenant):
     """BE-TRIAL-05: mesmo fix do BE-TRIAL-04, mas no caminho v2."""
     _, user = basic_tenant
 
-    with patch("payments.services.get_or_create_customer", return_value="cus_2"), patch(
-        "payments.services.stripe"
-    ) as mock_stripe:
+    with (
+        patch("payments.services.get_or_create_customer", return_value="cus_2"),
+        patch("payments.services.stripe") as mock_stripe,
+    ):
         mock_stripe.checkout.Session.create.return_value = MagicMock(
             id="sess_2", url="https://checkout.stripe.com/sess_2"
         )
@@ -140,9 +142,10 @@ def test_checkout_v2_never_grants_stripe_trial_with_incomplete_history(basic_ten
         user=user, stripe_subscription_id="sub_incomplete_v2", status="incomplete"
     )
 
-    with patch("payments.services.get_or_create_customer", return_value="cus_3"), patch(
-        "payments.services.stripe"
-    ) as mock_stripe:
+    with (
+        patch("payments.services.get_or_create_customer", return_value="cus_3"),
+        patch("payments.services.stripe") as mock_stripe,
+    ):
         mock_stripe.checkout.Session.create.return_value = MagicMock(
             id="sess_3", url="https://checkout.stripe.com/sess_3"
         )

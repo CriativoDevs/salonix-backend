@@ -51,7 +51,9 @@ class TestPlatformAnnouncementAdminAudit:
             audience_scope=PlatformAnnouncement.AUDIENCE_ALL,
         )
         model_admin = admin.site._registry[PlatformAnnouncement]
-        request = _attach_messages(rf.get("/admin/platform_comms/platformannouncement/"))
+        request = _attach_messages(
+            rf.get("/admin/platform_comms/platformannouncement/")
+        )
         request.user = admin_user
 
         model_admin.publish_announcements(
@@ -77,7 +79,9 @@ class TestPlatformAnnouncementAdminAudit:
             status=PlatformAnnouncement.STATUS_PUBLISHED,
         )
         model_admin = admin.site._registry[PlatformAnnouncement]
-        request = _attach_messages(rf.get("/admin/platform_comms/platformannouncement/"))
+        request = _attach_messages(
+            rf.get("/admin/platform_comms/platformannouncement/")
+        )
         request.user = admin_user
 
         model_admin.archive_announcements(

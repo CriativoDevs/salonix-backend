@@ -61,7 +61,10 @@ class PlatformAnnouncementAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ("Conteúdo", {"fields": ("title", "body", "announcement_type", "priority")}),
-        ("Status e janela de exibição", {"fields": ("status", "publish_at", "expire_at")}),
+        (
+            "Status e janela de exibição",
+            {"fields": ("status", "publish_at", "expire_at")},
+        ),
         (
             "Segmentação",
             {"fields": ("audience_scope", "tenants", "target_plans", "environments")},
@@ -100,9 +103,7 @@ class PlatformAnnouncementAdmin(admin.ModelAdmin):
         updated = 0
         for obj in queryset:
             obj.archive()
-            _log_announcement_action(
-                request, obj, "Arquivado via ação em massa."
-            )
+            _log_announcement_action(request, obj, "Arquivado via ação em massa.")
             updated += 1
         self.message_user(request, f"{updated} comunicado(s) arquivado(s).")
 

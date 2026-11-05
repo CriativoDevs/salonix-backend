@@ -6,7 +6,8 @@ def add_delivered_at_column(apps, schema_editor):
     table_name = NotificationLog._meta.db_table
     connection = schema_editor.connection
     columns = [
-        column.name for column in connection.introspection.get_table_description(
+        column.name
+        for column in connection.introspection.get_table_description(
             connection.cursor(), table_name
         )
     ]

@@ -4,10 +4,7 @@ Integration tests for PII masking in logging across views.
 Tests that logging points in views.py files properly mask PII data.
 """
 
-import json
 import logging
-from io import StringIO
-from unittest import mock
 
 import pytest
 from django.test import TestCase, Client
@@ -81,10 +78,9 @@ class UserAuthLoggingIntegrationTest(TestCase):
 
         # Check that logs contain masked email, not raw email
         log_extras = self.handler.get_extras()
-        assert any(expected_masked == extra.get("email") for extra in log_extras), (
-            f"Expected masked email {expected_masked} in logs, "
-            f"got extras: {log_extras}"
-        )
+        assert any(
+            expected_masked == extra.get("email") for extra in log_extras
+        ), f"Expected masked email {expected_masked} in logs, got extras: {log_extras}"
 
         # Verify raw email is NOT in logs
         all_log_content = "\n".join(

@@ -17,6 +17,7 @@ class InventoryItemAdmin(admin.ModelAdmin):
         "unit",
         "quantity",
         "minimum_quantity",
+        "unit_cost",
         "updated_at",
     )
     list_filter = ("unit",)
@@ -40,7 +41,14 @@ class StockMovementAdmin(admin.ModelAdmin):
     )
     list_filter = ("movement_type",)
     search_fields = ("item__name", "tenant__name", "tenant__slug")
-    readonly_fields = ("tenant", "item", "movement_type", "quantity", "notes", "created_at")
+    readonly_fields = (
+        "tenant",
+        "item",
+        "movement_type",
+        "quantity",
+        "notes",
+        "created_at",
+    )
 
     def has_add_permission(self, request):
         return False

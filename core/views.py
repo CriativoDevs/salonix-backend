@@ -76,8 +76,6 @@ from core.serializers import (
     ClientSetPasswordSerializer,
 )
 from core.mixins import TenantIsolatedMixin
-from vouchers.models import ClientVoucher
-from vouchers.serializers import ClientVoucherSerializer
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -87,7 +85,6 @@ from django.http import StreamingHttpResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.cache import cache
-import uuid
 from django.utils.dateparse import parse_datetime, parse_date
 from django.core import signing
 from django.conf import settings
@@ -106,12 +103,8 @@ from users.throttling import (
     FeedbackCreateThrottle,
 )
 from users.security import enforce_captcha_or_raise
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
 from reports.throttling import PerUserScopedRateThrottle
-from rest_framework import status as drf_status
-from users.models import TenantStaffMember, CustomUser
+from users.models import CustomUser
 from salonix_backend.validators import validate_phone_number, sanitize_text_input
 from salonix_backend.pii_utils import mask_email
 from core.professional_utils import (
@@ -614,9 +607,12 @@ class PublicClientRegistrationView(APIView):
         data = serializer.validated_data
 
         email = data.get("email")
-        if email and SalonCustomer.objects.filter(
-            tenant=tenant, email__iexact=email
-        ).exists():
+        if (
+            email
+            and SalonCustomer.objects.filter(
+                tenant=tenant, email__iexact=email
+            ).exists()
+        ):
             return Response(
                 {"detail": "Este email já está registado."},
                 status=drf_status.HTTP_400_BAD_REQUEST,
@@ -703,10 +699,17 @@ class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
             slot, created = ScheduleSlot.objects.get_or_create(
                 professional=professional,
                 start_time=start_time,
-                defaults={"end_time": end_time, "tenant": tenant, "is_available": True, "status": "available"},
+                defaults={
+                    "end_time": end_time,
+                    "tenant": tenant,
+                    "is_available": True,
+                    "status": "available",
+                },
             )
             if not created and (not slot.is_available or slot.status != "available"):
-                raise ValidationError("Este horário já foi agendado ou não está disponível.")
+                raise ValidationError(
+                    "Este horário já foi agendado ou não está disponível."
+                )
             data["slot"] = slot
         else:
             data.pop("start_time", None)
@@ -906,7 +909,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                     )
 
             # pré-carregar slots (apenas itens que informam slot_id)
-            slot_ids = [cast(int, a["slot_id"]) for a in appointments_list if a.get("slot_id")]
+            slot_ids = [
+                cast(int, a["slot_id"]) for a in appointments_list if a.get("slot_id")
+            ]
             slots = list(ScheduleSlot.objects.filter(id__in=slot_ids, tenant=tenant))
             slots_by_id = {s.id: s for s in slots}
 
@@ -974,11 +979,15 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
             with transaction.atomic():
                 for appt_data in appointments_list:
                     sid = cast(int, appt_data.get("service_id") or top_service_id)
-                    pid = cast(int, appt_data.get("professional_id") or top_professional_id)
+                    pid = cast(
+                        int, appt_data.get("professional_id") or top_professional_id
+                    )
                     service = services_by_id.get(sid)
                     professional = professionals_by_id.get(pid)
                     raw_slot_id = appt_data.get("slot_id")
-                    slot = slots_by_id.get(cast(int, raw_slot_id)) if raw_slot_id else None
+                    slot = (
+                        slots_by_id.get(cast(int, raw_slot_id)) if raw_slot_id else None
+                    )
 
                     error_code = None
                     message = None
@@ -1031,7 +1040,10 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                                     start_time=appt_data["start_time"],
                                     end_time=appt_data["end_time"],
                                     tenant=tenant,
-                                    defaults={"is_available": True, "status": "available"},
+                                    defaults={
+                                        "is_available": True,
+                                        "status": "available",
+                                    },
                                 )
                                 if not slot.is_available or slot.status != "available":
                                     error_code = "slot_occupied"
@@ -1044,7 +1056,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                                     professional=professional,
                                     slot=slot,
                                     notes=str(
-                                        appt_data.get("notes") or data.get("notes") or ""
+                                        appt_data.get("notes")
+                                        or data.get("notes")
+                                        or ""
                                     ),
                                     status="scheduled",
                                     tenant=tenant,
@@ -1052,9 +1066,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                                 )
                                 appointments.append(appointment)
 
-                                raw_unit = getattr(service, "price_eur", None) or getattr(
-                                    service, "price", 0
-                                )
+                                raw_unit = getattr(
+                                    service, "price_eur", None
+                                ) or getattr(service, "price", 0)
                                 try:
                                     unit_price = Decimal(str(raw_unit))
                                 except Exception:
@@ -1076,7 +1090,9 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                             suggested = suggest_next_slot(professional, slot)
                         results.append(
                             {
-                                "slot_id": cast(int, raw_slot_id) if raw_slot_id else None,
+                                "slot_id": (
+                                    cast(int, raw_slot_id) if raw_slot_id else None
+                                ),
                                 "status": "error",
                                 "error_code": error_code or "invalid",
                                 "message": message or "Item inválido.",
@@ -1085,11 +1101,15 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         )
 
                 # Qualquer item inválido cancela a transação inteira (tudo ou nada)
-                if not suggest_only and any(r.get("status") == "error" for r in results):
+                if not suggest_only and any(
+                    r.get("status") == "error" for r in results
+                ):
                     raise ValidationError(
                         {
                             "detail": "Transação cancelada: um ou mais itens inválidos.",
-                            "errors": [r for r in results if r.get("status") == "error"],
+                            "errors": [
+                                r for r in results if r.get("status") == "error"
+                            ],
                         }
                     )
 
@@ -1576,7 +1596,11 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
                         }
                     )
                 except Exception as e:
-                    suggested = _suggest_next_slot(professional, slot) if slot is not None else None
+                    suggested = (
+                        _suggest_next_slot(professional, slot)
+                        if slot is not None
+                        else None
+                    )
                     results.append(
                         {
                             "slot_id": slot.id if slot is not None else None,
@@ -3444,7 +3468,9 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
             professional=serializer.instance,
         )
 
-    def _auto_link_services_if_sole_active_staff(self, *, tenant, staff_member, professional):
+    def _auto_link_services_if_sole_active_staff(
+        self, *, tenant, staff_member, professional
+    ):
         """
         BE-PROF-01: quando o staff_member do Professional criado é o único
         staff ativo do tenant (cenário típico de owner solo que cria seu
@@ -3703,9 +3729,9 @@ class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
         isolamento por tenant via `TenantIsolatedMixin`.
         """
         customer = self.get_object()
-        client_vouchers = ClientVoucher.objects.filter(
-            client=customer
-        ).select_related("voucher")
+        client_vouchers = ClientVoucher.objects.filter(client=customer).select_related(
+            "voucher"
+        )
         serializer = ClientVoucherSerializer(client_vouchers, many=True)
         return Response(serializer.data)
 
@@ -3737,16 +3763,20 @@ class ImportCSVBaseView(APIView):
 
     _CSV_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
     _CSV_MAX_ROWS = 5_000
-    _CSV_ALLOWED_CONTENT_TYPES = frozenset({
-        "text/csv", "text/plain", "application/csv",
-        "application/octet-stream",  # common browser fallback for .csv
-    })
+    _CSV_ALLOWED_CONTENT_TYPES = frozenset(
+        {
+            "text/csv",
+            "text/plain",
+            "application/csv",
+            "application/octet-stream",  # common browser fallback for .csv
+        }
+    )
     # Signatures of binary formats that must never be accepted as CSV
     _BINARY_MAGIC_BYTES = (
         b"\x50\x4b\x03\x04",  # ZIP / xlsx / docx
         b"\xd0\xcf\x11\xe0",  # OLE2 / xls / doc
         b"\x89\x50\x4e\x47",  # PNG
-        b"\xff\xd8\xff",       # JPEG
+        b"\xff\xd8\xff",  # JPEG
         b"\x25\x50\x44\x46",  # PDF
     )
 
@@ -3760,6 +3790,7 @@ class ImportCSVBaseView(APIView):
 
     def _validate_csv_file(self, f, log_ctx: dict) -> None:
         import os
+
         ext = os.path.splitext(f.name or "")[1].lower()
         if ext not in (".csv", ".txt", ""):
             _reject_csv("invalid_extension", {**log_ctx, "ext": ext})
@@ -3767,7 +3798,9 @@ class ImportCSVBaseView(APIView):
         mime = (f.content_type or "").split(";")[0].strip().lower()
         if mime and mime not in self._CSV_ALLOWED_CONTENT_TYPES:
             _reject_csv("invalid_mime_type", {**log_ctx, "mime": mime})
-            raise ValidationError({"file": [f"Tipo de arquivo '{mime}' não é permitido. Envie um CSV."]})
+            raise ValidationError(
+                {"file": [f"Tipo de arquivo '{mime}' não é permitido. Envie um CSV."]}
+            )
 
     def _read_csv(self, request):
         f = request.FILES.get("file")
@@ -3778,19 +3811,33 @@ class ImportCSVBaseView(APIView):
         if f.size > self._CSV_MAX_BYTES:
             _reject_csv("file_too_large", {**ctx, "size_bytes": f.size})
             raise ValidationError(
-                {"file": [f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."]}
+                {
+                    "file": [
+                        f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."
+                    ]
+                }
             )
         raw = f.read(self._CSV_MAX_BYTES + 1)
         if len(raw) > self._CSV_MAX_BYTES:
             _reject_csv("file_too_large", {**ctx, "size_bytes": len(raw)})
             raise ValidationError(
-                {"file": [f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."]}
+                {
+                    "file": [
+                        f"Arquivo CSV excede o limite de {self._CSV_MAX_BYTES // (1024 * 1024)} MB."
+                    ]
+                }
             )
         # Reject files whose first bytes match known binary formats
         for magic in self._BINARY_MAGIC_BYTES:
             if raw.startswith(magic):
                 _reject_csv("binary_content", {**ctx, "magic_prefix": raw[:4].hex()})
-                raise ValidationError({"file": ["Formato de arquivo inválido. Envie um CSV em texto plano."]})
+                raise ValidationError(
+                    {
+                        "file": [
+                            "Formato de arquivo inválido. Envie um CSV em texto plano."
+                        ]
+                    }
+                )
         # Strip UTF-8 BOM if present, then require valid UTF-8
         if raw.startswith(b"\xef\xbb\xbf"):
             raw = raw[3:]
@@ -3804,7 +3851,11 @@ class ImportCSVBaseView(APIView):
         if len(rows) > self._CSV_MAX_ROWS:
             _reject_csv("too_many_rows", {**ctx, "row_count": len(rows)})
             raise ValidationError(
-                {"file": [f"CSV excede o limite de {self._CSV_MAX_ROWS} linhas. Divida o arquivo e reimporte."]}
+                {
+                    "file": [
+                        f"CSV excede o limite de {self._CSV_MAX_ROWS} linhas. Divida o arquivo e reimporte."
+                    ]
+                }
             )
         return rows
 
@@ -4641,7 +4692,9 @@ class ImportAppointmentsCSVView(TenantIsolatedMixin, ImportCSVBaseView):
             if existing:
                 skipped += 1
             else:
-                notes_val = sanitize_text_input(str(row.get("notes") or ""), max_length=1000)
+                notes_val = sanitize_text_input(
+                    str(row.get("notes") or ""), max_length=1000
+                )
                 slot.mark_booked()
                 Appointment.objects.create(
                     client=request.user,
@@ -4849,7 +4902,7 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         Retorna: { created: N, skipped: M }
         """
         import zoneinfo
-        from datetime import date as date_type, datetime, timedelta
+        from datetime import date as date_type, datetime
 
         user = request.user
         tenant = getattr(user, "tenant", None)
@@ -4858,7 +4911,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
 
         if not (
             user.is_superuser
-            or user.has_staff_role(TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER)
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
         ):
             raise PermissionDenied("Apenas owner ou manager podem gerar slots em bulk.")
 
@@ -4876,25 +4931,31 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         except (TypeError, ValueError):
             raise ValidationError({"interval_minutes": "Deve ser um número inteiro."})
         if not (15 <= interval_minutes <= 480):
-            raise ValidationError({"interval_minutes": "Deve ser entre 15 e 480 minutos."})
+            raise ValidationError(
+                {"interval_minutes": "Deve ser entre 15 e 480 minutos."}
+            )
 
         try:
             professional = Professional.objects.get(id=professional_id, tenant=tenant)
         except Professional.DoesNotExist:
-            raise ValidationError({"professional_id": "Profissional não encontrado para este tenant."})
+            raise ValidationError(
+                {"professional_id": "Profissional não encontrado para este tenant."}
+            )
 
         tz = zoneinfo.ZoneInfo(tenant.timezone or "Europe/Lisbon")
 
         if date_from_str or date_to_str:
             if not (date_from_str and date_to_str):
-                raise ValidationError({
-                    "date_from": "date_from e date_to devem ser fornecidos juntos."
-                })
+                raise ValidationError(
+                    {"date_from": "date_from e date_to devem ser fornecidos juntos."}
+                )
             try:
                 date_from = date_type.fromisoformat(str(date_from_str))
                 date_to = date_type.fromisoformat(str(date_to_str))
             except ValueError:
-                raise ValidationError({"date_from": "Data inválida. Use formato YYYY-MM-DD."})
+                raise ValidationError(
+                    {"date_from": "Data inválida. Use formato YYYY-MM-DD."}
+                )
             try:
                 dates = resolve_date_range(date_from, date_to)
             except ValueError as exc:
@@ -4906,7 +4967,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
                 try:
                     base_date = date_type.fromisoformat(str(date_str))
                 except ValueError:
-                    raise ValidationError({"date": "Data inválida. Use formato YYYY-MM-DD."})
+                    raise ValidationError(
+                        {"date": "Data inválida. Use formato YYYY-MM-DD."}
+                    )
             else:
                 base_date = datetime.now(tz).date()
             dates = resolve_dates_for_period(base_date, period)
@@ -4919,7 +4982,9 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             )
         bh_by_day = {bh.day_of_week: bh for bh in bh_qs}
 
-        period_start = datetime.combine(dates[0], datetime.min.time()).replace(tzinfo=tz)
+        period_start = datetime.combine(dates[0], datetime.min.time()).replace(
+            tzinfo=tz
+        )
         period_end = datetime.combine(dates[-1], datetime.max.time()).replace(tzinfo=tz)
         existing_starts = set(
             ScheduleSlot.objects.filter(
@@ -4939,20 +5004,27 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             if not bh:
                 continue
             intervals = build_slot_intervals(
-                tenant, professional, [day], bh.start_time, bh.end_time, interval_minutes
+                tenant,
+                professional,
+                [day],
+                bh.start_time,
+                bh.end_time,
+                interval_minutes,
             )
             for current, slot_end in intervals:
                 if current in existing_starts or current in pending_starts:
                     skipped_count += 1
                 else:
-                    slots_to_create.append(ScheduleSlot(
-                        tenant=tenant,
-                        professional=professional,
-                        start_time=current,
-                        end_time=slot_end,
-                        is_available=True,
-                        status="available",
-                    ))
+                    slots_to_create.append(
+                        ScheduleSlot(
+                            tenant=tenant,
+                            professional=professional,
+                            start_time=current,
+                            end_time=slot_end,
+                            is_available=True,
+                            status="available",
+                        )
+                    )
                     pending_starts.add(current)
 
         if slots_to_create:
@@ -4989,9 +5061,13 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
 
         if not (
             user.is_superuser
-            or user.has_staff_role(TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER)
+            or user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
         ):
-            raise PermissionDenied("Apenas owner ou manager podem bloquear slots em bulk.")
+            raise PermissionDenied(
+                "Apenas owner ou manager podem bloquear slots em bulk."
+            )
 
         professional_id = request.data.get("professional_id")
         date_from_str = request.data.get("date_from")
@@ -5004,27 +5080,37 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         if not professional_id:
             raise ValidationError({"professional_id": "Campo obrigatório."})
         if not date_from_str or not date_to_str:
-            raise ValidationError({"date_from": "date_from e date_to são obrigatórios."})
+            raise ValidationError(
+                {"date_from": "date_from e date_to são obrigatórios."}
+            )
         if not start_time_str or not end_time_str:
-            raise ValidationError({"start_time": "start_time e end_time são obrigatórios."})
+            raise ValidationError(
+                {"start_time": "start_time e end_time são obrigatórios."}
+            )
 
         try:
             interval_minutes = int(interval_minutes)
         except (TypeError, ValueError):
             raise ValidationError({"interval_minutes": "Deve ser um número inteiro."})
         if not (15 <= interval_minutes <= 480):
-            raise ValidationError({"interval_minutes": "Deve ser entre 15 e 480 minutos."})
+            raise ValidationError(
+                {"interval_minutes": "Deve ser entre 15 e 480 minutos."}
+            )
 
         try:
             professional = Professional.objects.get(id=professional_id, tenant=tenant)
         except Professional.DoesNotExist:
-            raise ValidationError({"professional_id": "Profissional não encontrado para este tenant."})
+            raise ValidationError(
+                {"professional_id": "Profissional não encontrado para este tenant."}
+            )
 
         try:
             date_from = date_type.fromisoformat(str(date_from_str))
             date_to = date_type.fromisoformat(str(date_to_str))
         except ValueError:
-            raise ValidationError({"date_from": "Data inválida. Use formato YYYY-MM-DD."})
+            raise ValidationError(
+                {"date_from": "Data inválida. Use formato YYYY-MM-DD."}
+            )
 
         try:
             dates = resolve_date_range(date_from, date_to)
@@ -5035,9 +5121,13 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             start_time = time_type.fromisoformat(str(start_time_str))
             end_time = time_type.fromisoformat(str(end_time_str))
         except ValueError:
-            raise ValidationError({"start_time": "Horário inválido. Use formato HH:MM."})
+            raise ValidationError(
+                {"start_time": "Horário inválido. Use formato HH:MM."}
+            )
         if end_time <= start_time:
-            raise ValidationError({"end_time": "end_time deve ser maior que start_time."})
+            raise ValidationError(
+                {"end_time": "end_time deve ser maior que start_time."}
+            )
 
         import zoneinfo
 
@@ -5070,25 +5160,31 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
 
             gaps = compute_gaps(window_start, window_end, covered_intervals)
             for gap_start, gap_end in gaps:
-                for chunk_start, chunk_end in chunk_interval(gap_start, gap_end, interval_minutes):
-                    slots_to_create.append(ScheduleSlot(
-                        tenant=tenant,
-                        professional=professional,
-                        start_time=chunk_start,
-                        end_time=chunk_end,
-                        is_available=False,
-                        status="blocked",
-                        blocked_reason=reason,
-                    ))
+                for chunk_start, chunk_end in chunk_interval(
+                    gap_start, gap_end, interval_minutes
+                ):
+                    slots_to_create.append(
+                        ScheduleSlot(
+                            tenant=tenant,
+                            professional=professional,
+                            start_time=chunk_start,
+                            end_time=chunk_end,
+                            is_available=False,
+                            status="blocked",
+                            blocked_reason=reason,
+                        )
+                    )
 
         if slots_to_create:
             ScheduleSlot.objects.bulk_create(slots_to_create)
 
-        return Response({
-            "blocked": blocked_count,
-            "created": len(slots_to_create),
-            "skipped_booked": skipped_booked_count,
-        })
+        return Response(
+            {
+                "blocked": blocked_count,
+                "created": len(slots_to_create),
+                "skipped_booked": skipped_booked_count,
+            }
+        )
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()  # get_object valida o tenant via mixin/checagem
@@ -5132,9 +5228,7 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
             self._check_write_permission(request.user, obj.professional, tenant)
 
         if obj.status == "booked":
-            raise ValidationError(
-                "Não é possível bloquear um slot já agendado."
-            )
+            raise ValidationError("Não é possível bloquear um slot já agendado.")
 
         reason = request.data.get("reason", "")
         obj.mark_blocked(reason)
@@ -5651,9 +5745,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             )
 
         if client_voucher.used_at is not None:
-            raise ValidationError(
-                {"client_voucher_id": ["Este voucher já foi usado."]}
-            )
+            raise ValidationError({"client_voucher_id": ["Este voucher já foi usado."]})
 
         if client_voucher.status == ClientVoucher.Status.EXPIRED:
             raise ValidationError(

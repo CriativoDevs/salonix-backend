@@ -228,9 +228,7 @@ def test_settings_patch_rejects_unknown_price_id(owner_user, settings):
 
 
 @pytest.mark.django_db
-def test_settings_patch_saves_price_id_when_enabling_auto_renewal(
-    owner_user, settings
-):
+def test_settings_patch_saves_price_id_when_enabling_auto_renewal(owner_user, settings):
     settings.STRIPE_PRICE_CREDITS_10_ID = "price_credits_10_test"
 
     c = APIClient()

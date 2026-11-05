@@ -45,9 +45,7 @@ class Command(BaseCommand):
         total = tenants_to_migrate.count()
         if total == 0:
             self.stdout.write(
-                self.style.SUCCESS(
-                    "Nenhum tenant em plano bloqueado. Nada a migrar."
-                )
+                self.style.SUCCESS("Nenhum tenant em plano bloqueado. Nada a migrar.")
             )
             return
 

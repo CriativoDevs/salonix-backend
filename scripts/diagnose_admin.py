@@ -40,7 +40,7 @@ count = TaskResult.objects.count()
 print(f"3️⃣ Tasks no banco: {count}")
 if count > 0:
     print("   ✅ Há tasks para mostrar")
-    print(f"   Últimas 3 tasks:")
+    print("   Últimas 3 tasks:")
     for task in TaskResult.objects.order_by("-date_done")[:3]:
         status_icon = "✅" if task.status == "SUCCESS" else "❌"
         print(f"      {status_icon} {task.task_name} - {task.status}")
@@ -53,9 +53,9 @@ print("4️⃣ Apps visíveis no admin sidebar:")
 app_list = admin.site.get_app_list(request=None)
 if app_list:
     for app in app_list:
-        print(f'   📦 {app.get("name", "Unknown")} ({app.get("app_label", "?")})')
+        print(f"   📦 {app.get('name', 'Unknown')} ({app.get('app_label', '?')})")
         for model in app.get("models", []):
-            print(f'      - {model.get("name", "?")}')
+            print(f"      - {model.get('name', '?')}")
 else:
     print("   ⚠️  Não foi possível listar (precisa de request)")
 print()

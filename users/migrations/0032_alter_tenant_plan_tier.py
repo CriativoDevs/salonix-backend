@@ -4,15 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0031_alter_tenant_push_web_enabled'),
+        ("users", "0031_alter_tenant_push_web_enabled"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='tenant',
-            name='plan_tier',
-            field=models.CharField(choices=[('basic', 'Basic'), ('standard', 'Standard'), ('pro', 'Pro'), ('founder', 'Founder')], default='basic', help_text='Nível do plano contratado', max_length=20),
+            model_name="tenant",
+            name="plan_tier",
+            field=models.CharField(
+                choices=[
+                    ("basic", "Basic"),
+                    ("standard", "Standard"),
+                    ("pro", "Pro"),
+                    ("founder", "Founder"),
+                ],
+                default="basic",
+                help_text="Nível do plano contratado",
+                max_length=20,
+            ),
         ),
     ]

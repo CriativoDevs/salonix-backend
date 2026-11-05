@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0028_saloncustomer_birthday_saloncustomer_photo'),
+        ("core", "0028_saloncustomer_birthday_saloncustomer_photo"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduleslot',
-            name='blocked_reason',
-            field=models.CharField(blank=True, default='', max_length=140),
+            model_name="scheduleslot",
+            name="blocked_reason",
+            field=models.CharField(blank=True, default="", max_length=140),
         ),
     ]

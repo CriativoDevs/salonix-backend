@@ -61,7 +61,9 @@ def test_sms_allowed_after_trial(tenant_fixture, user_fixture):
 
 
 @pytest.mark.django_db
-def test_sms_blocked_for_promotional_tenant_without_stripe(tenant_fixture, user_fixture):
+def test_sms_blocked_for_promotional_tenant_without_stripe(
+    tenant_fixture, user_fixture
+):
     """Caso real que causou custo indevido: tenant billing_mode=promotional nunca
     passa pelo Stripe, então is_in_trial() é sempre False — mas o tenant também não é
     um cliente pagante real, então o SMS deve continuar bloqueado."""

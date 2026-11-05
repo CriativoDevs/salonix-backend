@@ -192,7 +192,9 @@ class TestInventoryItemRetrieveUpdate:
         item_fixture.refresh_from_db()
         assert item_fixture.quantity == 25
 
-    def test_staff_can_update_minimum_quantity(self, api_client, staff_user, item_fixture):
+    def test_staff_can_update_minimum_quantity(
+        self, api_client, staff_user, item_fixture
+    ):
         api_client.force_authenticate(user=staff_user)
         response = api_client.patch(self.url(item_fixture), {"minimum_quantity": 4})
         assert response.status_code == status.HTTP_200_OK

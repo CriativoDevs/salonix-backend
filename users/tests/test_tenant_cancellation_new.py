@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 from users.models import Tenant, CustomUser, TenantStaffMember
 from django.utils import timezone
 from datetime import timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TenantCancellationNewFlowTest(APITestCase):

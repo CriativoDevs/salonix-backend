@@ -67,7 +67,9 @@ def test_welcome_email_contains_store_links():
 
 @pytest.mark.django_db
 def test_registration_triggers_welcome_email():
-    with patch("users.views.send_tenant_welcome_email", return_value=True) as mock_welcome:
+    with patch(
+        "users.views.send_tenant_welcome_email", return_value=True
+    ) as mock_welcome:
         client = APIClient()
         url = reverse("users:register")
         payload = {
@@ -82,8 +84,10 @@ def test_registration_triggers_welcome_email():
     assert resp.status_code == status.HTTP_201_CREATED
     assert mock_welcome.called
     # email do owner foi passado ao welcome
-    sent_to = mock_welcome.call_args.args[0] if mock_welcome.call_args.args else (
-        mock_welcome.call_args.kwargs.get("to_email")
+    sent_to = (
+        mock_welcome.call_args.args[0]
+        if mock_welcome.call_args.args
+        else (mock_welcome.call_args.kwargs.get("to_email"))
     )
     assert sent_to == "welcome@example.com"
 

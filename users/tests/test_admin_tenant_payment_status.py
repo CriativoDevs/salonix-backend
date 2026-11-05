@@ -58,7 +58,9 @@ class TestTenantAdminPaymentStatusWiring:
 
     def test_payment_status_filter_registered(self):
         tenant_admin = admin.site._registry[Tenant]
-        filter_titles = [f.title for f in tenant_admin.list_filter if hasattr(f, "title")]
+        filter_titles = [
+            f.title for f in tenant_admin.list_filter if hasattr(f, "title")
+        ]
 
         assert "Status de pagamento" in filter_titles
 

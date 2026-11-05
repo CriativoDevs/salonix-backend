@@ -1,5 +1,4 @@
 import json
-from decimal import Decimal
 from unittest.mock import patch, MagicMock
 from django.test import TestCase
 from django.urls import reverse
@@ -9,7 +8,6 @@ from users.models import Tenant, TenantStaffMember
 
 User = get_user_model()
 from payments.models import PaymentCustomer
-from users.services import FounderService
 
 
 class FounderCheckoutTest(TestCase):

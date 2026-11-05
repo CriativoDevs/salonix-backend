@@ -336,7 +336,7 @@ class FounderService:
                             return False
             except ImportError:
                 print(
-                    f"[FounderService.can_assign_founder] Erro ao importar - assumindo elegível"
+                    "[FounderService.can_assign_founder] Erro ao importar - assumindo elegível"
                 )
                 # Se erro ao importar, assume que pode (fail-open para não bloquear checkout)
                 pass
@@ -376,7 +376,6 @@ class FounderService:
 
 
 class SMSRateLimiter:
-
     PLAN_LIMITS = {
         "founder": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
         "basic": {"minute": 3, "hour": 30, "day": 150, "month": 4500},
@@ -390,7 +389,9 @@ class SMSRateLimiter:
         "month": 60 * 60 * 24 * 31,  # aprox.
     }
 
-    def _keys_for_tenant(self, tenant: Tenant, now: Optional[datetime] = None) -> Dict[str, str]:
+    def _keys_for_tenant(
+        self, tenant: Tenant, now: Optional[datetime] = None
+    ) -> Dict[str, str]:
         now = now or timezone.now()
         ym = now.strftime("%Y-%m")
         ymd = now.strftime("%Y-%m-%d")
@@ -436,7 +437,12 @@ class SMSRateLimiter:
                 raise BusinessError(
                     message=f"Limite de SMS atingido para janela: {scope}",
                     code=ErrorCodes.SYSTEM_RATE_LIMIT_EXCEEDED,
-                    details={"scope": scope, "limit": limit, "count": current, "tenant_id": tenant.id},
+                    details={
+                        "scope": scope,
+                        "limit": limit,
+                        "count": current,
+                        "tenant_id": tenant.id,
+                    },
                 )
 
             try:

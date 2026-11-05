@@ -1,4 +1,3 @@
-from unittest.mock import patch, MagicMock
 import pytest
 from django.urls import reverse
 from django.test import override_settings

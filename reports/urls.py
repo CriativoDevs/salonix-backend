@@ -1,5 +1,9 @@
 from django.urls import path
-from reports.views_export import ExportJobCreateView, ExportJobStatusView, ExportJobDownloadView
+from reports.views_export import (
+    ExportJobCreateView,
+    ExportJobStatusView,
+    ExportJobDownloadView,
+)
 from reports.views import (
     ExportTopServicesCSVView,
     ExportRevenueCSVView,
@@ -13,6 +17,7 @@ from reports.views import (
     AdvancedReportsView,
     ExportBasicReportsCSVView,
     ExportAdvancedReportsCSVView,
+    InventoryReportView,
 )
 from reports.views_admin import CacheInvalidateView
 
@@ -38,6 +43,7 @@ urlpatterns = [
     path("top-services/", TopServicesReportView.as_view(), name="top_services"),
     path("revenue/", RevenueSeriesReportView.as_view(), name="revenue"),
     path("retention/", RetentionReportView.as_view(), name="retention"),
+    path("inventory/", InventoryReportView.as_view(), name="inventory"),
     path(
         "overview/export/",
         ExportOverviewCSVView.as_view(),
@@ -47,9 +53,16 @@ urlpatterns = [
     path("revenue/export/", ExportRevenueCSVView.as_view()),
     # Async export
     path("exports/", ExportJobCreateView.as_view(), name="export_job_create"),
-    path("exports/<uuid:job_id>/", ExportJobStatusView.as_view(), name="export_job_status"),
-    path("exports/<uuid:job_id>/download/", ExportJobDownloadView.as_view(), name="export_job_download"),
-
+    path(
+        "exports/<uuid:job_id>/",
+        ExportJobStatusView.as_view(),
+        name="export_job_status",
+    ),
+    path(
+        "exports/<uuid:job_id>/download/",
+        ExportJobDownloadView.as_view(),
+        name="export_job_download",
+    ),
     # Admin
     path(
         "admin/cache/invalidate/",

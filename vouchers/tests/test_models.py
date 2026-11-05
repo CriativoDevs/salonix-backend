@@ -7,7 +7,12 @@ from django.utils import timezone
 
 from core.models import SalonCustomer, Service
 from users.models import Tenant
-from vouchers.models import BirthdayVoucherConfig, BirthdayVoucherLog, ClientVoucher, Voucher
+from vouchers.models import (
+    BirthdayVoucherConfig,
+    BirthdayVoucherLog,
+    ClientVoucher,
+    Voucher,
+)
 
 
 @pytest.fixture
@@ -130,9 +135,7 @@ class TestVoucherModel:
         first = make_voucher(tenant_fixture, code="FIRSTONE")
         second = make_voucher(tenant_fixture, code="SECONDON")
         codes = list(
-            Voucher.objects.filter(tenant=tenant_fixture).values_list(
-                "code", flat=True
-            )
+            Voucher.objects.filter(tenant=tenant_fixture).values_list("code", flat=True)
         )
         assert codes == [second.code, first.code]
 
@@ -279,9 +282,7 @@ class TestBirthdayVoucherConfigModel:
     def test_up_to_three_configs_per_tenant_allowed(self, tenant_fixture):
         for _ in range(3):
             BirthdayVoucherConfig.objects.create(tenant=tenant_fixture)
-        assert (
-            BirthdayVoucherConfig.objects.filter(tenant=tenant_fixture).count() == 3
-        )
+        assert BirthdayVoucherConfig.objects.filter(tenant=tenant_fixture).count() == 3
 
     def test_fourth_config_per_tenant_is_rejected(self, tenant_fixture):
         for _ in range(3):
@@ -310,9 +311,7 @@ class TestBirthdayVoucherConfigModel:
         configs[0].validity_days = 60
         configs[0].full_clean()  # não deve levantar mesmo já havendo 3
 
-    def test_selecting_one_config_unselects_others_of_same_tenant(
-        self, tenant_fixture
-    ):
+    def test_selecting_one_config_unselects_others_of_same_tenant(self, tenant_fixture):
         first = BirthdayVoucherConfig.objects.create(
             tenant=tenant_fixture, is_selected=True
         )
@@ -411,9 +410,7 @@ class TestBirthdayVoucherLogModel:
         BirthdayVoucherLog.objects.create(
             tenant=tenant_fixture, client=customer_fixture, sent_date=today
         )
-        assert (
-            BirthdayVoucherLog.objects.filter(client=customer_fixture).count() == 2
-        )
+        assert BirthdayVoucherLog.objects.filter(client=customer_fixture).count() == 2
 
     def test_deleting_client_voucher_keeps_log(self, tenant_fixture, customer_fixture):
         voucher = make_voucher(tenant_fixture, code="BIRTHDAY1")

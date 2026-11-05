@@ -1,5 +1,5 @@
 from django.db import models
-from typing import Any, cast, Optional
+from typing import Any, cast
 from django.contrib.auth import get_user_model
 from users.models import Tenant
 

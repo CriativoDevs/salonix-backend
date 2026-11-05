@@ -2,7 +2,6 @@ import uuid
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.utils import timezone
 from django.test import override_settings
@@ -23,8 +22,10 @@ User = get_user_model()
 def _make_tenant():
     s = uuid.uuid4().hex[:8]
     return Tenant.objects.create(
-        slug=f"t-{s}", name=f"Tenant {s}",
-        plan_tier=Tenant.PLAN_PRO, reports_enabled=True,
+        slug=f"t-{s}",
+        name=f"Tenant {s}",
+        plan_tier=Tenant.PLAN_PRO,
+        reports_enabled=True,
     )
 
 
@@ -41,27 +42,38 @@ def _make_user(tenant, *, is_pro=True):
     return u
 
 
-def _make_appointment(tenant, user, *, day: date, status="completed", price=Decimal("50")):
+def _make_appointment(
+    tenant, user, *, day: date, status="completed", price=Decimal("50")
+):
     """Creates an Appointment whose slot falls on `day`."""
-    start = timezone.make_aware(
-        timezone.datetime(day.year, day.month, day.day, 10, 0)
-    )
+    start = timezone.make_aware(timezone.datetime(day.year, day.month, day.day, 10, 0))
     svc = Service.objects.create(
-        tenant=tenant, user=user, name=f"Svc-{uuid.uuid4().hex[:4]}",
-        duration_minutes=30, price_eur=price,
+        tenant=tenant,
+        user=user,
+        name=f"Svc-{uuid.uuid4().hex[:4]}",
+        duration_minutes=30,
+        price_eur=price,
     )
     prof = Professional.objects.create(tenant=tenant, user=user, name="Prof")
     cust = SalonCustomer.objects.create(
         tenant=tenant, name="Cust", email=f"c-{uuid.uuid4().hex[:6]}@t.com"
     )
     slot = ScheduleSlot.objects.create(
-        tenant=tenant, professional=prof,
-        start_time=start, end_time=start + timezone.timedelta(minutes=30),
-        is_available=False, status="booked",
+        tenant=tenant,
+        professional=prof,
+        start_time=start,
+        end_time=start + timezone.timedelta(minutes=30),
+        is_available=False,
+        status="booked",
     )
     return Appointment.objects.create(
-        tenant=tenant, client=user, customer=cust,
-        service=svc, professional=prof, slot=slot, status=status,
+        tenant=tenant,
+        client=user,
+        customer=cust,
+        service=svc,
+        professional=prof,
+        slot=slot,
+        status=status,
     )
 
 
@@ -82,11 +94,18 @@ def test_backfill_creates_aggregates_for_existing_appointments():
     yesterday = today - timedelta(days=1)
     two_days_ago = today - timedelta(days=2)
 
-    _make_appointment(tenant, user, day=yesterday, status="completed", price=Decimal("100"))
-    _make_appointment(tenant, user, day=yesterday, status="cancelled", price=Decimal("50"))
-    _make_appointment(tenant, user, day=two_days_ago, status="paid", price=Decimal("80"))
+    _make_appointment(
+        tenant, user, day=yesterday, status="completed", price=Decimal("100")
+    )
+    _make_appointment(
+        tenant, user, day=yesterday, status="cancelled", price=Decimal("50")
+    )
+    _make_appointment(
+        tenant, user, day=two_days_ago, status="paid", price=Decimal("80")
+    )
 
     from reports.backfill import backfill_tenant
+
     result = backfill_tenant(tenant.id, since=two_days_ago, until=yesterday)
 
     assert result["created"] == 2
@@ -110,12 +129,18 @@ def test_backfill_updates_existing_aggregates():
     yesterday = date.today() - timedelta(days=1)
 
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=99, appointments_completed=99, revenue_total=Decimal("9999"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=99,
+        appointments_completed=99,
+        revenue_total=Decimal("9999"),
     )
-    _make_appointment(tenant, user, day=yesterday, status="completed", price=Decimal("50"))
+    _make_appointment(
+        tenant, user, day=yesterday, status="completed", price=Decimal("50")
+    )
 
     from reports.backfill import backfill_tenant
+
     result = backfill_tenant(tenant.id, since=yesterday, until=yesterday)
 
     assert result["updated"] == 1
@@ -128,6 +153,7 @@ def test_backfill_updates_existing_aggregates():
 def test_backfill_no_appointments_returns_none():
     tenant = _make_tenant()
     from reports.backfill import backfill_tenant
+
     result = backfill_tenant(tenant.id)
     assert result is None
     assert not DailyReportAggregate.objects.filter(tenant=tenant).exists()
@@ -145,6 +171,7 @@ def test_run_backfill_covers_all_active_tenants():
     _make_appointment(t2, u2, day=yesterday, status="completed")
 
     from reports.backfill import run_backfill
+
     run_backfill(since=yesterday, until=yesterday)
 
     assert DailyReportAggregate.objects.filter(tenant=t1, date=yesterday).exists()
@@ -160,9 +187,12 @@ def test_update_daily_aggregates_task_covers_yesterday():
     user = _make_user(tenant)
     yesterday = date.today() - timedelta(days=1)
 
-    _make_appointment(tenant, user, day=yesterday, status="completed", price=Decimal("200"))
+    _make_appointment(
+        tenant, user, day=yesterday, status="completed", price=Decimal("200")
+    )
 
     from reports.tasks import update_daily_aggregates
+
     update_daily_aggregates()
 
     agg = DailyReportAggregate.objects.get(tenant=tenant, date=yesterday)
@@ -178,11 +208,15 @@ def test_update_daily_aggregates_does_not_touch_older_days():
 
     # pre-existing aggregate for two days ago with wrong data
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=two_days_ago,
-        appointments_total=5, appointments_completed=5, revenue_total=Decimal("500"),
+        tenant=tenant,
+        date=two_days_ago,
+        appointments_total=5,
+        appointments_completed=5,
+        revenue_total=Decimal("500"),
     )
 
     from reports.tasks import update_daily_aggregates
+
     update_daily_aggregates()
 
     # Two-days-ago aggregate should be untouched
@@ -200,12 +234,18 @@ def test_get_overview_data_uses_aggregates_when_covered():
     two_days_ago = date.today() - timedelta(days=2)
 
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=10, appointments_completed=8, revenue_total=Decimal("400"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=10,
+        appointments_completed=8,
+        revenue_total=Decimal("400"),
     )
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=two_days_ago,
-        appointments_total=5, appointments_completed=3, revenue_total=Decimal("150"),
+        tenant=tenant,
+        date=two_days_ago,
+        appointments_total=5,
+        appointments_completed=3,
+        revenue_total=Decimal("150"),
     )
 
     start = timezone.make_aware(
@@ -216,6 +256,7 @@ def test_get_overview_data_uses_aggregates_when_covered():
     )
 
     from reports.aggregator import get_overview_data
+
     data = get_overview_data(tenant.id, start, end)
 
     assert data["appointments_total"] == 15
@@ -232,10 +273,15 @@ def test_get_overview_data_fallback_when_gap_in_coverage():
 
     # Only one day covered (two_days_ago missing)
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=99, appointments_completed=99, revenue_total=Decimal("9999"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=99,
+        appointments_completed=99,
+        revenue_total=Decimal("9999"),
     )
-    _make_appointment(tenant, user, day=two_days_ago, status="completed", price=Decimal("60"))
+    _make_appointment(
+        tenant, user, day=two_days_ago, status="completed", price=Decimal("60")
+    )
 
     start = timezone.make_aware(
         timezone.datetime(two_days_ago.year, two_days_ago.month, two_days_ago.day)
@@ -245,6 +291,7 @@ def test_get_overview_data_fallback_when_gap_in_coverage():
     )
 
     from reports.aggregator import get_overview_data
+
     data = get_overview_data(tenant.id, start, end)
 
     # Should use live query (1 real appointment), not the corrupt aggregate
@@ -260,12 +307,18 @@ def test_get_revenue_series_uses_aggregates_when_covered():
     two_days_ago = date.today() - timedelta(days=2)
 
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=4, appointments_completed=3, revenue_total=Decimal("120"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=4,
+        appointments_completed=3,
+        revenue_total=Decimal("120"),
     )
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=two_days_ago,
-        appointments_total=2, appointments_completed=2, revenue_total=Decimal("80"),
+        tenant=tenant,
+        date=two_days_ago,
+        appointments_total=2,
+        appointments_completed=2,
+        revenue_total=Decimal("80"),
     )
 
     start = timezone.make_aware(
@@ -276,6 +329,7 @@ def test_get_revenue_series_uses_aggregates_when_covered():
     )
 
     from reports.aggregator import get_revenue_series
+
     rows = get_revenue_series(tenant.id, start, end, interval="day")
 
     assert len(rows) == 2
@@ -291,7 +345,9 @@ def test_get_revenue_series_fallback_when_no_aggregates():
     user = _make_user(tenant)
     yesterday = date.today() - timedelta(days=1)
 
-    _make_appointment(tenant, user, day=yesterday, status="completed", price=Decimal("75"))
+    _make_appointment(
+        tenant, user, day=yesterday, status="completed", price=Decimal("75")
+    )
 
     start = timezone.make_aware(
         timezone.datetime(yesterday.year, yesterday.month, yesterday.day)
@@ -301,6 +357,7 @@ def test_get_revenue_series_fallback_when_no_aggregates():
     )
 
     from reports.aggregator import get_revenue_series
+
     rows = get_revenue_series(tenant.id, start, end, interval="day")
 
     assert len(rows) == 1
@@ -319,8 +376,11 @@ def test_overview_endpoint_uses_aggregate_path():
     yesterday = date.today() - timedelta(days=1)
 
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=20, appointments_completed=15, revenue_total=Decimal("750"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=20,
+        appointments_completed=15,
+        revenue_total=Decimal("750"),
     )
 
     r = _client(user).get(
@@ -341,8 +401,12 @@ def test_overview_endpoint_fallback_returns_correct_live_data():
     user = _make_user(tenant)
     yesterday = date.today() - timedelta(days=1)
 
-    _make_appointment(tenant, user, day=yesterday, status="completed", price=Decimal("100"))
-    _make_appointment(tenant, user, day=yesterday, status="cancelled", price=Decimal("50"))
+    _make_appointment(
+        tenant, user, day=yesterday, status="completed", price=Decimal("100")
+    )
+    _make_appointment(
+        tenant, user, day=yesterday, status="cancelled", price=Decimal("50")
+    )
 
     r = _client(user).get(
         "/api/reports/overview/",
@@ -363,13 +427,20 @@ def test_revenue_endpoint_uses_aggregate_path():
     yesterday = date.today() - timedelta(days=1)
 
     DailyReportAggregate.objects.create(
-        tenant=tenant, date=yesterday,
-        appointments_total=5, appointments_completed=4, revenue_total=Decimal("200"),
+        tenant=tenant,
+        date=yesterday,
+        appointments_total=5,
+        appointments_completed=4,
+        revenue_total=Decimal("200"),
     )
 
     r = _client(user).get(
         "/api/reports/revenue/",
-        {"from": f"{yesterday}T00:00:00", "to": f"{yesterday}T23:59:59", "interval": "day"},
+        {
+            "from": f"{yesterday}T00:00:00",
+            "to": f"{yesterday}T23:59:59",
+            "interval": "day",
+        },
     )
     assert r.status_code == 200
     body = r.json()

@@ -44,7 +44,9 @@ def owner_user(db, tenant_fixture):
 @pytest.fixture
 def manager_user(db, tenant_fixture):
     user = User.objects.create_user(
-        username="raffle-manager1", email="raffle-manager1@test.com", password="testpass123"
+        username="raffle-manager1",
+        email="raffle-manager1@test.com",
+        password="testpass123",
     )
     TenantStaffMember.objects.create(
         tenant=tenant_fixture,
@@ -103,7 +105,9 @@ def customer3(db, tenant_fixture):
 
 @pytest.fixture
 def other_customer(db, other_tenant):
-    return SalonCustomer.objects.create(tenant=other_tenant, name="Cliente de outro tenant")
+    return SalonCustomer.objects.create(
+        tenant=other_tenant, name="Cliente de outro tenant"
+    )
 
 
 @pytest.fixture
@@ -213,7 +217,9 @@ class TestRaffleListCreate:
         other_service = Service.objects.create(
             tenant=other_tenant,
             user=User.objects.create_user(
-                username="raffle-svc-owner", email="raffle-svc-owner@test.com", password="x"
+                username="raffle-svc-owner",
+                email="raffle-svc-owner@test.com",
+                password="x",
             ),
             name="Serviço de outro tenant",
             duration_minutes=30,
@@ -275,7 +281,14 @@ class TestRaffleAddParticipants:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_add_all_clients_of_tenant(
-        self, api_client, owner_user, raffle_fixture, customer1, customer2, customer3, other_customer
+        self,
+        api_client,
+        owner_user,
+        raffle_fixture,
+        customer1,
+        customer2,
+        customer3,
+        other_customer,
     ):
         api_client.force_authenticate(user=owner_user)
         response = api_client.post(
@@ -396,7 +409,9 @@ class TestRaffleDraw:
         assert voucher.type == Voucher.VoucherType.FREE_SERVICE
         assert voucher.service_id == service.id
 
-    def test_cannot_draw_without_participants(self, api_client, owner_user, raffle_fixture):
+    def test_cannot_draw_without_participants(
+        self, api_client, owner_user, raffle_fixture
+    ):
         api_client.force_authenticate(user=owner_user)
         response = api_client.post(self.url(raffle_fixture.id))
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -404,7 +419,9 @@ class TestRaffleDraw:
         assert raffle_fixture.status == Raffle.Status.DRAFT
         assert raffle_fixture.winner is None
 
-    def test_cannot_draw_twice(self, api_client, owner_user, raffle_fixture, customer1, customer2):
+    def test_cannot_draw_twice(
+        self, api_client, owner_user, raffle_fixture, customer1, customer2
+    ):
         raffle_fixture.participants.add(customer1, customer2)
         api_client.force_authenticate(user=owner_user)
 
@@ -423,7 +440,9 @@ class TestRaffleDraw:
         assert Voucher.objects.filter(tenant=raffle_fixture.tenant).count() == 1
         assert ClientVoucher.objects.filter(tenant=raffle_fixture.tenant).count() == 1
 
-    def test_manager_can_draw(self, api_client, manager_user, raffle_fixture, customer1):
+    def test_manager_can_draw(
+        self, api_client, manager_user, raffle_fixture, customer1
+    ):
         raffle_fixture.participants.add(customer1)
         api_client.force_authenticate(user=manager_user)
         response = api_client.post(self.url(raffle_fixture.id))

@@ -3,14 +3,13 @@
 Regression tests for BE-SEC-04 item 2: Authorization review per object/tenant.
 Validates that users cannot access objects from tenants they don't belong to.
 """
+
 import pytest
 from django.urls import reverse
-from rest_framework import status
 from rest_framework.test import APIClient
 
 from users.models import CustomUser, Tenant, TenantStaffMember
-from payments.models import PaymentCustomer, Subscription
-from decimal import Decimal
+from payments.models import PaymentCustomer
 
 
 @pytest.fixture

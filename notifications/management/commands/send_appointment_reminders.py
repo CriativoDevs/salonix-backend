@@ -9,6 +9,4 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Iniciando envio de lembretes de agendamento...")
         result = send_appointment_reminders()
-        self.stdout.write(
-            self.style.SUCCESS(f"Lembretes processados: {result}")
-        )
+        self.stdout.write(self.style.SUCCESS(f"Lembretes processados: {result}"))

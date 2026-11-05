@@ -10,12 +10,10 @@ These tests verify:
 import json
 import logging
 from io import StringIO
-from unittest import mock
 
 import pytest
 from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 
 from salonix_backend.pii_utils import (
     FIELDS_NEVER_LOG,
@@ -191,7 +189,6 @@ class LoggingSecretValidationTest(TestCase):
 
     def test_feedback_validation_error_sanitized(self):
         """Verify validation error logs don't expose sensitive request data."""
-        from core.models import Feedback
         from salonix_backend.pii_utils import sanitize_log_data
 
         # Simulate a validation error log
@@ -216,7 +213,6 @@ class PiiLoggingIntegrationTest:
 
     def test_no_forbidden_fields_in_audit_payload(self):
         """Verify OpsSupportAuditLog payloads don't contain forbidden fields."""
-        from ops.models import OpsSupportAuditLog
 
         # Create audit log with potentially sensitive data
         test_payload = {

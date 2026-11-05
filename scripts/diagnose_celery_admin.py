@@ -3,6 +3,7 @@
 Script de diagnóstico do Django Admin para Celery Results.
 Uso: python manage.py runscript diagnose_celery_admin
 """
+
 from django.conf import settings
 from django.contrib import admin
 from django_celery_results.models import TaskResult, GroupResult
@@ -44,7 +45,7 @@ def run():
     print(f"3️⃣ Tasks no banco de dados: {count}")
     if count > 0:
         print("   ✅ Há tasks para mostrar no admin")
-        print(f"   Últimas 3 tasks:")
+        print("   Últimas 3 tasks:")
         for task in TaskResult.objects.order_by("-date_done")[:3]:
             status_icon = "✅" if task.status == "SUCCESS" else "❌"
             print(f"      {status_icon} {task.task_name[:40]} - {task.status}")

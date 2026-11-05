@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 from django.urls import reverse
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from users.models import CustomUser, Tenant, TenantStaffMember
 import logging
 

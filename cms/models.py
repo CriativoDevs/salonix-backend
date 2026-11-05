@@ -76,8 +76,12 @@ class RoadmapItem(models.Model):
 
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PLANNED)
-    order = models.PositiveIntegerField(default=0, help_text="Menor numero aparece primeiro.")
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_PLANNED
+    )
+    order = models.PositiveIntegerField(
+        default=0, help_text="Menor numero aparece primeiro."
+    )
     is_visible = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -85,7 +89,9 @@ class RoadmapItem(models.Model):
     class Meta:
         ordering = ("order", "created_at")
         indexes = [
-            models.Index(fields=["is_visible", "order"], name="cms_roadmap_visible_order_idx"),
+            models.Index(
+                fields=["is_visible", "order"], name="cms_roadmap_visible_order_idx"
+            ),
         ]
 
     def __str__(self):

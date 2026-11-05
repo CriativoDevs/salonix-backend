@@ -5,20 +5,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('core', '0027_saloncustomer_password'),
+        ("core", "0027_saloncustomer_password"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='saloncustomer',
-            name='birthday',
+            model_name="saloncustomer",
+            name="birthday",
             field=models.DateField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='saloncustomer',
-            name='photo',
-            field=models.ImageField(blank=True, null=True, upload_to='customer_photos/', validators=[users.validators.validate_profile_image]),
+            model_name="saloncustomer",
+            name="photo",
+            field=models.ImageField(
+                blank=True,
+                null=True,
+                upload_to="customer_photos/",
+                validators=[users.validators.validate_profile_image],
+            ),
         ),
     ]

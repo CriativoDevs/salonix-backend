@@ -1,6 +1,5 @@
 import pytest
 import stripe
-from unittest.mock import MagicMock, patch
 from payments.services import SubscriptionService
 from users.models import CustomUser
 

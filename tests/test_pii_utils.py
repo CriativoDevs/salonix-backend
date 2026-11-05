@@ -2,7 +2,6 @@
 Testes para utilitários de mascaramento de PII.
 """
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from salonix_backend.pii_utils import (

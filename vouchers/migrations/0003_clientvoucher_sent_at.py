@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('vouchers', '0002_clientvoucher'),
+        ("vouchers", "0002_clientvoucher"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='clientvoucher',
-            name='sent_at',
-            field=models.DateTimeField(blank=True, help_text='Última vez que o voucher foi enviado por e-mail ao cliente (BE-VOUCHER-04, #473). Reenvios deliberados atualizam este campo novamente — não é usado para bloquear reenvio, apenas para auditoria/evitar disparos acidentais duplicados.', null=True),
+            model_name="clientvoucher",
+            name="sent_at",
+            field=models.DateTimeField(
+                blank=True,
+                help_text="Última vez que o voucher foi enviado por e-mail ao cliente (BE-VOUCHER-04, #473). Reenvios deliberados atualizam este campo novamente — não é usado para bloquear reenvio, apenas para auditoria/evitar disparos acidentais duplicados.",
+                null=True,
+            ),
         ),
     ]

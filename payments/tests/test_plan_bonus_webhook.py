@@ -4,7 +4,6 @@ from unittest.mock import patch, MagicMock
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 
 from payments.models import PaymentCustomer
 from users.models import Tenant, CommLedger
@@ -31,7 +30,7 @@ class PlanBonusWebhookTestCase(TestCase):
         Tenant.objects.filter(pk=self.tenant.pk).update(comm_credit_eur=Decimal("0.00"))
         self.tenant.comm_ledger.all().delete()
         self.tenant.refresh_from_db()
-        
+
         self.user.tenant = self.tenant
         self.user.save()
 

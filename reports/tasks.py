@@ -58,7 +58,11 @@ def _date_filter(start, end):
         f for f in Appointment._meta.fields if isinstance(f, dj_models.DateTimeField)
     ]
     by_name = [f for f in dt_fields if f.name in preferred]
-    field = by_name[0].name if by_name else (dt_fields[0].name if dt_fields else "created_at")
+    field = (
+        by_name[0].name
+        if by_name
+        else (dt_fields[0].name if dt_fields else "created_at")
+    )
     return {f"{field}__gte": start, f"{field}__lte": end}
 
 
@@ -81,6 +85,7 @@ def _save_csv(job: ExportJob, content: str) -> str:
 
 # ── CSV generators ────────────────────────────────────────────────────────────
 
+
 def _generate_basic(tenant, start, end) -> str:
     from core.models import Appointment
     from reports.utils.csv_formatter import (
@@ -98,7 +103,9 @@ def _generate_basic(tenant, start, end) -> str:
     avg_ticket = (revenue / done) if done else 0
 
     series_qs = (
-        done_qs.annotate(bucket=TruncDay(list(_date_filter(start, end).keys())[0].split("__")[0]))
+        done_qs.annotate(
+            bucket=TruncDay(list(_date_filter(start, end).keys())[0].split("__")[0])
+        )
         .values("bucket")
         .annotate(revenue=_price_sum())
         .order_by("bucket")
@@ -109,14 +116,30 @@ def _generate_basic(tenant, start, end) -> str:
     write_timely_one_header(w, "Relatórios Básicos", start, end)
     w.writerow(["📈 RESUMO EXECUTIVO"])
     w.writerow([])
-    w.writerow(["Agendamentos Totais", "Agendamentos Concluídos", "Receita Total", "Ticket Médio"])
-    w.writerow([int(total), int(done), format_currency(float(revenue)), format_currency(float(avg_ticket))])
+    w.writerow(
+        [
+            "Agendamentos Totais",
+            "Agendamentos Concluídos",
+            "Receita Total",
+            "Ticket Médio",
+        ]
+    )
+    w.writerow(
+        [
+            int(total),
+            int(done),
+            format_currency(float(revenue)),
+            format_currency(float(avg_ticket)),
+        ]
+    )
     w.writerow([])
     w.writerow(["📊 RECEITA DIÁRIA"])
     w.writerow([])
     w.writerow(["Data", "Receita"])
     for row in series_qs.iterator(chunk_size=1000):
-        w.writerow([format_date_pt(row["bucket"]), format_currency(row["revenue"] or 0)])
+        w.writerow(
+            [format_date_pt(row["bucket"]), format_currency(row["revenue"] or 0)]
+        )
 
     return buf.getvalue()
 
@@ -127,7 +150,9 @@ def _generate_top_services(tenant, start, end) -> str:
 
     date_f = _date_filter(start, end)
     qs = (
-        Appointment.objects.filter(**date_f, status__in=COMPLETED_STATUSES, tenant=tenant)
+        Appointment.objects.filter(
+            **date_f, status__in=COMPLETED_STATUSES, tenant=tenant
+        )
         .values("service_id", "service__name")
         .annotate(qty=Count("id"), revenue=_price_sum())
         .order_by("-qty", "-revenue", "service__name")
@@ -140,21 +165,36 @@ def _generate_top_services(tenant, start, end) -> str:
     w.writerow([])
     w.writerow(["ID do Serviço", "Nome do Serviço", "Quantidade", "Receita"])
     for row in qs.iterator(chunk_size=1000):
-        w.writerow([row["service_id"], row["service__name"], row["qty"] or 0, format_currency(row["revenue"] or 0)])
+        w.writerow(
+            [
+                row["service_id"],
+                row["service__name"],
+                row["qty"] or 0,
+                format_currency(row["revenue"] or 0),
+            ]
+        )
 
     return buf.getvalue()
 
 
 def _generate_revenue(tenant, start, end, interval: str = "day") -> str:
     from core.models import Appointment
-    from reports.utils.csv_formatter import write_timely_one_header, format_currency, format_date_pt
+    from reports.utils.csv_formatter import (
+        write_timely_one_header,
+        format_currency,
+        format_date_pt,
+    )
 
-    trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(interval, TruncDay)
+    trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
+        interval, TruncDay
+    )
     date_f = _date_filter(start, end)
     field_name = list(date_f.keys())[0].split("__")[0]
 
     qs = (
-        Appointment.objects.filter(**date_f, status__in=COMPLETED_STATUSES, tenant=tenant)
+        Appointment.objects.filter(
+            **date_f, status__in=COMPLETED_STATUSES, tenant=tenant
+        )
         .annotate(bucket=trunc(field_name))
         .values("bucket")
         .annotate(revenue=_price_sum())
@@ -169,7 +209,12 @@ def _generate_revenue(tenant, start, end, interval: str = "day") -> str:
     w.writerow(["Período", "Receita"])
     for row in qs.iterator(chunk_size=1000):
         dt = row["bucket"]
-        w.writerow([format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt), format_currency(row["revenue"] or 0)])
+        w.writerow(
+            [
+                format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
+                format_currency(row["revenue"] or 0),
+            ]
+        )
 
     return buf.getvalue()
 
@@ -182,19 +227,25 @@ def _generate_advanced(tenant, start, end, interval: str = "day") -> str:
         format_date_pt,
     )
 
-    trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(interval, TruncDay)
+    trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}.get(
+        interval, TruncDay
+    )
     date_f = _date_filter(start, end)
     field_name = list(date_f.keys())[0].split("__")[0]
 
     top_qs = (
-        Appointment.objects.filter(**date_f, status__in=COMPLETED_STATUSES, tenant=tenant)
+        Appointment.objects.filter(
+            **date_f, status__in=COMPLETED_STATUSES, tenant=tenant
+        )
         .values("service_id", "service__name")
         .annotate(qty=Count("id"), revenue=_price_sum())
         .order_by("-qty", "-revenue", "service__name")
     )
 
     rev_qs = (
-        Appointment.objects.filter(**date_f, status__in=COMPLETED_STATUSES, tenant=tenant)
+        Appointment.objects.filter(
+            **date_f, status__in=COMPLETED_STATUSES, tenant=tenant
+        )
         .annotate(bucket=trunc(field_name))
         .values("bucket")
         .annotate(appointment_count=Count("id"), revenue=_price_sum())
@@ -209,7 +260,14 @@ def _generate_advanced(tenant, start, end, interval: str = "day") -> str:
     w.writerow([])
     w.writerow(["ID do Serviço", "Nome do Serviço", "Quantidade", "Receita"])
     for row in top_qs.iterator(chunk_size=1000):
-        w.writerow([row["service_id"], row["service__name"], row["qty"] or 0, format_currency(row["revenue"] or 0)])
+        w.writerow(
+            [
+                row["service_id"],
+                row["service__name"],
+                row["qty"] or 0,
+                format_currency(row["revenue"] or 0),
+            ]
+        )
 
     w.writerow([])
     w.writerow([f"📊 RECEITA POR {interval.upper()}"])
@@ -217,11 +275,13 @@ def _generate_advanced(tenant, start, end, interval: str = "day") -> str:
     w.writerow(["Período", "Agendamentos", "Receita"])
     for row in rev_qs.iterator(chunk_size=1000):
         dt = row["bucket"]
-        w.writerow([
-            format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
-            row["appointment_count"] or 0,
-            format_currency(row["revenue"] or 0),
-        ])
+        w.writerow(
+            [
+                format_date_pt(dt) if hasattr(dt, "isoformat") else str(dt),
+                row["appointment_count"] or 0,
+                format_currency(row["revenue"] or 0),
+            ]
+        )
 
     return buf.getvalue()
 
@@ -234,12 +294,19 @@ def update_daily_aggregates():
     from users.models import Tenant
 
     yesterday = date.today() - timedelta(days=1)
-    tenant_ids = list(Tenant.objects.filter(is_active=True).values_list("id", flat=True))
+    tenant_ids = list(
+        Tenant.objects.filter(is_active=True).values_list("id", flat=True)
+    )
     results = {}
     for tenant_id in tenant_ids:
-        results[tenant_id] = backfill_tenant(tenant_id, since=yesterday, until=yesterday)
+        results[tenant_id] = backfill_tenant(
+            tenant_id, since=yesterday, until=yesterday
+        )
 
-    logger.info("daily_aggregates_updated", extra={"tenants": len(tenant_ids), "date": str(yesterday)})
+    logger.info(
+        "daily_aggregates_updated",
+        extra={"tenants": len(tenant_ids), "date": str(yesterday)},
+    )
     return results
 
 
@@ -277,6 +344,7 @@ _GENERATORS = {
 
 # ── Task ──────────────────────────────────────────────────────────────────────
 
+
 @shared_task(name="reports.generate_csv_export", bind=True, max_retries=3)
 def generate_csv_export(self, job_id: str):
     try:
@@ -297,7 +365,10 @@ def generate_csv_export(self, job_id: str):
             raise ValueError(f"Tipo de report desconhecido: {job.report_type}")
 
         # Revenue e advanced aceitam interval; basic e top_services não
-        if job.report_type in (ExportJob.ReportType.REVENUE, ExportJob.ReportType.ADVANCED):
+        if job.report_type in (
+            ExportJob.ReportType.REVENUE,
+            ExportJob.ReportType.ADVANCED,
+        ):
             content = generator(job.tenant, start, end, interval)
         else:
             content = generator(job.tenant, start, end)

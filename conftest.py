@@ -140,6 +140,7 @@ def slot_fixture(db, tenant_fixture, professional_fixture):
     """Cria slot padrão para testes"""
     from django.utils import timezone
     from datetime import timedelta
+
     return ScheduleSlot.objects.create(
         tenant=tenant_fixture,
         professional=professional_fixture,

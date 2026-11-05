@@ -5,27 +5,48 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('reports', '0001_add_export_job'),
-        ('users', '0039_tenant_promotional_transition_rules'),
+        ("reports", "0001_add_export_job"),
+        ("users", "0039_tenant_promotional_transition_rules"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DailyReportAggregate',
+            name="DailyReportAggregate",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date', models.DateField()),
-                ('appointments_total', models.PositiveIntegerField(default=0)),
-                ('appointments_completed', models.PositiveIntegerField(default=0)),
-                ('revenue_total', models.DecimalField(decimal_places=2, default=0, max_digits=12)),
-                ('tenant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='daily_aggregates', to='users.tenant')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("date", models.DateField()),
+                ("appointments_total", models.PositiveIntegerField(default=0)),
+                ("appointments_completed", models.PositiveIntegerField(default=0)),
+                (
+                    "revenue_total",
+                    models.DecimalField(decimal_places=2, default=0, max_digits=12),
+                ),
+                (
+                    "tenant",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="daily_aggregates",
+                        to="users.tenant",
+                    ),
+                ),
             ],
             options={
-                'ordering': ('-date',),
-                'indexes': [models.Index(fields=['tenant', 'date'], name='rep_daily_tenant_date_idx')],
-                'unique_together': {('tenant', 'date')},
+                "ordering": ("-date",),
+                "indexes": [
+                    models.Index(
+                        fields=["tenant", "date"], name="rep_daily_tenant_date_idx"
+                    )
+                ],
+                "unique_together": {("tenant", "date")},
             },
         ),
     ]

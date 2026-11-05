@@ -4,7 +4,6 @@ import secrets
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -138,9 +137,7 @@ class RaffleViewSet(TenantIsolatedMixin, ModelViewSet):
         add_all = input_serializer.validated_data.get("all", False)
 
         if add_all:
-            clients = SalonCustomer.objects.filter(
-                tenant=raffle.tenant, is_active=True
-            )
+            clients = SalonCustomer.objects.filter(tenant=raffle.tenant, is_active=True)
             raffle.participants.add(*clients)
         else:
             clients = list(

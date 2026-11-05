@@ -514,9 +514,16 @@ class TestBusinessLogging:
         data = {"plan": "basic", "period": "monthly"}
 
         caplog.clear()
-        with caplog.at_level(logging.INFO, logger="payments.views"), patch(
-            "users.services.FounderService.get_availability",
-            return_value={"total_limit": 500, "used_count": 500, "remaining_count": 0},
+        with (
+            caplog.at_level(logging.INFO, logger="payments.views"),
+            patch(
+                "users.services.FounderService.get_availability",
+                return_value={
+                    "total_limit": 500,
+                    "used_count": 500,
+                    "remaining_count": 0,
+                },
+            ),
         ):
             response = self.client.post(
                 "/api/payments/stripe/create-checkout-session/", data

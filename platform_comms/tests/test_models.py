@@ -59,9 +59,7 @@ class TestPlatformAnnouncementModel:
         assert announcement.is_within_window is True
 
     def test_is_within_window_false_before_publish(self):
-        announcement = make_announcement(
-            publish_at=timezone.now() + timedelta(days=1)
-        )
+        announcement = make_announcement(publish_at=timezone.now() + timedelta(days=1))
         assert announcement.is_within_window is False
 
     def test_is_within_window_false_after_expire(self):
@@ -116,12 +114,12 @@ class TestPlatformAnnouncementManagerActiveForTenant:
         announcement = make_announcement(
             audience_scope=PlatformAnnouncement.AUDIENCE_ALL
         )
-        assert list(
-            PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)
-        ) == [announcement]
-        assert list(
-            PlatformAnnouncement.objects.active_for_tenant(other_tenant)
-        ) == [announcement]
+        assert list(PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)) == [
+            announcement
+        ]
+        assert list(PlatformAnnouncement.objects.active_for_tenant(other_tenant)) == [
+            announcement
+        ]
 
     def test_audience_specific_tenants_isolation(self, tenant_fixture, other_tenant):
         announcement = make_announcement(
@@ -129,9 +127,9 @@ class TestPlatformAnnouncementManagerActiveForTenant:
         )
         announcement.tenants.add(tenant_fixture)
 
-        assert list(
-            PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)
-        ) == [announcement]
+        assert list(PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)) == [
+            announcement
+        ]
         assert list(PlatformAnnouncement.objects.active_for_tenant(other_tenant)) == []
 
     def test_audience_specific_plans(self, tenant_fixture, other_tenant):
@@ -141,10 +139,12 @@ class TestPlatformAnnouncementManagerActiveForTenant:
             target_plans=[Tenant.PLAN_BASIC],
         )
 
-        assert list(PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)) == []
-        assert list(
-            PlatformAnnouncement.objects.active_for_tenant(other_tenant)
-        ) == [announcement]
+        assert (
+            list(PlatformAnnouncement.objects.active_for_tenant(tenant_fixture)) == []
+        )
+        assert list(PlatformAnnouncement.objects.active_for_tenant(other_tenant)) == [
+            announcement
+        ]
 
     def test_environment_filter_empty_shows_everywhere(self, tenant_fixture):
         announcement = make_announcement(environments=[])

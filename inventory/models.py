@@ -33,6 +33,18 @@ class InventoryItem(models.Model):
             "quantidade atual está no mínimo ou abaixo dele."
         ),
     )
+    unit_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        help_text=(
+            "Custo por unidade (ex.: preço de compra). Usado pelo relatório "
+            "de estoque e pelo cálculo de COGS/margem em reports "
+            "(BE-REPORTS-01, #569). Opcional — itens sem custo definido "
+            "contam como custo zero nesses relatórios."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

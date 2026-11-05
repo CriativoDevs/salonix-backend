@@ -13,8 +13,12 @@ class PlatformAnnouncementSerializer(serializers.ModelSerializer):
     para evitar N+1.
     """
 
-    type_display = serializers.CharField(source="get_announcement_type_display", read_only=True)
-    priority_display = serializers.CharField(source="get_priority_display", read_only=True)
+    type_display = serializers.CharField(
+        source="get_announcement_type_display", read_only=True
+    )
+    priority_display = serializers.CharField(
+        source="get_priority_display", read_only=True
+    )
     is_read = serializers.SerializerMethodField()
     read_at = serializers.SerializerMethodField()
 
@@ -43,7 +47,9 @@ class PlatformAnnouncementSerializer(serializers.ModelSerializer):
 
     def get_is_read(self, obj) -> bool:
         receipt = self._user_receipt(obj)
-        return bool(receipt and receipt.status == PlatformAnnouncementReceipt.STATUS_READ)
+        return bool(
+            receipt and receipt.status == PlatformAnnouncementReceipt.STATUS_READ
+        )
 
     def get_read_at(self, obj):
         receipt = self._user_receipt(obj)

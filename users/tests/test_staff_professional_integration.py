@@ -230,11 +230,17 @@ def test_ensure_professional_for_owner_links_all_tenant_services():
     )
 
     service_a = Service.objects.create(
-        tenant=tenant, user=owner, name="Tatuagem pequena", duration_minutes=60,
+        tenant=tenant,
+        user=owner,
+        name="Tatuagem pequena",
+        duration_minutes=60,
         price_eur=50,
     )
     service_b = Service.objects.create(
-        tenant=tenant, user=owner, name="Tatuagem grande", duration_minutes=180,
+        tenant=tenant,
+        user=owner,
+        name="Tatuagem grande",
+        duration_minutes=180,
         price_eur=200,
     )
 

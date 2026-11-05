@@ -10,7 +10,6 @@ from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Count, F
-from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -21,7 +20,7 @@ from rest_framework.exceptions import (
     ValidationError,
     PermissionDenied,
 )
-from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.filters import OrderingFilter
 
 # from django_filters.rest_framework import DjangoFilterBackend # Not available
 from rest_framework.permissions import AllowAny
@@ -65,7 +64,7 @@ from ops.serializers import (
     OpsNotificationTemplateSerializer,
 )
 from users.models import CustomUser, Tenant, UserFeatureFlags
-from salonix_backend.error_handling import ErrorCodes, TenantError
+from salonix_backend.error_handling import ErrorCodes
 from salonix_backend.pii_utils import mask_email
 
 logger = logging.getLogger(__name__)
@@ -194,7 +193,7 @@ class OpsAuthRefreshView(APIView):
         serializer = OpsTokenRefreshSerializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
-        except (InvalidToken, TokenError) as exc:
+        except (InvalidToken, TokenError):
             OPS_AUTH_EVENTS_TOTAL.labels(
                 event="refresh", result="failure", role="unknown"
             ).inc()

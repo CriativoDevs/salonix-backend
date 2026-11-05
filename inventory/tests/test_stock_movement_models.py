@@ -1,6 +1,5 @@
 import pytest
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
 
 from inventory.models import InventoryItem, StockMovement
 from users.models import Tenant

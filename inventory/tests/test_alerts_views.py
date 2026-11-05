@@ -60,7 +60,9 @@ def api_client():
 class TestInventoryAlerts:
     url = "/api/inventory/alerts/"
 
-    def test_item_below_minimum_appears_in_alerts(self, api_client, staff_user, tenant_fixture):
+    def test_item_below_minimum_appears_in_alerts(
+        self, api_client, staff_user, tenant_fixture
+    ):
         item = InventoryItem.objects.create(
             tenant=tenant_fixture,
             name="Luvas descartáveis",
@@ -94,7 +96,9 @@ class TestInventoryAlerts:
         ids = [i["id"] for i in results]
         assert item.id in ids
 
-    def test_item_above_minimum_does_not_appear(self, api_client, staff_user, tenant_fixture):
+    def test_item_above_minimum_does_not_appear(
+        self, api_client, staff_user, tenant_fixture
+    ):
         item = InventoryItem.objects.create(
             tenant=tenant_fixture,
             name="Tinta preta",

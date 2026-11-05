@@ -77,9 +77,11 @@ class TestInventoryItemModel:
     def test_ordering_defaults_to_name(self, tenant_fixture):
         make_item(tenant_fixture, name="Zinco")
         make_item(tenant_fixture, name="Algodão")
-        names = list(InventoryItem.objects.filter(tenant=tenant_fixture).values_list(
-            "name", flat=True
-        ))
+        names = list(
+            InventoryItem.objects.filter(tenant=tenant_fixture).values_list(
+                "name", flat=True
+            )
+        )
         assert names == ["Algodão", "Zinco"]
 
     def test_minimum_quantity_defaults_to_zero(self, tenant_fixture):
