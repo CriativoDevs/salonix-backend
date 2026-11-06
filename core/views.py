@@ -4927,6 +4927,14 @@ class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
         if is_available is not None:
             val = str(is_available).lower() in {"1", "true", "t", "yes", "y"}
             qs = qs.filter(is_available=val)
+            # Pedir "disponíveis" significa disponíveis para agendar AGORA —
+            # um slot de hoje mais cedo já passou e a criação do agendamento
+            # seria rejeitada (ver validação de slot no passado em
+            # AppointmentSerializer). Sem este filtro, o app lista e deixa
+            # o usuário escolher um horário que o backend vai recusar em
+            # seguida. Mesmo filtro já aplicado em PublicSlotListView.
+            if val:
+                qs = qs.filter(start_time__gte=timezone.now())
 
         status_param = params.get("status")
         if status_param:

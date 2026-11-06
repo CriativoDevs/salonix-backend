@@ -14,6 +14,8 @@ class VoucherSerializer(serializers.ModelSerializer):
     request, para evitar IDOR sobre serviços de outro tenant.
     """
 
+    assignments_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Voucher
         fields = [
@@ -26,9 +28,20 @@ class VoucherSerializer(serializers.ModelSerializer):
             "valid_until",
             "notes",
             "created_at",
+            "assignments_count",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "created_at", "assignments_count"]
         extra_kwargs = {"code": {"required": False}}
+
+    def get_assignments_count(self, obj) -> int:
+        """Quantidade de `ClientVoucher` já atribuídos a este voucher.
+
+        Permite ao FE/MOB calcular o status "esgotado" (assignments_count
+        >= max_uses) sem precisar de uma chamada extra por voucher.
+        `len(...all())` em vez de `.count()` para aproveitar o
+        `prefetch_related` do `VoucherViewSet.queryset` e evitar N+1.
+        """
+        return len(obj.client_vouchers.all())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -117,6 +130,18 @@ class VoucherAssignSerializer(serializers.Serializer):
     """Payload de entrada para `POST /api/vouchers/{id}/assign/`."""
 
     client_id = serializers.IntegerField()
+
+
+class VoucherAssignBulkSerializer(serializers.Serializer):
+    """Payload de entrada para `POST /api/vouchers/{id}/assign-bulk/`
+    (BE-VOUCHER-07)."""
+
+    client_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        max_length=500,
+        allow_empty=False,
+    )
 
 
 class ApplyVoucherSerializer(serializers.Serializer):
