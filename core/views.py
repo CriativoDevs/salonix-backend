@@ -3310,6 +3310,126 @@ class ClientsMeProfileView(APIView):
         return Response(ser.data, status=drf_status.HTTP_200_OK)
 
 
+class ClientsMeVouchersView(APIView):
+    """Lista os vouchers atribuídos ao próprio cliente autenticado (BE-VOUCHER-06).
+
+    Mesmo padrão de autenticação manual via JWT `scope=client` das demais
+    views `clients/me/*` (ver `_get_client_from_jwt`). Escopado por
+    tenant+cliente do token — nunca por um `client_id`/`customer_id` vindo
+    do payload, para não permitir ver vouchers de outro cliente (IDOR).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
+
+    @extend_schema(responses={200: ClientVoucherSerializer(many=True)})
+    def get(self, request):
+        tenant, customer = _get_client_from_jwt(request)
+        client_vouchers = ClientVoucher.objects.filter(
+            tenant=tenant, client=customer
+        ).select_related("voucher")
+        serializer = ClientVoucherSerializer(client_vouchers, many=True)
+        return Response(serializer.data, status=drf_status.HTTP_200_OK)
+
+
+class ClientAppointmentApplyVoucherView(APIView):
+    """Aplica, ao PRÓPRIO agendamento do cliente, um voucher já atribuído a
+    ele (BE-VOUCHER-06).
+
+    Reaproveita a mesma lógica de validação de negócio de
+    `SalonAppointmentViewSet.apply_voucher` (BE-VOUCHER-03, #472), mas com
+    permissão de cliente (via JWT `scope=client`) em vez de staff: o
+    agendamento é buscado já escopado a `tenant`+`customer` do token (como
+    em `ClientAppointmentCancelView`), e o `ClientVoucher` é buscado
+    escopado a `tenant`+`client` do token — nunca `ClientVoucher.objects.get
+    (pk=...)` direto, que abriria IDOR entre clientes/tenants.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
+
+    @extend_schema(
+        request=ApplyVoucherSerializer, responses={200: ClientVoucherSerializer}
+    )
+    def post(self, request, pk: int):
+        tenant, customer = _get_client_from_jwt(request)
+        appointment = get_object_or_404(
+            Appointment, pk=pk, tenant=tenant, customer=customer
+        )
+
+        input_serializer = ApplyVoucherSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        client_voucher_id = input_serializer.validated_data["client_voucher_id"]
+
+        if appointment.status == "cancelled":
+            raise ValidationError(
+                {"detail": ["Agendamento cancelado não permite aplicar voucher."]}
+            )
+        slot_start = getattr(appointment.slot, "start_time", None)
+        if slot_start and slot_start <= timezone.now():
+            raise ValidationError(
+                {"detail": ["Não é possível aplicar voucher a agendamentos passados."]}
+            )
+
+        with transaction.atomic():
+            # Busca escopada explicitamente a tenant+client do JWT (nunca
+            # ClientVoucher.objects.get(pk=...) direto) — mesmo cuidado de
+            # `apply_voucher`, mas aqui restringindo também por `client`, já
+            # que quem chama é o próprio cliente (não um staff autorizado a
+            # operar qualquer cliente do tenant). `select_for_update` evita
+            # que duas requisições concorrentes consigam, ambas, passar pela
+            # checagem de `used_at` antes de qualquer uma gravar (TOCTOU).
+            try:
+                client_voucher = (
+                    ClientVoucher.objects.select_for_update()
+                    .select_related("voucher", "client")
+                    .get(pk=client_voucher_id, tenant=tenant, client=customer)
+                )
+            except ClientVoucher.DoesNotExist:
+                raise ValidationError(
+                    {"client_voucher_id": ["Voucher não encontrado para este cliente."]}
+                )
+
+            if client_voucher.used_at is not None:
+                raise ValidationError(
+                    {"client_voucher_id": ["Este voucher já foi usado."]}
+                )
+
+            if client_voucher.status == ClientVoucher.Status.EXPIRED:
+                raise ValidationError(
+                    {"client_voucher_id": ["Este voucher está expirado."]}
+                )
+
+            if (
+                ClientVoucher.objects.select_for_update()
+                .filter(used_in_booking=appointment)
+                .exclude(pk=client_voucher.pk)
+                .exists()
+            ):
+                raise ValidationError(
+                    {"detail": ["Este agendamento já tem um voucher aplicado."]}
+                )
+
+            client_voucher.used_at = timezone.now()
+            client_voucher.used_in_booking = appointment
+            client_voucher.save(update_fields=["used_at", "used_in_booking"])
+
+        logger.info(
+            "Voucher applied to appointment by client",
+            extra={
+                "client_voucher_id": client_voucher.id,
+                "appointment_id": appointment.id,
+                "tenant_id": getattr(tenant, "id", None),
+                "customer_id": customer.id,
+            },
+        )
+
+        return Response(
+            ClientVoucherSerializer(client_voucher).data,
+            status=drf_status.HTTP_200_OK,
+        )
+
+
 class ClientAppointmentCancelView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []  # No auto-authentication, we handle JWT manually
@@ -5718,43 +5838,71 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
             request.user, "tenant", None
         )
 
-        # Busca do ClientVoucher escopada explicitamente ao tenant do
-        # agendamento — nunca ClientVoucher.objects.get(pk=...) direto, que
-        # permitiria aplicar voucher de outro tenant (IDOR). Não confiamos
-        # apenas no isolamento do TenantIsolatedMixin (que é desativado
-        # durante os testes) para este objeto, que não tem ViewSet próprio.
-        try:
-            client_voucher = ClientVoucher.objects.select_related(
-                "voucher", "client"
-            ).get(pk=client_voucher_id, tenant=tenant)
-        except ClientVoucher.DoesNotExist:
+        if appointment.status == "cancelled":
             raise ValidationError(
-                {"client_voucher_id": ["Voucher não encontrado para este tenant."]}
+                {"detail": ["Agendamento cancelado não permite aplicar voucher."]}
+            )
+        slot_start = getattr(appointment.slot, "start_time", None)
+        if slot_start and slot_start <= timezone.now():
+            raise ValidationError(
+                {"detail": ["Não é possível aplicar voucher a agendamentos passados."]}
             )
 
-        if (
-            appointment.customer_id is None
-            or client_voucher.client_id != appointment.customer_id
-        ):
-            raise ValidationError(
-                {
-                    "client_voucher_id": [
-                        "Este voucher não está atribuído ao cliente deste agendamento."
-                    ]
-                }
-            )
+        with transaction.atomic():
+            # Busca do ClientVoucher escopada explicitamente ao tenant do
+            # agendamento — nunca ClientVoucher.objects.get(pk=...) direto, que
+            # permitiria aplicar voucher de outro tenant (IDOR). Não confiamos
+            # apenas no isolamento do TenantIsolatedMixin (que é desativado
+            # durante os testes) para este objeto, que não tem ViewSet
+            # próprio. `select_for_update` evita que duas requisições
+            # concorrentes consigam, ambas, passar pela checagem de
+            # `used_at` antes de qualquer uma gravar (TOCTOU).
+            try:
+                client_voucher = (
+                    ClientVoucher.objects.select_for_update()
+                    .select_related("voucher", "client")
+                    .get(pk=client_voucher_id, tenant=tenant)
+                )
+            except ClientVoucher.DoesNotExist:
+                raise ValidationError(
+                    {"client_voucher_id": ["Voucher não encontrado para este tenant."]}
+                )
 
-        if client_voucher.used_at is not None:
-            raise ValidationError({"client_voucher_id": ["Este voucher já foi usado."]})
+            if (
+                appointment.customer_id is None
+                or client_voucher.client_id != appointment.customer_id
+            ):
+                raise ValidationError(
+                    {
+                        "client_voucher_id": [
+                            "Este voucher não está atribuído ao cliente deste agendamento."
+                        ]
+                    }
+                )
 
-        if client_voucher.status == ClientVoucher.Status.EXPIRED:
-            raise ValidationError(
-                {"client_voucher_id": ["Este voucher está expirado."]}
-            )
+            if client_voucher.used_at is not None:
+                raise ValidationError(
+                    {"client_voucher_id": ["Este voucher já foi usado."]}
+                )
 
-        client_voucher.used_at = timezone.now()
-        client_voucher.used_in_booking = appointment
-        client_voucher.save(update_fields=["used_at", "used_in_booking"])
+            if client_voucher.status == ClientVoucher.Status.EXPIRED:
+                raise ValidationError(
+                    {"client_voucher_id": ["Este voucher está expirado."]}
+                )
+
+            if (
+                ClientVoucher.objects.select_for_update()
+                .filter(used_in_booking=appointment)
+                .exclude(pk=client_voucher.pk)
+                .exists()
+            ):
+                raise ValidationError(
+                    {"detail": ["Este agendamento já tem um voucher aplicado."]}
+                )
+
+            client_voucher.used_at = timezone.now()
+            client_voucher.used_in_booking = appointment
+            client_voucher.save(update_fields=["used_at", "used_in_booking"])
 
         logger.info(
             "Voucher applied to appointment",

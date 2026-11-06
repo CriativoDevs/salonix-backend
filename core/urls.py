@@ -34,6 +34,8 @@ from core.views import (
     ClientsMeAppointmentsHistoryView,
     ClientsMeAppointmentCreateView,
     ClientsMeProfileView,
+    ClientsMeVouchersView,
+    ClientAppointmentApplyVoucherView,
     ClientAppointmentCancelView,
     FeedbackListCreateView,
     FeedbackDetailView,
@@ -115,6 +117,16 @@ urlpatterns = [
         "clients/me/appointments/<int:pk>/cancel/",
         ClientAppointmentCancelView.as_view(),
         name="clients_me_appointment_cancel",
+    ),
+    path(
+        "clients/me/appointments/<int:pk>/apply-voucher/",
+        ClientAppointmentApplyVoucherView.as_view(),
+        name="clients_me_appointment_apply_voucher",
+    ),
+    path(
+        "clients/me/vouchers/",
+        ClientsMeVouchersView.as_view(),
+        name="clients_me_vouchers",
     ),
     # Public routes
     path(
