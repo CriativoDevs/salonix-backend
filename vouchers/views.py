@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -15,6 +16,7 @@ from vouchers.models import BirthdayVoucherConfig, ClientVoucher, Voucher
 from vouchers.serializers import (
     BirthdayVoucherConfigSerializer,
     ClientVoucherSerializer,
+    VoucherAssignBulkSerializer,
     VoucherAssignSerializer,
     VoucherSerializer,
 )
@@ -34,7 +36,9 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
       também para edição, já que vouchers afetam receita/descontos).
     """
 
-    queryset = Voucher.objects.select_related("service").all()
+    queryset = Voucher.objects.select_related("service").prefetch_related(
+        "client_vouchers"
+    )
     serializer_class = VoucherSerializer
     permission_classes = [IsAuthenticated]
 
@@ -182,6 +186,70 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         return Response(
             ClientVoucherSerializer(client_voucher).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="assign-bulk")
+    def assign_bulk(self, request, pk=None):
+        """Atribui o voucher a vários clientes do mesmo tenant de uma vez
+        (BE-VOUCHER-07).
+
+        Mesma permissão e mesma lógica de validação por cliente de `assign`
+        (reaproveita `_get_client_in_tenant`/`_assign_voucher_to_client`),
+        mas processa uma lista de `client_ids` numa única chamada. Não falha
+        a lista inteira por causa de um cliente problemático: cada id é
+        avaliado individualmente e o resultado reporta separadamente quem
+        foi atribuído e quem foi pulado (e por quê), para o FE/MOB mostrar
+        um resumo claro ao usuário em vez de um erro genérico.
+        """
+        self._require_owner_or_manager("atribuir vouchers")
+
+        voucher = self.get_object()
+
+        input_serializer = VoucherAssignBulkSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        client_ids = input_serializer.validated_data["client_ids"]
+
+        assigned = []
+        skipped = []
+
+        with transaction.atomic():
+            for client_id in client_ids:
+                try:
+                    client = self._get_client_in_tenant(voucher, client_id)
+                except ValidationError:
+                    skipped.append({"client_id": client_id, "reason": "not_found"})
+                    continue
+
+                try:
+                    client_voucher = self._assign_voucher_to_client(voucher, client)
+                except ValidationError as exc:
+                    detail = exc.detail
+                    if "client_id" in detail:
+                        reason = "already_assigned"
+                    else:
+                        reason = "max_uses_exceeded"
+                    skipped.append({"client_id": client_id, "reason": reason})
+                    continue
+
+                assigned.append(client_voucher)
+
+        logger.info(
+            "Voucher bulk-assigned to clients",
+            extra={
+                "voucher_id": voucher.id,
+                "assigned_count": len(assigned),
+                "skipped_count": len(skipped),
+                "tenant_id": voucher.tenant_id,
+                "user_id": self.request.user.id,
+            },
+        )
+
+        return Response(
+            {
+                "assigned": ClientVoucherSerializer(assigned, many=True).data,
+                "skipped": skipped,
+            },
+            status=status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=["post"], url_path="send-email")

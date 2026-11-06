@@ -232,6 +232,27 @@ class TestVoucherListCreate:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "value" in response.json()["error"]["details"]
 
+    def test_list_includes_assignments_count(
+        self, api_client, owner_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.get(self.url)
+        data = response.json()
+        results = data["results"] if "results" in data else data
+        voucher_data = next(v for v in results if v["id"] == voucher_fixture.id)
+        assert voucher_data["assignments_count"] == 0
+
+        ClientVoucher.objects.create(
+            tenant=voucher_fixture.tenant,
+            voucher=voucher_fixture,
+            client=customer_fixture,
+        )
+        response = api_client.get(self.url)
+        data = response.json()
+        results = data["results"] if "results" in data else data
+        voucher_data = next(v for v in results if v["id"] == voucher_fixture.id)
+        assert voucher_data["assignments_count"] == 1
+
     def test_cannot_use_service_from_other_tenant(
         self, api_client, owner_user, other_tenant
     ):
@@ -494,6 +515,139 @@ class TestVoucherAssign:
         response = api_client.post(self.url(voucher_fixture), {"client_id": 999999})
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "client_id" in response.json()["error"]["details"]
+
+
+@pytest.mark.django_db
+class TestVoucherAssignBulk:
+    def url(self, voucher):
+        return f"/api/vouchers/{voucher.id}/assign-bulk/"
+
+    def test_owner_can_assign_to_several_clients(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        voucher = Voucher.objects.create(
+            tenant=tenant_fixture,
+            code="BULK1",
+            type=Voucher.VoucherType.FIXED,
+            value=5,
+            max_uses=10,
+        )
+        customer_a = SalonCustomer.objects.create(tenant=tenant_fixture, name="A")
+        customer_b = SalonCustomer.objects.create(tenant=tenant_fixture, name="B")
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher), {"client_ids": [customer_a.id, customer_b.id]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["assigned"]) == 2
+        assert data["skipped"] == []
+        assert ClientVoucher.objects.filter(voucher=voucher).count() == 2
+
+    def test_manager_can_assign_bulk(
+        self, api_client, manager_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=manager_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_ids": [customer_fixture.id]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_staff_cannot_assign_bulk(
+        self, api_client, staff_user, voucher_fixture, customer_fixture
+    ):
+        api_client.force_authenticate(user=staff_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_ids": [customer_fixture.id]}
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert not ClientVoucher.objects.filter(voucher=voucher_fixture).exists()
+
+    def test_unauthenticated_cannot_assign_bulk(
+        self, api_client, voucher_fixture, customer_fixture
+    ):
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_ids": [customer_fixture.id]}
+        )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_already_assigned_client_is_skipped_not_failed(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        voucher = Voucher.objects.create(
+            tenant=tenant_fixture,
+            code="BULK2",
+            type=Voucher.VoucherType.FIXED,
+            value=5,
+            max_uses=10,
+        )
+        already = SalonCustomer.objects.create(tenant=tenant_fixture, name="Already")
+        fresh = SalonCustomer.objects.create(tenant=tenant_fixture, name="Fresh")
+        ClientVoucher.objects.create(tenant=tenant_fixture, voucher=voucher, client=already)
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher), {"client_ids": [already.id, fresh.id]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["assigned"]) == 1
+        assert data["assigned"][0]["client"] == fresh.id
+        assert data["skipped"] == [
+            {"client_id": already.id, "reason": "already_assigned"}
+        ]
+
+    def test_max_uses_exceeded_skips_remaining_clients(
+        self, api_client, owner_user, tenant_fixture
+    ):
+        voucher = Voucher.objects.create(
+            tenant=tenant_fixture,
+            code="BULK3",
+            type=Voucher.VoucherType.FIXED,
+            value=5,
+            max_uses=1,
+        )
+        customer_a = SalonCustomer.objects.create(tenant=tenant_fixture, name="A")
+        customer_b = SalonCustomer.objects.create(tenant=tenant_fixture, name="B")
+
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher), {"client_ids": [customer_a.id, customer_b.id]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["assigned"]) == 1
+        assert data["skipped"] == [
+            {"client_id": customer_b.id, "reason": "max_uses_exceeded"}
+        ]
+        assert ClientVoucher.objects.filter(voucher=voucher).count() == 1
+
+    def test_client_of_other_tenant_is_skipped_as_not_found(
+        self, api_client, owner_user, voucher_fixture, other_customer_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(
+            self.url(voucher_fixture), {"client_ids": [other_customer_fixture.id]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["assigned"] == []
+        assert data["skipped"] == [
+            {"client_id": other_customer_fixture.id, "reason": "not_found"}
+        ]
+
+    def test_requires_client_ids(self, api_client, owner_user, voucher_fixture):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(voucher_fixture), {})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_rejects_empty_client_ids_list(
+        self, api_client, owner_user, voucher_fixture
+    ):
+        api_client.force_authenticate(user=owner_user)
+        response = api_client.post(self.url(voucher_fixture), {"client_ids": []})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @pytest.fixture
