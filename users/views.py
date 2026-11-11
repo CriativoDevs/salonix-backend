@@ -1590,7 +1590,7 @@ class PasswordResetRequestView(APIView):
         examples=[
             OpenApiExample(
                 "Exemplo",
-                value={"email": "user@example.com", "reset_url": "https://app/reset"},
+                value={"email": "user@example.com"},
                 request_only=True,
             )
         ],
@@ -1636,11 +1636,10 @@ class PasswordResetRequestView(APIView):
         token = token_gen.make_token(user)
         uid = str(user.pk)
 
-        reset_url = (
-            request.data.get("reset_url") or settings.STRIPE_CANCEL_URL
-        )  # placeholder front URL
-        # Montar link: {reset_url}?uid={uid}&token={token}
-        link = f"{reset_url}?uid={uid}&token={token}"
+        base = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173").rstrip(
+            "/"
+        )
+        link = f"{base}/reset-password?uid={uid}&token={token}"
 
         try:
             from django.core.mail import EmailMultiAlternatives

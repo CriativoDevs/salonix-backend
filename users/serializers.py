@@ -1298,7 +1298,6 @@ class TenantNotificationsUpdateSerializer(serializers.Serializer):
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-    reset_url = serializers.CharField(required=False, allow_blank=True)
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):

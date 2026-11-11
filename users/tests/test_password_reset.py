@@ -1,4 +1,5 @@
 import pytest
+from django.core import mail
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -45,3 +46,18 @@ def test_password_reset_flow_success():
     # can login with new password
     assert user.refresh_from_db() is None
     assert user.check_password("NewPass123")
+
+
+@pytest.mark.django_db
+@override_settings(CAPTCHA_ENABLED=False, FRONTEND_BASE_URL="https://timelyone.today")
+def test_password_reset_request_fallback_uses_frontend_base_url():
+    User.objects.create_user(
+        username="u2", email="u2@example.com", password="OldPass123"
+    )
+    c = APIClient()
+    req_url = reverse("password_reset")
+
+    r = c.post(req_url, {"email": "u2@example.com"})
+    assert r.status_code == 200
+    assert len(mail.outbox) == 1
+    assert "https://timelyone.today/reset-password?uid=" in mail.outbox[0].body
