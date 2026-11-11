@@ -1636,9 +1636,9 @@ class PasswordResetRequestView(APIView):
         token = token_gen.make_token(user)
         uid = str(user.pk)
 
-        reset_url = (
-            request.data.get("reset_url") or settings.STRIPE_CANCEL_URL
-        )  # placeholder front URL
+        reset_url = request.data.get("reset_url") or getattr(
+            settings, "FRONTEND_BASE_URL", "http://localhost:5173"
+        ).rstrip("/") + "/reset-password"
         # Montar link: {reset_url}?uid={uid}&token={token}
         link = f"{reset_url}?uid={uid}&token={token}"
 
