@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from django.urls import reverse
 from django.utils import timezone
 
-from users.models import Tenant, CustomUser
+from users.models import Tenant, CustomUser, TenantStaffMember
 from users.feature_flags import (
     check_feature_flag,
     get_tenant_feature_summary,
@@ -400,6 +400,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
@@ -429,6 +432,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
@@ -442,6 +448,111 @@ class TestTenantMetaEndpoint:
         assert "PWA" in response.data["detail"]
         tenant.refresh_from_db()
         assert tenant.auto_invite_enabled is False
+
+    def test_tenant_meta_returns_business_type(self):
+        """GET /tenant/meta/ inclui business_type no response."""
+        Tenant.objects.create(
+            name="Tattoo Studio",
+            slug="tattoo-studio",
+            business_type=Tenant.BUSINESS_TYPE_TATTOO,
+        )
+
+        url = reverse("tenant_meta")
+        response = self.client.get(url, {"tenant": "tattoo-studio"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["business_type"] == "tattoo"
+
+    def test_tenant_meta_business_type_defaults_to_other(self):
+        """Tenant sem business_type explícito usa 'other' como default."""
+        Tenant.objects.create(name="Generic", slug="generic-biz")
+
+        url = reverse("tenant_meta")
+        response = self.client.get(url, {"tenant": "generic-biz"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["business_type"] == "other"
+
+    def test_tenant_meta_patch_business_type(self):
+        """PATCH /tenant/meta/ permite alterar business_type."""
+        tenant = Tenant.objects.create(
+            name="My Clinic",
+            slug="my-clinic",
+            business_type=Tenant.BUSINESS_TYPE_OTHER,
+        )
+
+        user = CustomUser.objects.create_user(
+            username="clinic_owner",
+            email="owner@clinic.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"business_type": "psychology"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        tenant.refresh_from_db()
+        assert tenant.business_type == "psychology"
+        assert response.json()["business_type"] == "psychology"
+
+    def test_tenant_meta_patch_business_type_invalid_choice(self):
+        """PATCH com business_type inválido retorna 400."""
+        tenant = Tenant.objects.create(name="Bad", slug="bad-type")
+
+        user = CustomUser.objects.create_user(
+            username="bad_owner",
+            email="bad@type.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"business_type": "invalid_type"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_tenant_meta_patch_forbidden_for_collaborator(self):
+        """Collaborator não pode alterar configurações do tenant via PATCH."""
+        tenant = Tenant.objects.create(name="Locked", slug="locked-biz")
+
+        user = CustomUser.objects.create_user(
+            username="collab",
+            email="collab@locked.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.COLLABORATOR,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"business_type": "tattoo"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        tenant.refresh_from_db()
+        assert tenant.business_type == "other"
 
 
 @pytest.mark.django_db

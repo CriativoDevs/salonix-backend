@@ -134,6 +134,33 @@ class Tenant(models.Model):
         help_text="Telefone de contato público do salão (E.164 ou local)",
     )
 
+    # Tipo de negócio
+    BUSINESS_TYPE_SALON = "salon"
+    BUSINESS_TYPE_TATTOO = "tattoo"
+    BUSINESS_TYPE_PSYCHOLOGY = "psychology"
+    BUSINESS_TYPE_NAIL_TECH = "nail_tech"
+    BUSINESS_TYPE_AESTHETICS = "aesthetics"
+    BUSINESS_TYPE_PHYSIOTHERAPY = "physiotherapy"
+    BUSINESS_TYPE_NUTRITION = "nutrition"
+    BUSINESS_TYPE_OTHER = "other"
+    BUSINESS_TYPE_CHOICES = [
+        (BUSINESS_TYPE_SALON, "Salão"),
+        (BUSINESS_TYPE_TATTOO, "Tatuagem"),
+        (BUSINESS_TYPE_PSYCHOLOGY, "Psicologia"),
+        (BUSINESS_TYPE_NAIL_TECH, "Pedicure/Manicure"),
+        (BUSINESS_TYPE_AESTHETICS, "Estética"),
+        (BUSINESS_TYPE_PHYSIOTHERAPY, "Fisioterapia"),
+        (BUSINESS_TYPE_NUTRITION, "Nutrição"),
+        (BUSINESS_TYPE_OTHER, "Outro"),
+    ]
+
+    business_type = models.CharField(
+        max_length=20,
+        choices=BUSINESS_TYPE_CHOICES,
+        default=BUSINESS_TYPE_OTHER,
+        help_text="Tipo de negócio do tenant",
+    )
+
     # Planos e Feature Flags
     PLAN_BASIC = "basic"
     PLAN_PRO = "pro"

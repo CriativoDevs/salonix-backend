@@ -592,10 +592,22 @@ class TenantMetaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Verificar se o usuário é dono do tenant
+        # Verificar se o usuário pertence ao tenant
         if request.user.tenant != tenant:
             return Response(
                 {"detail": "Você não tem permissão para alterar este tenant."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Apenas owner ou manager podem alterar configurações do tenant
+        if not (
+            getattr(request.user, "is_superuser", False)
+            or request.user.has_staff_role(
+                TenantStaffMember.Role.OWNER, TenantStaffMember.Role.MANAGER
+            )
+        ):
+            return Response(
+                {"detail": "Apenas owner ou manager podem alterar configurações do tenant."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
