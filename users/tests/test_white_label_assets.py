@@ -10,7 +10,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import CustomUser, Tenant
+from users.models import CustomUser, Tenant, TenantStaffMember
 from users.validators import validate_logo_image
 from django.core.exceptions import ValidationError
 
@@ -136,6 +136,9 @@ class TestTenantMetaEndpoint:
             email="owner@test.com",
             password="testpass123",
             tenant=self.tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=self.tenant, user=self.user, role=TenantStaffMember.Role.OWNER,
         )
 
     def test_get_tenant_meta_success(self):
@@ -265,6 +268,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=other_tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=other_tenant, user=other_user, role=TenantStaffMember.Role.OWNER,
+        )
 
         # Autenticar com o outro usuário
         self.client.force_authenticate(user=other_user)
@@ -324,6 +330,9 @@ class TestTenantBrandingIntegration:
             email="integration@test.com",
             password="testpass123",
             tenant=self.tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=self.tenant, user=self.user, role=TenantStaffMember.Role.OWNER,
         )
 
     def test_complete_branding_workflow(self):

@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from django.urls import reverse
 from django.utils import timezone
 
-from users.models import Tenant, CustomUser
+from users.models import Tenant, CustomUser, TenantStaffMember
 from users.feature_flags import (
     check_feature_flag,
     get_tenant_feature_summary,
@@ -400,6 +400,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
@@ -428,6 +431,9 @@ class TestTenantMetaEndpoint:
             email="basic@nopwa.com",
             password="testpass123",
             tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
         )
 
         url = reverse("tenant_meta")
@@ -481,6 +487,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
@@ -505,6 +514,9 @@ class TestTenantMetaEndpoint:
             password="testpass123",
             tenant=tenant,
         )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.OWNER,
+        )
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
@@ -515,6 +527,32 @@ class TestTenantMetaEndpoint:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_tenant_meta_patch_forbidden_for_collaborator(self):
+        """Collaborator não pode alterar configurações do tenant via PATCH."""
+        tenant = Tenant.objects.create(name="Locked", slug="locked-biz")
+
+        user = CustomUser.objects.create_user(
+            username="collab",
+            email="collab@locked.com",
+            password="testpass123",
+            tenant=tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=tenant, user=user, role=TenantStaffMember.Role.COLLABORATOR,
+        )
+
+        url = reverse("tenant_meta")
+        self.client.force_authenticate(user=user)
+        response = self.client.patch(
+            url,
+            {"business_type": "tattoo"},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        tenant.refresh_from_db()
+        assert tenant.business_type == "other"
 
 
 @pytest.mark.django_db
