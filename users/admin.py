@@ -105,6 +105,7 @@ class TenantAdmin(admin.ModelAdmin):
     list_filter = [
         PlanTierListFilter,
         "is_founder",
+        "business_type",
         "billing_mode",
         PaymentStatusListFilter,
         "status",
@@ -129,7 +130,7 @@ class TenantAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Informações Básicas",
-            {"fields": ("name", "slug", "is_active", "timezone", "currency")},
+            {"fields": ("name", "slug", "is_active", "business_type", "timezone", "currency")},
         ),
         (
             "Plano e Configurações",
