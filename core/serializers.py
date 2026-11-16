@@ -271,9 +271,25 @@ class SalonCustomerSerializer(serializers.ModelSerializer):
             return value.strip().lower()
         return value
 
+    def _tenant_allows_contactless(self):
+        request = self.context.get("request")
+        if not request:
+            return False
+        tenant = getattr(request, "tenant", None) or getattr(
+            request.user, "tenant", None
+        )
+        if not tenant:
+            return False
+        from users.models import Tenant
+        return tenant.business_type == Tenant.BUSINESS_TYPE_PSYCHOLOGY
+
     def validate(self, data):
         email = data.get("email")
         phone = data.get("phone_number")
+
+        if self._tenant_allows_contactless():
+            return data
+
         # Criação: exigir pelo menos um contato (email ou telefone)
         if self.instance is None:
             if not email and not phone:
