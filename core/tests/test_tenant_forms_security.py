@@ -229,6 +229,28 @@ class TestClientFormResponseEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert [r["id"] for r in response.data] == [self.resp.id]
 
+    def test_client_response_includes_form_definition_for_rendering(self):
+        select = TenantFormField.objects.create(
+            form=self.form,
+            label="Humor",
+            field_type="select",
+            required=True,
+            options=["Bom", "Mau"],
+            order=1,
+        )
+        response = self.api.get(f"/api/clients/me/form-responses/{self.resp.id}/")
+        data = response.json()
+
+        assert data["form_client_editable"] is False
+        by_id = {f["id"]: f for f in data["form_fields"]}
+        assert by_id[select.id]["options"] == ["Bom", "Mau"]
+        assert by_id[select.id]["required"] is True
+        # Campo ainda sem resposta tambem vem na definicao.
+        assert select.id in by_id
+        assert [f["order"] for f in data["form_fields"]] == sorted(
+            f["order"] for f in data["form_fields"]
+        )
+
     def test_client_reads_single_own_response(self):
         response = self.api.get(f"/api/clients/me/form-responses/{self.resp.id}/")
 
