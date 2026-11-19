@@ -14,6 +14,10 @@ from core.models import (
     ProfessionalService,
     CustomerCommunicationConsent,
     Feedback,
+    TenantForm,
+    TenantFormField,
+    CustomerFormResponse,
+    CustomerFieldAnswer,
 )
 from core.email_utils import (
     send_appointment_confirmation_email,
@@ -630,3 +634,31 @@ class FeedbackAdmin(admin.ModelAdmin):
 
 
 SalonCustomerAdmin.inlines = (CommunicationConsentInline,)
+
+
+class TenantFormFieldInline(admin.TabularInline):
+    model = TenantFormField
+    extra = 1
+    ordering = ("order",)
+
+
+@admin.register(TenantForm)
+class TenantFormAdmin(admin.ModelAdmin):
+    list_display = ["title", "tenant", "is_active", "client_editable", "created_at"]
+    list_filter = ["is_active", "client_editable"]
+    search_fields = ["title", "tenant__name"]
+    inlines = [TenantFormFieldInline]
+
+
+class CustomerFieldAnswerInline(admin.TabularInline):
+    model = CustomerFieldAnswer
+    extra = 0
+    readonly_fields = ["field"]
+
+
+@admin.register(CustomerFormResponse)
+class CustomerFormResponseAdmin(admin.ModelAdmin):
+    list_display = ["customer", "form", "created_at", "updated_at"]
+    list_filter = ["form__tenant"]
+    search_fields = ["customer__name", "form__title"]
+    inlines = [CustomerFieldAnswerInline]

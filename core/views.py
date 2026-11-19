@@ -34,6 +34,8 @@ from core.models import (
     ProfessionalService,
     AppointmentReservedSlot,
     Feedback,
+    TenantForm,
+    CustomerFormResponse,
 )
 from users.models import Tenant, TenantStaffMember, TenantBusinessHours
 from core.services.slots import (
@@ -74,8 +76,11 @@ from core.serializers import (
     FeedbackSerializer,
     ClientLoginSerializer,
     ClientSetPasswordSerializer,
+    TenantFormSerializer,
+    CustomerFormResponseSerializer,
 )
 from core.mixins import TenantIsolatedMixin
+from core.permissions import IsTenantOwnerOrManager, IsTenantStaff
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -7276,3 +7281,111 @@ class TenantReactivateView(APIView):
             },
             status=drf_status.HTTP_200_OK,
         )
+
+
+class TenantFormViewSet(TenantIsolatedMixin, ModelViewSet):
+    queryset = TenantForm.objects.prefetch_related("fields").all()
+    serializer_class = TenantFormSerializer
+
+    def get_permissions(self):
+        # Apagar/editar o formulario apaga respostas em cascata: so owner/manager.
+        permissions = [IsAuthenticated(), IsTenantStaff()]
+        if self.request.method not in SAFE_METHODS:
+            permissions.append(IsTenantOwnerOrManager())
+        return permissions
+
+    def perform_create(self, serializer):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if not tenant:
+            raise ValidationError({"tenant": ["Tenant não encontrado."]})
+        serializer.save(tenant=tenant)
+
+
+class CustomerFormResponseViewSet(ModelViewSet):
+    queryset = (
+        CustomerFormResponse.objects.select_related("form", "customer")
+        .prefetch_related("answers__field")
+        .all()
+    )
+    serializer_class = CustomerFormResponseSerializer
+    permission_classes = [IsAuthenticated, IsTenantStaff]
+
+    def _get_tenant(self):
+        return getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+    def get_queryset(self):
+        tenant = self._get_tenant()
+        qs = self.queryset.filter(form__tenant=tenant) if tenant else self.queryset.none()
+        customer_id = self.request.query_params.get("customer")
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
+        form_id = self.request.query_params.get("form")
+        if form_id:
+            qs = qs.filter(form_id=form_id)
+        return qs
+
+    def perform_create(self, serializer):
+        tenant = self._get_tenant()
+        if not tenant:
+            raise ValidationError({"tenant": ["Tenant não encontrado."]})
+        form = serializer.validated_data["form"]
+        customer = serializer.validated_data["customer"]
+        if form.tenant_id != tenant.id:
+            raise PermissionDenied("Formulário não pertence ao seu tenant.")
+        if customer.tenant_id != tenant.id:
+            raise PermissionDenied("Cliente não pertence ao seu tenant.")
+        serializer.save()
+
+
+class ClientFormResponseView(APIView):
+    """Cliente vê/edita as PRÓPRIAS respostas de formulário.
+
+    Mesmo padrão das demais views `clients/me/*`: autenticação manual via JWT
+    `scope=client` (ver `_get_client_from_jwt`). Tudo é escopado por
+    tenant+cliente do token, nunca por ids vindos do payload (IDOR).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
+
+    def _queryset(self, tenant, customer):
+        return (
+            CustomerFormResponse.objects.filter(customer=customer, form__tenant=tenant)
+            .select_related("form")
+            .prefetch_related("answers__field")
+        )
+
+    def get(self, request, response_id=None):
+        tenant, customer = _get_client_from_jwt(request)
+        responses = self._queryset(tenant, customer)
+        if response_id is not None:
+            form_response = get_object_or_404(responses, id=response_id)
+            return Response(CustomerFormResponseSerializer(form_response).data)
+        return Response(CustomerFormResponseSerializer(responses, many=True).data)
+
+    def put(self, request, response_id):
+        tenant, customer = _get_client_from_jwt(request)
+        form_response = get_object_or_404(
+            self._queryset(tenant, customer), id=response_id
+        )
+
+        if not form_response.form.client_editable:
+            return Response(
+                {"detail": "Este formulário não permite edição pelo cliente."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = CustomerFormResponseSerializer(
+            form_response,
+            data=request.data,
+            partial=True,
+            context={"request": request, "tenant": tenant},
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=drf_status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)

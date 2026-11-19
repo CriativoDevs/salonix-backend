@@ -470,3 +470,112 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"Feedback {self.id} ({self.tenant_id})"
+
+
+class TenantForm(models.Model):
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="forms",
+    )
+    title = models.CharField(max_length=200)
+    is_active = models.BooleanField(default=cast(Any, True))
+    client_editable = models.BooleanField(
+        default=cast(Any, False),
+        help_text="Se True, cliente pode editar suas próprias respostas",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["tenant"], name="core_tenantform_tenant_idx"),
+        ]
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.title} ({self.tenant.slug})"
+
+
+class TenantFormField(models.Model):
+    class FieldType(models.TextChoices):
+        TEXT = "text", "Texto"
+        TEXTAREA = "textarea", "Texto longo"
+        NUMBER = "number", "Número"
+        BOOLEAN = "boolean", "Sim/Não"
+        SELECT = "select", "Seleção"
+        DATE = "date", "Data"
+
+    form = models.ForeignKey(
+        TenantForm,
+        on_delete=models.CASCADE,
+        related_name="fields",
+    )
+    label = models.CharField(max_length=200)
+    field_type = models.CharField(
+        max_length=20,
+        choices=FieldType.choices,
+        default=FieldType.TEXT,
+    )
+    required = models.BooleanField(default=cast(Any, False))
+    options = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Opções para campo tipo 'select' (lista de strings)",
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["form", "order"], name="core_formfield_order_idx"),
+        ]
+        ordering = ("order", "id")
+
+    def __str__(self):
+        return f"{self.label} ({self.form_id})"
+
+
+class CustomerFormResponse(models.Model):
+    form = models.ForeignKey(
+        TenantForm,
+        on_delete=models.CASCADE,
+        related_name="responses",
+    )
+    customer = models.ForeignKey(
+        SalonCustomer,
+        on_delete=models.CASCADE,
+        related_name="form_responses",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("form", "customer")]
+        indexes = [
+            models.Index(
+                fields=["form", "customer"], name="core_formresp_form_cust_idx"
+            ),
+        ]
+
+    def __str__(self):
+        return f"Response {self.id}: {self.customer.name} -> {self.form.title}"
+
+
+class CustomerFieldAnswer(models.Model):
+    response = models.ForeignKey(
+        CustomerFormResponse,
+        on_delete=models.CASCADE,
+        related_name="answers",
+    )
+    field = models.ForeignKey(
+        TenantFormField,
+        on_delete=models.CASCADE,
+        related_name="answers",
+    )
+    value = models.TextField(blank=True, default="")
+
+    class Meta:
+        unique_together = [("response", "field")]
+
+    def __str__(self):
+        return f"{self.field.label}: {self.value[:50]}"
