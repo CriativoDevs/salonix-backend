@@ -1,4 +1,5 @@
 # core/tests/test_appointment_detail.py
+from salonix_backend.test_support import ensure_staff
 import pytest
 from django.utils import timezone
 from datetime import timedelta
@@ -12,6 +13,7 @@ from core.models import Service, Professional, ScheduleSlot, Appointment
 def test_get_appointment_detail_as_client(user_fixture):
     client = APIClient()
     client.force_authenticate(user=user_fixture)
+    ensure_staff(user_fixture)
 
     # salão (owner)
     salon_owner = user_fixture  # reaproveitamos o mesmo usuário como dono
@@ -56,6 +58,7 @@ def test_get_appointment_detail_as_salon_owner(user_fixture):
 
     api = APIClient()
     api.force_authenticate(user=salon_owner)
+    ensure_staff(salon_owner)
 
     service = Service.objects.create(
         user=salon_owner, name="Barba", duration_minutes=20, price_eur="10.00"
@@ -121,6 +124,7 @@ def test_get_appointment_detail_forbidden_for_third_party(user_fixture):
 
     api = APIClient()
     api.force_authenticate(user=outsider)
+    ensure_staff(outsider, role="collaborator")
     resp = api.get(f"/api/appointments/{appt.id}/")
     # 404 para não vazar existência do recurso
     assert resp.status_code == 404

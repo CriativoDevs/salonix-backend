@@ -16,15 +16,18 @@ def _is_client_token(request):
 
 
 def _active_staff_member(request):
-    """TenantStaffMember ATIVO do usuário, no tenant da requisição.
+    """TenantStaffMember ATIVO do usuário, no tenant do próprio usuário.
 
     Status DISABLED/INVITED não dá acesso (mark_disabled não desativa o login),
-    e o vínculo precisa ser do mesmo tenant sobre o qual a view atua.
+    e o vínculo precisa ser do tenant do próprio usuário.
     """
     from users.models import TenantStaffMember
 
     user = request.user
-    tenant = getattr(request, "tenant", None) or getattr(user, "tenant", None)
+    # O tenant do proprio usuario e a fonte confiavel (o vinculo de equipe e
+    # 1:1 com o usuario). request.tenant so entra como fallback: nao vem de
+    # input do cliente e, em JWT, costuma ser resolvido a partir do usuario.
+    tenant = getattr(user, "tenant", None) or getattr(request, "tenant", None)
     if tenant is None:
         return None
     return TenantStaffMember.objects.filter(
@@ -81,6 +84,28 @@ class IsTenantOwnerOrManager(permissions.BasePermission):
             TenantStaffMember.Role.OWNER,
             TenantStaffMember.Role.MANAGER,
         )
+
+
+class IsTenantOwner(permissions.BasePermission):
+    """Permite apenas o owner ATIVO do tenant (ou superuser)."""
+
+    message = "Apenas o owner pode executar esta ação."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if _is_client_token(request):
+            return False
+
+        if getattr(user, "is_superuser", False):
+            return True
+
+        from users.models import TenantStaffMember
+
+        staff = _active_staff_member(request)
+        return staff is not None and staff.role == TenantStaffMember.Role.OWNER
 
 
 class IsOwner(permissions.BasePermission):

@@ -58,17 +58,18 @@ class TestStaffEndpointsRejectClientTokens:
         assert customer.id == staff.id
 
         api = _client_api(tenant_b, customer)
+        # BE-SEC-01: recusado na autenticacao global (401), antes da permissao.
 
-        assert api.get("/api/salon/forms/").status_code == status.HTTP_403_FORBIDDEN
+        assert api.get("/api/salon/forms/").status_code == status.HTTP_401_UNAUTHORIZED
         assert (
             api.get("/api/salon/form-responses/").status_code
-            == status.HTTP_403_FORBIDDEN
+            == status.HTTP_401_UNAUTHORIZED
         )
         assert (
             api.post(
                 "/api/salon/forms/", {"title": "Hack"}, format="json"
             ).status_code
-            == status.HTTP_403_FORBIDDEN
+            == status.HTTP_401_UNAUTHORIZED
         )
 
     def test_user_without_staff_record_is_rejected(self):

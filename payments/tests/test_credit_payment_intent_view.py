@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -92,6 +93,7 @@ def test_available_credit_packages_authenticated_returns_expected(
     _setup_price_ids(monkeypatch, settings)
 
     client, user = auth_client()
+    ensure_staff(user)
 
     resp = client.get("/api/payments/stripe/credits/packages/")
     assert resp.status_code == status.HTTP_200_OK

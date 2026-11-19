@@ -1,4 +1,5 @@
 # payments/tests/test_payments_stripe.py
+from salonix_backend.test_support import ensure_staff
 import json
 import pytest
 from decimal import Decimal
@@ -1072,6 +1073,7 @@ def test_available_plans_view_shows_only_assigned_plan_for_promotional_tenant(
     )
     user.tenant = tenant
     user.save()
+    ensure_staff(user)
 
     url = reverse("payments:available_plans")
     response = c.get(url)

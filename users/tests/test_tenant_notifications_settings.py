@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -41,6 +42,7 @@ class TestTenantNotificationsSettingsGet:
             push_web_enabled=False,
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data == {
@@ -68,6 +70,7 @@ class TestTenantNotificationsSettingsGet:
             whatsapp_enabled=False,
         )
         self.client.force_authenticate(user=owner_b)
+        ensure_staff(owner_b)
         resp = self.client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data["sms_enabled"] is False

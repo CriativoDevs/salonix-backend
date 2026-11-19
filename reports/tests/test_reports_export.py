@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.utils import timezone
 from rest_framework.test import APIClient
 from django.http import HttpResponse
@@ -31,6 +32,7 @@ def _create_tenant_user(*, username_prefix: str):
         password="x",
         tenant=tenant,
     )
+    ensure_staff(user)
     UserFeatureFlags.objects.update_or_create(
         user=user,
         defaults={"is_pro": True, "reports_enabled": True},
@@ -92,6 +94,7 @@ def test_export_overview_csv_ok_without_data():
 
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -146,6 +149,7 @@ def test_export_overview_csv_throttled():
 
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -170,6 +174,7 @@ def test_export_top_services_csv_ok_without_data():
     )
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -215,6 +220,7 @@ def test_export_top_services_csv_throttled():
     )
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -236,6 +242,7 @@ def test_export_revenue_csv_ok_without_data():
     )
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -283,6 +290,7 @@ def test_export_revenue_csv_throttled():
     )
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -308,6 +316,7 @@ def test_export_top_services_csv_tenant_isolation():
 
     c = APIClient()
     c.force_authenticate(user_a)
+    ensure_staff(user_a)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -339,6 +348,7 @@ def test_export_revenue_csv_tenant_isolation():
 
     c = APIClient()
     c.force_authenticate(user_a)
+    ensure_staff(user_a)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -364,6 +374,7 @@ def test_export_basic_reports_csv_tenant_isolation():
 
     c = APIClient()
     c.force_authenticate(user_a)
+    ensure_staff(user_a)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()
@@ -395,6 +406,7 @@ def test_export_advanced_reports_csv_tenant_isolation():
 
     c = APIClient()
     c.force_authenticate(user_a)
+    ensure_staff(user_a)
 
     now = timezone.now()
     start = (now - timezone.timedelta(days=7)).date().isoformat()

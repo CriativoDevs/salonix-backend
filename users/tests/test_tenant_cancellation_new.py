@@ -2,6 +2,7 @@
 Testes para novo fluxo de cancelamento de conta (BE-ACCOUNT-CANCEL #396).
 """
 
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -61,6 +62,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         mock_email.return_value = True
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.cancel_url,
             {
@@ -94,6 +96,7 @@ class TenantCancellationNewFlowTest(APITestCase):
     def test_cancel_requires_correct_password(self):
         """Testa que senha incorreta bloqueia cancelamento."""
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.cancel_url,
             {
@@ -114,6 +117,7 @@ class TenantCancellationNewFlowTest(APITestCase):
     def test_cancel_requires_confirmation_text(self):
         """Testa que texto de confirmação é obrigatório."""
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.cancel_url,
             {
@@ -132,6 +136,7 @@ class TenantCancellationNewFlowTest(APITestCase):
     def test_manager_cannot_cancel_account(self):
         """Testa que manager não pode cancelar."""
         self.client.force_authenticate(user=self.manager)
+        ensure_staff(self.manager)
         response = self.client.post(
             self.cancel_url,
             {
@@ -160,6 +165,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         self.tenant.save()
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.reactivate_url,
             {"token": "valid-token-123"},
@@ -189,6 +195,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         self.tenant.save()
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.reactivate_url,
             {"token": "invalid-token"},
@@ -211,6 +218,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         self.tenant.save()
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.post(
             self.reactivate_url,
             {"token": "valid-token-123"},
@@ -231,6 +239,7 @@ class TenantCancellationNewFlowTest(APITestCase):
         mock_email.return_value = True
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
 
         before = timezone.now()
         response = self.client.post(

@@ -4,6 +4,7 @@ Regression tests for BE-SEC-04 item 2: Authorization review per object/tenant.
 Validates that users cannot access objects from tenants they don't belong to.
 """
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -106,6 +107,7 @@ def test_billing_checkout_requires_owner_of_target_tenant(
 
     client = APIClient()
     client.force_authenticate(user=owner1)
+    ensure_staff(owner1)
 
     # Attempt checkout
     url = "/api/payments/stripe/create-checkout-session/"
@@ -130,6 +132,7 @@ def test_staff_list_isolated_by_tenant(setup_two_tenants):
 
     client = APIClient()
     client.force_authenticate(user=owner1)
+    ensure_staff(owner1)
 
     # List staff for tenant1
     url = "/api/users/staff/"
@@ -155,6 +158,7 @@ def test_staff_update_cross_tenant_forbidden(setup_two_tenants):
 
     client = APIClient()
     client.force_authenticate(user=owner1)
+    ensure_staff(owner1)
 
     # Try to update staff2 (from tenant2)
     url = "/api/users/staff/"
@@ -195,6 +199,7 @@ def test_tenant_profile_patch_requires_owner_manager(setup_two_tenants):
 
     client = APIClient()
     client.force_authenticate(user=collab)
+    ensure_staff(collab)
 
     # Try to patch tenant profile
     url = "/api/users/tenant/profile/"
@@ -215,6 +220,7 @@ def test_ops_tenant_view_requires_ops_role(setup_two_tenants):
 
     client = APIClient()
     client.force_authenticate(user=owner1)
+    ensure_staff(owner1)
 
     # Try to list tenants (OPS endpoint)
     url = reverse("ops-tenants-list")
@@ -236,6 +242,7 @@ def test_user_can_only_update_own_profile(setup_two_tenants):
 
     client = APIClient()
     client.force_authenticate(user=owner1)
+    ensure_staff(owner1)
 
     # Try to update /me/profile/ (own profile)
     url = "/api/users/me/profile/"

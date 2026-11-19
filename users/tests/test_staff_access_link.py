@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from django.test.utils import override_settings
 from django.core.cache import cache
@@ -28,6 +29,7 @@ def test_access_link_requires_member_id():
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff_access_link")
     response = client.post(url, {}, format="json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -54,6 +56,7 @@ def test_access_link_denies_non_owner_manager():
     # Autenticar como colaborador tentando enviar link para si mesmo
     client = APIClient()
     client.force_authenticate(user=collab_user)
+    ensure_staff(collab_user)
     url = reverse("tenant_staff_access_link")
     response = client.post(url, {"id": staff.id}, format="json")
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -103,6 +106,7 @@ def test_access_link_blocks_owner_and_disabled():
 
     client = APIClient()
     client.force_authenticate(user=manager)
+    ensure_staff(manager)
     url = reverse("tenant_staff_access_link")
 
     r1 = client.post(url, {"id": owner_staff.id}, format="json")
@@ -159,6 +163,7 @@ def test_access_link_success_sends_email(monkeypatch):
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff_access_link")
     response = client.post(url, {"id": staff.id}, format="json")
     assert response.status_code == status.HTTP_200_OK

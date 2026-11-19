@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from datetime import timedelta
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -15,6 +16,7 @@ def test_salon_owner_can_list_own_appointments(user_fixture):
     owner = user_fixture
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
 
     # Dados do salão do owner
     service = Service.objects.create(
@@ -59,6 +61,7 @@ def test_salon_owner_can_edit_own_appointment(user_fixture):
     owner = user_fixture
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
 
     service = Service.objects.create(
         user=owner, name="Barba", duration_minutes=20, price_eur="15.00"
@@ -130,6 +133,7 @@ def test_other_user_cannot_view_or_edit_salon_appointments(user_fixture):
 
     client = APIClient()
     client.force_authenticate(user=other)
+    ensure_staff(other, role="collaborator")
 
     # Lista deve vir vazia para "other"
     list_resp = client.get("/api/salon/appointments/")

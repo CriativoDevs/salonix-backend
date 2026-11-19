@@ -24,6 +24,7 @@ from .models import (
     CommLedger,
     TenantBusinessHours,
 )
+from .authentication import is_staff_disabled
 from .services import FounderService
 from salonix_backend.validators import (
     validate_phone_number,
@@ -857,6 +858,9 @@ class EmailTokenObtainPairSerializer(serializers.Serializer):
         if not user.is_active:
             raise AuthenticationFailed("Conta inativa. Entre em contato com o suporte.")
 
+        if is_staff_disabled(user):
+            raise AuthenticationFailed("Acesso desativado. Contacte o responsável.")
+
         if getattr(user, "is_ops_user", False):
             raise AuthenticationFailed(
                 "Acesso restrito ao console Ops. Utilize o endpoint ops/auth/login."
@@ -914,6 +918,9 @@ class EmailTokenRefreshSerializer(TokenRefreshSerializer):
         except Exception:
             raise AuthenticationFailed("Token inválido ou expirado.")
 
+        if refresh.payload.get("scope") == "client":
+            raise AuthenticationFailed("Token inválido ou expirado.")
+
         user_id = refresh.payload.get("user_id")
         try:
             user = CustomUser.objects.get(id=user_id)
@@ -922,6 +929,9 @@ class EmailTokenRefreshSerializer(TokenRefreshSerializer):
 
         if not user.is_active:
             raise AuthenticationFailed("Conta inativa.")
+
+        if is_staff_disabled(user):
+            raise AuthenticationFailed("Acesso desativado. Contacte o responsável.")
 
         if getattr(user, "is_ops_user", False):
             raise AuthenticationFailed(

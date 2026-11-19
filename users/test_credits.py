@@ -1,4 +1,5 @@
 from decimal import Decimal
+from salonix_backend.test_support import ensure_staff
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -155,6 +156,7 @@ class CreditEndpointsTestCase(APITestCase):
             tenant=self.tenant,
         )
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
     def test_credit_balance_view(self):
         """Testa endpoint de saldo de créditos."""

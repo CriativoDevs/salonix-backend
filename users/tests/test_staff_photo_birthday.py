@@ -1,5 +1,6 @@
 from io import BytesIO
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -37,6 +38,7 @@ def test_me_profile_patch_updates_photo_and_birthday(tenant_fixture):
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
 
     response = client.patch(
         reverse("me_profile"),
@@ -85,6 +87,7 @@ def test_staff_contact_patch_updates_photo_and_birthday_without_email(tenant_fix
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
 
     response = client.patch(
         reverse("tenant_staff_contact_update"),

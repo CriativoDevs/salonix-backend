@@ -2,6 +2,7 @@
 Testes para funcionalidades multi-tenant
 """
 
+from salonix_backend.test_support import ensure_staff
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework import status
@@ -106,6 +107,7 @@ class TenantIsolationServiceTest(MultiTenantTestCase):
     def test_user_can_only_see_own_tenant_services(self):
         """Usuário só vê serviços do próprio tenant"""
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         response = self.api_client.get("/api/services/")
 
@@ -127,6 +129,7 @@ class TenantIsolationServiceTest(MultiTenantTestCase):
         self.user1.save(update_fields=["is_superuser"])
 
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         response = self.api_client.get("/api/services/")
 
@@ -144,6 +147,7 @@ class TenantIsolationServiceTest(MultiTenantTestCase):
     def test_user_cannot_access_other_tenant_service(self):
         """Usuário não pode acessar serviço de outro tenant"""
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         # Tentar acessar serviço do tenant2
         response = self.api_client.get(f"/api/services/{self.service2.id}/")
@@ -156,6 +160,7 @@ class TenantIsolationServiceTest(MultiTenantTestCase):
     def test_service_creation_auto_assigns_tenant(self):
         """Serviço criado é automaticamente atribuído ao tenant do usuário"""
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         data = {"name": "Barba", "duration_minutes": 20, "price_eur": "10.00"}
 
@@ -194,6 +199,7 @@ class TenantIsolationProfessionalTest(MultiTenantTestCase):
     def test_professional_tenant_isolation(self):
         """Profissionais são isolados por tenant"""
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         response = self.api_client.get("/api/professionals/")
 
@@ -276,6 +282,7 @@ class TenantIsolationAppointmentTest(MultiTenantTestCase):
     def test_client_sees_only_own_tenant_appointments(self):
         """Cliente vê apenas agendamentos do próprio tenant"""
         self.api_client.force_authenticate(user=self.client1)
+        ensure_staff(self.client1, role="collaborator")
 
         response = self.api_client.get("/api/me/appointments/")
 
@@ -293,6 +300,7 @@ class TenantIsolationAppointmentTest(MultiTenantTestCase):
     def test_salon_sees_only_own_tenant_appointments(self):
         """Salão vê apenas agendamentos do próprio tenant"""
         self.api_client.force_authenticate(user=self.user1)
+        ensure_staff(self.user1)
 
         response = self.api_client.get("/api/salon/appointments/")
 
@@ -310,6 +318,7 @@ class TenantIsolationAppointmentTest(MultiTenantTestCase):
     def test_appointment_creation_with_tenant_validation(self):
         """Criação de agendamento valida tenant dos objetos relacionados"""
         self.api_client.force_authenticate(user=self.client1)
+        ensure_staff(self.client1, role="collaborator")
 
         # Tentar criar agendamento com serviço de outro tenant (deve falhar)
         data = {

@@ -6,6 +6,7 @@ from django.http import FileResponse, Http404
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from core.permissions import IsTenantStaff
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -71,7 +72,7 @@ def _permission_for_type(report_type: str):
     },
 )
 class ExportJobCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def post(self, request):
         report_type = request.data.get("report_type", "").strip()
@@ -173,7 +174,7 @@ def _job_payload(job, request):
     },
 )
 class ExportJobStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get(self, request, job_id):
         job = _get_owned_job(request, job_id)
@@ -190,7 +191,7 @@ class ExportJobStatusView(APIView):
     },
 )
 class ExportJobDownloadView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get(self, request, job_id):
         job = _get_owned_job(request, job_id)

@@ -6,6 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.mixins import CreateModelMixin, ListModelMixin
 from rest_framework.permissions import IsAuthenticated
+from core.permissions import IsTenantStaff
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
 from core.mixins import TenantIsolatedMixin
@@ -30,7 +31,7 @@ class InventoryItemViewSet(TenantIsolatedMixin, ModelViewSet):
 
     queryset = InventoryItem.objects.all()
     serializer_class = InventoryItemSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self):
         # Endpoint autenticado: o tenant vem sempre da sessão/membership do
@@ -116,7 +117,7 @@ class InventoryAlertListView(TenantIsolatedMixin, ListAPIView):
 
     queryset = InventoryItem.objects.all()
     serializer_class = InventoryItemSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -148,7 +149,7 @@ class StockMovementViewSet(
 
     queryset = StockMovement.objects.select_related("item").all()
     serializer_class = StockMovementSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self):
         # Mesmo padrão do InventoryItemViewSet: tenant só a partir de

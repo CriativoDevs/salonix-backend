@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -24,6 +25,7 @@ def test_resend_invite_requires_member_id():
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff_resend")
     response = client.post(url, {}, format="json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -66,6 +68,7 @@ def test_resend_invite_fails_without_email():
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff_resend")
     response = client.post(url, {"id": staff.id}, format="json")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -114,6 +117,7 @@ def test_resend_invite_generates_new_token(monkeypatch):
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff_resend")
     response = client.post(url, {"id": staff.id}, format="json")
     assert response.status_code == status.HTTP_200_OK

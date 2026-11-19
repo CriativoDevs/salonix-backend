@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from users.models import UserFeatureFlags
@@ -21,6 +22,7 @@ def test_reports_forbidden_without_flag():
 
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
     r = c.get("/api/reports/summary/")
     assert r.status_code == 403
     assert r.data["detail"] == "Módulo de relatórios desativado."
@@ -35,6 +37,7 @@ def test_reports_ok_with_flag_enabled():
 
     c = APIClient()
     c.force_authenticate(u)
+    ensure_staff(u)
     r = c.get("/api/reports/summary/")
     assert r.status_code == 200
     assert r.data["range"] == "last_30_days"

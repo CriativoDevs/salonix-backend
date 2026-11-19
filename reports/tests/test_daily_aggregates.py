@@ -1,4 +1,5 @@
 import uuid
+from salonix_backend.test_support import ensure_staff
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
@@ -80,6 +81,7 @@ def _make_appointment(
 def _client(user):
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
     return c
 
 

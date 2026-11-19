@@ -1,4 +1,5 @@
 import csv
+from salonix_backend.test_support import ensure_staff
 import io
 import pytest
 from datetime import timedelta
@@ -13,6 +14,7 @@ from core.models import Service, Professional, ScheduleSlot, Appointment
 def _auth_client(user):
     c = APIClient()
     c.force_authenticate(user=user)
+    ensure_staff(user)
     return c
 
 
@@ -176,6 +178,7 @@ def test_export_respects_filters_and_isolation(user_fixture):
     assert data_rows[1][0] == str(appt_a.id)
 
     # O 'other' não deve ver nada do owner
+    ensure_staff(other, role="collaborator")
     c_other = _auth_client(other)
     resp_other = c_other.get("/api/salon/appointments/export/")
     resp_other = cast(HttpResponse, resp_other)
