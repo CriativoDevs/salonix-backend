@@ -1285,6 +1285,7 @@ class TenantFormSerializer(serializers.ModelSerializer):
         fields_data = validated_data.pop("fields", [])
         form = TenantForm.objects.create(**validated_data)
         for i, field_data in enumerate(fields_data):
+            field_data.pop("id", None)
             field_data.setdefault("order", i)
             TenantFormField.objects.create(form=form, **field_data)
         return form
@@ -1315,9 +1316,22 @@ class TenantFormSerializer(serializers.ModelSerializer):
         return instance
 
 
+def _context_tenant(context):
+    """Tenant do chamador: `context["tenant"]` (views de cliente) ou o da request."""
+    tenant = context.get("tenant")
+    if tenant is not None:
+        return tenant
+    request = context.get("request")
+    if request is None:
+        return None
+    return getattr(request, "tenant", None) or getattr(
+        getattr(request, "user", None), "tenant", None
+    )
+
+
 class CustomerFieldAnswerSerializer(serializers.ModelSerializer):
     field_id = serializers.PrimaryKeyRelatedField(
-        source="field", queryset=TenantFormField.objects.all()
+        source="field", queryset=TenantFormField.objects.none()
     )
     label = serializers.CharField(source="field.label", read_only=True)
     field_type = serializers.CharField(source="field.field_type", read_only=True)
@@ -1325,6 +1339,17 @@ class CustomerFieldAnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerFieldAnswer
         fields = ["field_id", "label", "field_type", "value"]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # Ids de outro tenant caem em "does not exist", sem expor rótulos.
+        tenant = _context_tenant(self.context)
+        fields["field_id"].queryset = (
+            TenantFormField.objects.filter(form__tenant=tenant)
+            if tenant
+            else TenantFormField.objects.none()
+        )
+        return fields
 
 
 class CustomerFormResponseSerializer(serializers.ModelSerializer):
@@ -1343,6 +1368,23 @@ class CustomerFormResponseSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # Escopo por tenant antes da validação: ids de outro tenant caem em
+        # "does not exist" e validate() nunca opera em form/customer alheio.
+        tenant = _context_tenant(self.context)
+        fields["form"].queryset = (
+            TenantForm.objects.filter(tenant=tenant)
+            if tenant
+            else TenantForm.objects.none()
+        )
+        fields["customer"].queryset = (
+            SalonCustomer.objects.filter(tenant=tenant)
+            if tenant
+            else SalonCustomer.objects.none()
+        )
+        return fields
 
     def create(self, validated_data):
         answers_data = validated_data.pop("answers", [])
@@ -1397,7 +1439,7 @@ class CustomerFormResponseSerializer(serializers.ModelSerializer):
         for answer in answers:
             if answer["field"].form_id != form.id:
                 raise serializers.ValidationError(
-                    f"Campo '{answer['field'].label}' não pertence a este formulário."
+                    "Há respostas para campos que não pertencem a este formulário."
                 )
 
         return data

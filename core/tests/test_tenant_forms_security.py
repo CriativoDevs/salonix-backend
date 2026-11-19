@@ -349,3 +349,187 @@ class TestPartialUpdateKeepsExistingAnswers:
         assert resp.answers.get(field=f1).value == "novo"
         assert blank.status_code == status.HTTP_400_BAD_REQUEST
         assert resp.answers.get(field=f2).value == "b"
+
+
+@pytest.mark.django_db
+class TestInactiveOrMismatchedStaffRejected:
+    def setup_method(self):
+        self.tenant = _make_tenant("status-gate")
+        TenantForm.objects.create(tenant=self.tenant, title="Ficha")
+
+    def _api(self, user):
+        api = APIClient()
+        api.force_authenticate(user=user)
+        return api
+
+    @pytest.mark.parametrize(
+        "member_status",
+        [TenantStaffMember.Status.DISABLED, TenantStaffMember.Status.INVITED],
+    )
+    def test_non_active_staff_has_no_access(self, member_status):
+        user = _make_staff(
+            self.tenant, f"inactive-{member_status}", TenantStaffMember.Role.MANAGER
+        )
+        TenantStaffMember.objects.filter(user=user).update(status=member_status)
+        api = self._api(user)
+
+        assert api.get("/api/salon/forms/").status_code == status.HTTP_403_FORBIDDEN
+        assert (
+            api.get("/api/salon/form-responses/").status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+        assert (
+            api.post("/api/salon/forms/", {"title": "X"}, format="json").status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+
+    def test_staff_record_from_another_tenant_has_no_access(self):
+        other = _make_tenant("status-gate-other")
+        user = CustomUser.objects.create_user(
+            username="mismatch",
+            email="mismatch@test.com",
+            password="pass12345",
+            tenant=self.tenant,
+        )
+        TenantStaffMember.objects.create(
+            tenant=other, user=user, role=TenantStaffMember.Role.OWNER
+        )
+        api = self._api(user)
+
+        assert api.get("/api/salon/forms/").status_code == status.HTTP_403_FORBIDDEN
+        assert (
+            api.post("/api/salon/forms/", {"title": "X"}, format="json").status_code
+            == status.HTTP_403_FORBIDDEN
+        )
+
+
+@pytest.mark.django_db
+class TestFormCreateIgnoresSuppliedFieldIds:
+    def test_supplied_field_id_is_ignored_on_create(self):
+        tenant = _make_tenant("create-ids")
+        owner = _make_staff(tenant, "owner-ids", TenantStaffMember.Role.OWNER)
+        other = _make_tenant("create-ids-other")
+        foreign_form = TenantForm.objects.create(tenant=other, title="Alheio")
+        foreign_field = TenantFormField.objects.create(
+            form=foreign_form, label="Original", order=0
+        )
+        api = APIClient()
+        api.force_authenticate(user=owner)
+
+        response = api.post(
+            "/api/salon/forms/",
+            {
+                "title": "Meu",
+                "fields": [
+                    {"id": foreign_field.id, "label": "Tentativa", "order": 0},
+                    {"id": 999999, "label": "Id escolhido", "order": 1},
+                ],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        created_ids = [f["id"] for f in response.data["fields"]]
+        assert foreign_field.id not in created_ids
+        assert 999999 not in created_ids
+        foreign_field.refresh_from_db()
+        assert foreign_field.label == "Original"
+        assert foreign_field.form_id == foreign_form.id
+
+
+@pytest.mark.django_db
+class TestNoCrossTenantLabelLeak:
+    SECRET = "ROTULO-SECRETO-DO-TENANT-B"
+
+    def setup_method(self):
+        self.tenant = _make_tenant("leak-a")
+        self.owner = _make_staff(self.tenant, "owner-leak", TenantStaffMember.Role.OWNER)
+        self.customer = SalonCustomer.objects.create(
+            tenant=self.tenant, name="C", email="c@leak.com"
+        )
+        self.form = TenantForm.objects.create(
+            tenant=self.tenant, title="A", client_editable=True
+        )
+        self.field = TenantFormField.objects.create(
+            form=self.form, label="Propria", order=0
+        )
+        self.other_tenant = _make_tenant("leak-b")
+        self.other_form = TenantForm.objects.create(tenant=self.other_tenant, title="B")
+        self.other_field = TenantFormField.objects.create(
+            form=self.other_form, label=self.SECRET, required=True, order=0
+        )
+        self.other_customer = SalonCustomer.objects.create(
+            tenant=self.other_tenant, name="Outro", email="o@leak.com"
+        )
+        self.staff_api = APIClient()
+        self.staff_api.force_authenticate(user=self.owner)
+
+    def test_staff_foreign_form_id_is_rejected_without_labels(self):
+        response = self.staff_api.post(
+            "/api/salon/form-responses/",
+            {"form": self.other_form.id, "customer": self.customer.id, "answers": []},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert self.SECRET not in response.content.decode()
+
+    def test_staff_foreign_customer_id_is_rejected(self):
+        response = self.staff_api.post(
+            "/api/salon/form-responses/",
+            {"form": self.form.id, "customer": self.other_customer.id, "answers": []},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_staff_foreign_field_id_does_not_leak_label(self):
+        response = self.staff_api.post(
+            "/api/salon/form-responses/",
+            {
+                "form": self.form.id,
+                "customer": self.customer.id,
+                "answers": [
+                    {"field_id": self.field.id, "value": "ok"},
+                    {"field_id": self.other_field.id, "value": "x"},
+                ],
+            },
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert self.SECRET not in response.content.decode()
+
+    def test_client_foreign_field_id_does_not_leak_label(self):
+        resp = CustomerFormResponse.objects.create(
+            form=self.form, customer=self.customer
+        )
+        api = _client_api(self.tenant, self.customer)
+
+        response = api.put(
+            f"/api/clients/me/form-responses/{resp.id}/",
+            {"answers": [{"field_id": self.other_field.id, "value": "x"}]},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert self.SECRET not in response.content.decode()
+
+    def test_client_field_of_another_form_same_tenant_does_not_leak_label(self):
+        sibling_form = TenantForm.objects.create(tenant=self.tenant, title="Irmao")
+        sibling_field = TenantFormField.objects.create(
+            form=sibling_form, label=self.SECRET, order=0
+        )
+        resp = CustomerFormResponse.objects.create(
+            form=self.form, customer=self.customer
+        )
+        api = _client_api(self.tenant, self.customer)
+
+        response = api.put(
+            f"/api/clients/me/form-responses/{resp.id}/",
+            {"answers": [{"field_id": sibling_field.id, "value": "x"}]},
+            format="json",
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert self.SECRET not in response.content.decode()

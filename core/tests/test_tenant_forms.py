@@ -241,7 +241,8 @@ class TestCustomerFormResponse:
             },
             format="json",
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not CustomerFormResponse.objects.filter(form=other_form).exists()
 
     def test_cross_tenant_customer_rejected(self):
         """Staff não pode criar resposta referenciando customer de outro tenant."""
@@ -261,7 +262,10 @@ class TestCustomerFormResponse:
             },
             format="json",
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not CustomerFormResponse.objects.filter(
+            customer=other_customer
+        ).exists()
 
     def test_field_must_belong_to_form(self):
         """Campo de outro formulário não pode ser usado."""
