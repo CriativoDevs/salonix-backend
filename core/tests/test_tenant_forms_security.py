@@ -132,6 +132,79 @@ class TestFormDefinitionRoles:
 
 
 @pytest.mark.django_db
+class TestStaffFormResponseDeleteRoles:
+    """Resposta de ficha e dado sensivel: colaborador edita, mas nao apaga."""
+
+    def setup_method(self):
+        self.tenant = _make_tenant("resp-roles")
+        self.collab = _make_staff(
+            self.tenant, "collab", TenantStaffMember.Role.COLLABORATOR
+        )
+        self.manager = _make_staff(
+            self.tenant, "manager", TenantStaffMember.Role.MANAGER
+        )
+        self.owner = _make_staff(self.tenant, "owner", TenantStaffMember.Role.OWNER)
+        self.customer = SalonCustomer.objects.create(
+            tenant=self.tenant, name="Cliente", email="c@roles.com"
+        )
+        self.form = TenantForm.objects.create(tenant=self.tenant, title="Anamnese")
+        self.field = TenantFormField.objects.create(
+            form=self.form, label="Notas", field_type="text", order=0
+        )
+        self.resp = CustomerFormResponse.objects.create(
+            form=self.form, customer=self.customer
+        )
+        self.resp.answers.create(field=self.field, value="Inicial")
+
+    def _api(self, user):
+        api = APIClient()
+        api.force_authenticate(user=user)
+        return api
+
+    def _url(self):
+        return f"/api/salon/form-responses/{self.resp.id}/"
+
+    def test_collaborator_cannot_delete_response(self):
+        response = self._api(self.collab).delete(self._url())
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert CustomerFormResponse.objects.filter(id=self.resp.id).exists()
+
+    def test_collaborator_can_still_read_and_edit_response(self):
+        api = self._api(self.collab)
+        assert api.get(self._url()).status_code == status.HTTP_200_OK
+        patch = api.patch(
+            self._url(),
+            {"answers": [{"field_id": self.field.id, "value": "Editado"}]},
+            format="json",
+        )
+        assert patch.status_code == status.HTTP_200_OK
+
+    def test_collaborator_can_create_response(self):
+        other = SalonCustomer.objects.create(
+            tenant=self.tenant, name="Outro", email="o@roles.com"
+        )
+        response = self._api(self.collab).post(
+            "/api/salon/form-responses/",
+            {
+                "form": self.form.id,
+                "customer": other.id,
+                "answers": [{"field_id": self.field.id, "value": "x"}],
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_manager_can_delete_response(self):
+        response = self._api(self.manager).delete(self._url())
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not CustomerFormResponse.objects.filter(id=self.resp.id).exists()
+
+    def test_owner_can_delete_response(self):
+        response = self._api(self.owner).delete(self._url())
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+@pytest.mark.django_db
 class TestClientFormResponseEndpoint:
     def setup_method(self):
         self.tenant = _make_tenant("spa")

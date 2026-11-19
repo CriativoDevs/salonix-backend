@@ -7310,7 +7310,14 @@ class CustomerFormResponseViewSet(ModelViewSet):
         .all()
     )
     serializer_class = CustomerFormResponseSerializer
-    permission_classes = [IsAuthenticated, IsTenantStaff]
+
+    def get_permissions(self):
+        # Resposta de ficha e dado sensivel: colaborador le/cria/edita,
+        # mas apagar e so owner/manager.
+        permissions = [IsAuthenticated(), IsTenantStaff()]
+        if self.request.method == "DELETE":
+            permissions.append(IsTenantOwnerOrManager())
+        return permissions
 
     def _get_tenant(self):
         return getattr(self.request, "tenant", None) or getattr(
