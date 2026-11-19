@@ -53,6 +53,9 @@ from core.views import (
     TenantCancelView,
     TenantDataExportView,
     TenantReactivateView,
+    TenantFormViewSet,
+    CustomerFormResponseViewSet,
+    ClientFormResponseView,
 )
 
 router = DefaultRouter()
@@ -63,6 +66,12 @@ router.register(
     "salon/appointments", SalonAppointmentViewSet, basename="salon-appointments"
 )
 router.register("salon/customers", SalonCustomerViewSet, basename="salon-customers")
+router.register("salon/forms", TenantFormViewSet, basename="salon-forms")
+router.register(
+    "salon/form-responses",
+    CustomerFormResponseViewSet,
+    basename="salon-form-responses",
+)
 
 urlpatterns = [
     path("", include(router.urls)),
@@ -127,6 +136,16 @@ urlpatterns = [
         "clients/me/vouchers/",
         ClientsMeVouchersView.as_view(),
         name="clients_me_vouchers",
+    ),
+    path(
+        "clients/me/form-responses/",
+        ClientFormResponseView.as_view(),
+        name="clients_me_form_responses",
+    ),
+    path(
+        "clients/me/form-responses/<int:response_id>/",
+        ClientFormResponseView.as_view(),
+        name="clients_me_form_response_detail",
     ),
     # Public routes
     path(

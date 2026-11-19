@@ -34,6 +34,8 @@ from core.models import (
     ProfessionalService,
     AppointmentReservedSlot,
     Feedback,
+    TenantForm,
+    CustomerFormResponse,
 )
 from users.models import Tenant, TenantStaffMember, TenantBusinessHours
 from core.services.slots import (
@@ -74,6 +76,8 @@ from core.serializers import (
     FeedbackSerializer,
     ClientLoginSerializer,
     ClientSetPasswordSerializer,
+    TenantFormSerializer,
+    CustomerFormResponseSerializer,
 )
 from core.mixins import TenantIsolatedMixin
 from core.utils.pagination import get_limit_offset, set_pagination_headers
@@ -7276,3 +7280,97 @@ class TenantReactivateView(APIView):
             },
             status=drf_status.HTTP_200_OK,
         )
+
+
+class TenantFormViewSet(TenantIsolatedMixin, ModelViewSet):
+    queryset = TenantForm.objects.prefetch_related("fields").all()
+    serializer_class = TenantFormSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        tenant = getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+        if not tenant:
+            raise ValidationError({"tenant": ["Tenant não encontrado."]})
+        serializer.save(tenant=tenant)
+
+
+class CustomerFormResponseViewSet(ModelViewSet):
+    queryset = (
+        CustomerFormResponse.objects.select_related("form", "customer")
+        .prefetch_related("answers__field")
+        .all()
+    )
+    serializer_class = CustomerFormResponseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _get_tenant(self):
+        return getattr(self.request, "tenant", None) or getattr(
+            self.request.user, "tenant", None
+        )
+
+    def get_queryset(self):
+        tenant = self._get_tenant()
+        qs = self.queryset.filter(form__tenant=tenant) if tenant else self.queryset.none()
+        customer_id = self.request.query_params.get("customer")
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
+        form_id = self.request.query_params.get("form")
+        if form_id:
+            qs = qs.filter(form_id=form_id)
+        return qs
+
+    def perform_create(self, serializer):
+        tenant = self._get_tenant()
+        if not tenant:
+            raise ValidationError({"tenant": ["Tenant não encontrado."]})
+        form = serializer.validated_data["form"]
+        customer = serializer.validated_data["customer"]
+        if form.tenant_id != tenant.id:
+            raise PermissionDenied("Formulário não pertence ao seu tenant.")
+        if customer.tenant_id != tenant.id:
+            raise PermissionDenied("Cliente não pertence ao seu tenant.")
+        serializer.save()
+
+
+class ClientFormResponseView(APIView):
+    """Endpoint para cliente ver/editar suas próprias respostas de formulário."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_customer(self, request):
+        customer_id = getattr(request, "customer_id", None)
+        if not customer_id:
+            raise PermissionDenied("Acesso restrito a clientes.")
+        return get_object_or_404(SalonCustomer, id=customer_id)
+
+    def get(self, request):
+        customer = self._get_customer(request)
+        responses = (
+            CustomerFormResponse.objects.filter(customer=customer)
+            .select_related("form")
+            .prefetch_related("answers__field")
+        )
+        serializer = CustomerFormResponseSerializer(responses, many=True)
+        return Response(serializer.data)
+
+    def put(self, request, response_id):
+        customer = self._get_customer(request)
+        form_response = get_object_or_404(
+            CustomerFormResponse, id=response_id, customer=customer
+        )
+
+        if not form_response.form.client_editable:
+            return Response(
+                {"detail": "Este formulário não permite edição pelo cliente."},
+                status=drf_status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = CustomerFormResponseSerializer(
+            form_response, data=request.data, partial=True, context={"request": request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=drf_status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)

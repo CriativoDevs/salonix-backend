@@ -10,6 +10,10 @@ from core.models import (
     SalonCustomer,
     ProfessionalService,
     Feedback,
+    TenantForm,
+    TenantFormField,
+    CustomerFormResponse,
+    CustomerFieldAnswer,
 )
 from users.models import TenantStaffMember
 from salonix_backend.validators import (
@@ -1238,3 +1242,154 @@ class TenantReactivateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Token inválido.")
 
         return value
+
+
+class TenantFormFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantFormField
+        fields = ["id", "label", "field_type", "required", "options", "order"]
+
+    def validate_options(self, value):
+        if value is not None and not isinstance(value, list):
+            raise serializers.ValidationError("Opções devem ser uma lista de strings.")
+        if value:
+            for item in value:
+                if not isinstance(item, str):
+                    raise serializers.ValidationError(
+                        "Cada opção deve ser uma string."
+                    )
+        return value
+
+
+class TenantFormSerializer(serializers.ModelSerializer):
+    fields = TenantFormFieldSerializer(many=True, required=False)
+
+    class Meta:
+        model = TenantForm
+        fields = [
+            "id",
+            "title",
+            "is_active",
+            "client_editable",
+            "fields",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        fields_data = validated_data.pop("fields", [])
+        form = TenantForm.objects.create(**validated_data)
+        for i, field_data in enumerate(fields_data):
+            field_data.setdefault("order", i)
+            TenantFormField.objects.create(form=form, **field_data)
+        return form
+
+    def update(self, instance, validated_data):
+        fields_data = validated_data.pop("fields", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if fields_data is not None:
+            existing_ids = set(instance.fields.values_list("id", flat=True))
+            incoming_ids = set()
+
+            for i, field_data in enumerate(fields_data):
+                field_data.setdefault("order", i)
+                field_id = field_data.pop("id", None)
+                if field_id and field_id in existing_ids:
+                    TenantFormField.objects.filter(id=field_id).update(**field_data)
+                    incoming_ids.add(field_id)
+                else:
+                    TenantFormField.objects.create(form=instance, **field_data)
+
+            to_delete = existing_ids - incoming_ids
+            if to_delete:
+                TenantFormField.objects.filter(id__in=to_delete).delete()
+
+        return instance
+
+
+class CustomerFieldAnswerSerializer(serializers.ModelSerializer):
+    field_id = serializers.PrimaryKeyRelatedField(
+        source="field", queryset=TenantFormField.objects.all()
+    )
+    label = serializers.CharField(source="field.label", read_only=True)
+    field_type = serializers.CharField(source="field.field_type", read_only=True)
+
+    class Meta:
+        model = CustomerFieldAnswer
+        fields = ["field_id", "label", "field_type", "value"]
+
+
+class CustomerFormResponseSerializer(serializers.ModelSerializer):
+    answers = CustomerFieldAnswerSerializer(many=True)
+    form_title = serializers.CharField(source="form.title", read_only=True)
+
+    class Meta:
+        model = CustomerFormResponse
+        fields = [
+            "id",
+            "form",
+            "form_title",
+            "customer",
+            "answers",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        answers_data = validated_data.pop("answers", [])
+        response = CustomerFormResponse.objects.create(**validated_data)
+        for answer_data in answers_data:
+            CustomerFieldAnswer.objects.create(response=response, **answer_data)
+        return response
+
+    def update(self, instance, validated_data):
+        validated_data.pop("form", None)
+        validated_data.pop("customer", None)
+        answers_data = validated_data.pop("answers", None)
+        instance.save()
+
+        if answers_data is not None:
+            for answer_data in answers_data:
+                field = answer_data["field"]
+                CustomerFieldAnswer.objects.update_or_create(
+                    response=instance,
+                    field=field,
+                    defaults={"value": answer_data.get("value", "")},
+                )
+        return instance
+
+    def validate(self, data):
+        if self.instance:
+            data.pop("form", None)
+            data.pop("customer", None)
+        form = data.get("form") or (self.instance.form if self.instance else None)
+        if not form:
+            raise serializers.ValidationError("Formulário é obrigatório.")
+
+        answers = data.get("answers", [])
+        answered_field_ids = {a["field"].id for a in answers}
+
+        required_fields = form.fields.filter(required=True)
+        for rf in required_fields:
+            if rf.id not in answered_field_ids:
+                raise serializers.ValidationError(
+                    f"Campo obrigatório não respondido: {rf.label}"
+                )
+            answer = next(a for a in answers if a["field"].id == rf.id)
+            if not answer.get("value", "").strip():
+                raise serializers.ValidationError(
+                    f"Campo obrigatório não pode estar vazio: {rf.label}"
+                )
+
+        for answer in answers:
+            if answer["field"].form_id != form.id:
+                raise serializers.ValidationError(
+                    f"Campo '{answer['field'].label}' não pertence a este formulário."
+                )
+
+        return data
