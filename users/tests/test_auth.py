@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -262,12 +263,14 @@ class TestAuthEndpoints:
         )
 
         self.client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         response = self.client.get(self.me_profile_url, HTTP_X_APP_TYPE="admin")
 
         assert response.status_code == status.HTTP_200_OK
 
     def test_me_profile_admin_app_allowed_for_pro_tenant(self, user_fixture):
         self.client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         response = self.client.get(self.me_profile_url, HTTP_X_APP_TYPE="admin")
 
         assert response.status_code == status.HTTP_200_OK
@@ -282,6 +285,7 @@ class TestAuthEndpoints:
         )
 
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.get(self.me_tenant_url)
 
         assert response.status_code == status.HTTP_200_OK
@@ -318,6 +322,7 @@ class TestAuthEndpoints:
             password="testpass123",
         )
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
 
         response = self.client.get(self.me_profile_url)
 
@@ -334,6 +339,7 @@ class TestAuthEndpoints:
             password="testpass123",
         )
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
 
         # Test updating to light theme
         response = self.client.patch(self.me_profile_url, {"theme_preference": "light"})
@@ -359,6 +365,7 @@ class TestAuthEndpoints:
             password="testpass123",
         )
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
 
         response = self.client.patch(
             self.me_profile_url, {"theme_preference": "invalid"}
@@ -373,6 +380,7 @@ class TestAuthEndpoints:
             password="testpass123",
         )
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
 
         response = self.client.patch(self.me_profile_url, {})
         assert response.status_code == status.HTTP_400_BAD_REQUEST

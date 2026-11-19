@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.test.utils import override_settings
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
@@ -43,6 +44,7 @@ def test_reports_overview_is_throttled():
     )
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     # 1º e 2º devem passar
     r1 = c.get("/api/reports/overview/")
@@ -91,6 +93,7 @@ def test_export_csv_is_throttled():
     )
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     # 1º e 2º devem passar
     r1 = c.get("/api/reports/overview/export/")

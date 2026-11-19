@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -18,6 +19,7 @@ class TestOnboardingState:
             email="user@test.com", username="user@test.com", tenant=self.tenant
         )
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
     def test_get_initial_onboarding_status(self):
         """Verify initial onboarding status is empty dict"""
@@ -70,6 +72,7 @@ class TestBillingState:
             email="owner@billing.com", username="owner@billing.com", tenant=self.tenant
         )
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
     def test_billing_pending_false_initially(self):
         """Verify billing_pending is false when no subscription exists"""

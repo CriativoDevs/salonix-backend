@@ -1,4 +1,5 @@
 import itertools
+from salonix_backend.test_support import ensure_staff
 from decimal import Decimal
 import pytest
 from django.urls import reverse
@@ -45,7 +46,9 @@ def test_smoke_isolamento_por_tenant_sse(monkeypatch):
     client_a = APIClient()
     client_b = APIClient()
     client_a.force_authenticate(user=user_a)
+    ensure_staff(user_a)
     client_b.force_authenticate(user=user_b)
+    ensure_staff(user_b)
 
     # Abre streams SSE
     sse_url = reverse("realtime_credits")

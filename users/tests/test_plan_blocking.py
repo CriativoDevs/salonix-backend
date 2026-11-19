@@ -3,6 +3,7 @@ Testes do BE-PLANS-01 (#481): bloqueio do plano Pro e absorção das suas
 features pelos planos Basic e Founder.
 """
 
+from salonix_backend.test_support import ensure_staff
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -82,6 +83,7 @@ class TestPlanBlocked:
         owner = _make_owner(basic_tenant, "owner-basic")
         client = APIClient()
         client.force_authenticate(user=owner)
+        ensure_staff(owner)
 
         mock_get_customer.return_value = "cus_123"
         mock_get_price.return_value = "price_basic_123"
@@ -160,6 +162,7 @@ class TestBasicAbsorbsProFeatures:
         owner = _make_owner(basic_tenant, "owner-renew")
         client = APIClient()
         client.force_authenticate(user=owner)
+        ensure_staff(owner)
 
         resp = client.patch(
             "/api/payments/stripe/settings/",

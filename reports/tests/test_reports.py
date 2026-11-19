@@ -1,4 +1,5 @@
 # reports/tests/test_reports.py
+from salonix_backend.test_support import ensure_staff
 import pytest
 from decimal import Decimal
 from datetime import timedelta
@@ -278,6 +279,7 @@ def test_reports_overview_ok():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     r = c.get("/api/reports/overview/")
     assert r.status_code == 200
@@ -302,6 +304,7 @@ def test_reports_top_services_ok():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     r = c.get("/api/reports/top-services/?limit=5")
     assert r.status_code == 200
@@ -327,6 +330,7 @@ def test_reports_revenue_series_day_ok():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     r = c.get("/api/reports/revenue/?interval=day")
     assert r.status_code == 200
@@ -368,6 +372,7 @@ def test_reports_permissions_by_plan():
 
     c = APIClient()
     c.force_authenticate(user_basic)
+    ensure_staff(user_basic)
 
     # Overview -> OK (Basic tem acesso)
     r = c.get("/api/reports/overview/")
@@ -411,6 +416,7 @@ def test_retention_report_permissions_and_data():
     )
     c = APIClient()
     c.force_authenticate(user_basic)
+    ensure_staff(user_basic)
 
     # BE-PLANS-01 (#481): Basic absorveu retention e advanced (ex-Pro)
     r = c.get("/api/reports/retention/")
@@ -432,6 +438,7 @@ def test_retention_report_permissions_and_data():
         tenant=tenant_pro,
     )
     c.force_authenticate(user_pro)
+    ensure_staff(user_pro)
 
     # Configura datas
     now = timezone.now()
@@ -563,6 +570,7 @@ def test_retention_repeat_rate_windows_30_60_90():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     now = timezone.now()
     prof_kwargs, professional = _get_or_create_professional(user)
@@ -667,6 +675,7 @@ def test_retention_cohort_monthly_structure():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     prof_kwargs, professional = _get_or_create_professional(user)
     service = Service.objects.create(
@@ -767,6 +776,7 @@ def test_retention_short_range_one_day():
     )
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     prof_kwargs, professional = _get_or_create_professional(user)
     service = Service.objects.create(
@@ -882,6 +892,7 @@ def _setup_prof_service_filter_scenario(suffix):
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
     return c, prof1, prof2, service1, service2
 
 
@@ -1057,6 +1068,7 @@ def test_retention_filter_by_professional_id():
 
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     r = c.get(f"/api/reports/retention/?professional_id={prof1.id}")
     assert r.status_code == 200
@@ -1086,6 +1098,7 @@ def test_retention_invalid_professional_id_returns_400():
     )
     c = APIClient()
     c.force_authenticate(user)
+    ensure_staff(user)
 
     r = c.get("/api/reports/retention/?professional_id=xyz")
     assert r.status_code == 400

@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
+from core.permissions import IsTenantStaff
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -40,7 +41,7 @@ class VoucherViewSet(TenantIsolatedMixin, ModelViewSet):
         "client_vouchers"
     )
     serializer_class = VoucherSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self):
         # Endpoint autenticado: o tenant vem sempre da sessão/membership do
@@ -325,7 +326,7 @@ class BirthdayVoucherConfigViewSet(TenantIsolatedMixin, ModelViewSet):
 
     queryset = BirthdayVoucherConfig.objects.select_related("service").all()
     serializer_class = BirthdayVoucherConfigSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self):
         return getattr(self.request, "tenant", None) or getattr(

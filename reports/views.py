@@ -1,5 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, BasePermission
+from core.permissions import IsTenantStaff
 from rest_framework.response import Response
 from rest_framework import status
 from reports.throttling import PerUserScopedRateThrottle
@@ -282,7 +283,7 @@ PARAM_INTERVAL = OpenApiParameter(
     },
 )
 class ReportsSummaryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get(self, request) -> HttpResponse:
         flags, _ = UserFeatureFlags.objects.get_or_create(user=request.user)
@@ -344,6 +345,7 @@ class _BaseReports(APIView):
         """Retorna permissions incluindo feature flag de reports"""
         return [
             IsAuthenticated(),
+            IsTenantStaff(),
             RequiresBasicReports(),  # Mudança: Base agora exige apenas Basic
         ]
 
@@ -440,6 +442,7 @@ class TopServicesReportView(_BaseReports):
         """Top Services exige plano Pro"""
         return [
             IsAuthenticated(),
+            IsTenantStaff(),
             RequiresProReports(),
         ]
 
@@ -531,6 +534,7 @@ class RevenueSeriesReportView(_BaseReports):
         """Revenue Series exige plano Pro"""
         return [
             IsAuthenticated(),
+            IsTenantStaff(),
             RequiresProReports(),
         ]
 
@@ -1043,7 +1047,7 @@ class BasicReportsView(APIView):
     Disponível para todos os planos que têm acesso a relatórios.
     """
 
-    permission_classes = [IsAuthenticated, RequiresBasicReports]
+    permission_classes = [IsAuthenticated, RequiresBasicReports, IsTenantStaff]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
@@ -1082,7 +1086,7 @@ class ExportBasicReportsCSVView(_BaseReports):
     Gera um CSV com relatórios básicos (summary + overview)
     """
 
-    permission_classes = [IsAuthenticated, RequiresBasicReports]
+    permission_classes = [IsAuthenticated, RequiresBasicReports, IsTenantStaff]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 
@@ -1345,6 +1349,7 @@ class RetentionReportView(_BaseReports):
     def get_permissions(self):
         return [
             IsAuthenticated(),
+            IsTenantStaff(),
             RequiresProReports(),
         ]
 
@@ -1538,7 +1543,7 @@ class AdvancedReportsView(APIView):
     Disponível apenas para plano Pro.
     """
 
-    permission_classes = [IsAuthenticated, RequiresProReports]
+    permission_classes = [IsAuthenticated, RequiresProReports, IsTenantStaff]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "reports"
 
@@ -1589,7 +1594,7 @@ class ExportAdvancedReportsCSVView(_BaseReports):
       - Seção Revenue Series (período, agendamentos, receita, ticket médio)
     """
 
-    permission_classes = [IsAuthenticated, RequiresProReports]
+    permission_classes = [IsAuthenticated, RequiresProReports, IsTenantStaff]
     throttle_classes = (PerUserScopedRateThrottle,)
     throttle_scope = "export_csv"
 

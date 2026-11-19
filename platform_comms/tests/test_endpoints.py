@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from datetime import timedelta
 
 from django.urls import reverse
@@ -61,6 +62,7 @@ class TestPlatformAnnouncementListView:
     def test_returns_active_announcement_for_tenant(self, api_client, user_fixture):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -72,6 +74,7 @@ class TestPlatformAnnouncementListView:
     def test_excludes_draft_announcements(self, api_client, user_fixture):
         make_announcement(status=PlatformAnnouncement.STATUS_DRAFT)
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -85,6 +88,7 @@ class TestPlatformAnnouncementListView:
             expire_at=timezone.now() - timedelta(days=1),
         )
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -101,6 +105,7 @@ class TestPlatformAnnouncementListView:
         announcement.tenants.add(other_tenant)
 
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
 
@@ -110,6 +115,7 @@ class TestPlatformAnnouncementListView:
 
         # Mas aparece para o tenant correto.
         api_client.force_authenticate(user=other_tenant_user)
+        ensure_staff(other_tenant_user)
         response_other = api_client.get(url)
         assert response_other.status_code == status.HTTP_200_OK, response_other.data
         titles_other = [item["title"] for item in response_other.data]
@@ -120,6 +126,7 @@ class TestPlatformAnnouncementListView:
     ):
         make_announcement()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -135,6 +142,7 @@ class TestPlatformAnnouncementListView:
     ):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -159,6 +167,7 @@ class TestPlatformAnnouncementListView:
         )
         receipt.mark_read()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-list")
         response = api_client.get(url)
@@ -180,6 +189,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
     def test_mark_read_creates_receipt_and_sets_read(self, api_client, user_fixture):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-mark-read", args=[announcement.pk])
         response = api_client.post(url)
@@ -202,6 +212,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
         announcement.tenants.add(other_tenant)
 
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         url = reverse("platform-announcement-mark-read", args=[announcement.pk])
         response = api_client.post(url)
 
@@ -219,6 +230,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
             status=PlatformAnnouncementReceipt.STATUS_READ,
         )
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-mark-unread", args=[announcement.pk])
         response = api_client.post(url)
@@ -235,6 +247,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
     def test_mark_dismissed(self, api_client, user_fixture):
         announcement = make_announcement()
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-mark-dismiss", args=[announcement.pk])
         response = api_client.post(url)
@@ -250,6 +263,7 @@ class TestPlatformAnnouncementReceiptEndpoints:
         )
 
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         url = reverse("platform-announcement-mark-read", args=[announcement.pk])
         response = api_client.post(url)
         assert response.status_code == status.HTTP_200_OK
@@ -271,6 +285,7 @@ class TestPlatformAnnouncementUnreadCountView:
         make_announcement(title="A")
         make_announcement(title="B")
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         url = reverse("platform-announcement-unread-count")
         response = api_client.get(url)
@@ -282,6 +297,7 @@ class TestPlatformAnnouncementUnreadCountView:
         announcement = make_announcement(title="A")
         make_announcement(title="B")
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
 
         read_url = reverse("platform-announcement-mark-read", args=[announcement.pk])
         api_client.post(read_url)
@@ -301,10 +317,12 @@ class TestPlatformAnnouncementUnreadCountView:
         announcement.tenants.add(other_tenant)
 
         api_client.force_authenticate(user=user_fixture)
+        ensure_staff(user_fixture)
         url = reverse("platform-announcement-unread-count")
         response = api_client.get(url)
         assert response.data["unread_count"] == 0
 
         api_client.force_authenticate(user=other_tenant_user)
+        ensure_staff(other_tenant_user)
         response_other = api_client.get(url)
         assert response_other.data["unread_count"] == 1

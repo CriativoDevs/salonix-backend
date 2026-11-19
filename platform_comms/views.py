@@ -3,6 +3,7 @@ from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from core.permissions import IsTenantStaff
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -36,7 +37,7 @@ class PlatformAnnouncementListView(generics.ListAPIView):
     """
 
     serializer_class = PlatformAnnouncementSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         tenant = _resolve_tenant(self.request)
@@ -93,7 +94,7 @@ class PlatformAnnouncementReceiptActionView(APIView):
     comunicado que nunca deveria ter visto, o que vazaria a existência dele.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_announcement(self, pk):
         tenant = _resolve_tenant(self.request)
@@ -157,7 +158,7 @@ class PlatformAnnouncementUnreadCountView(APIView):
     ainda não foram lidos nem dispensados. Usado para o badge do inbox.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get(self, request):
         tenant = _resolve_tenant(request)

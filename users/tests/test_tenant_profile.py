@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -99,6 +100,7 @@ class TestTenantProfileEndpoint:
 
         # Autenticar como colaborador
         self.client.force_authenticate(user=collab)
+        ensure_staff(collab)
         url = reverse("tenant_profile")
         resp = self.client.patch(
             url, {"profile": {"email": "new@example.com"}}, format="json"
@@ -107,6 +109,7 @@ class TestTenantProfileEndpoint:
 
         # Sanity: como owner deve permitir
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp2 = self.client.patch(
             url, {"profile": {"email": "new@example.com", "phone": ""}}, format="json"
         )

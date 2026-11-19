@@ -1,4 +1,5 @@
 from django.urls import reverse
+from salonix_backend.test_support import ensure_staff
 from rest_framework import status
 from rest_framework.test import APITestCase
 from users.models import Tenant, CustomUser, TenantStaffMember
@@ -38,6 +39,7 @@ class TenantCancellationTest(APITestCase):
 
     def test_owner_can_cancel_tenant(self):
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.delete(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -54,6 +56,7 @@ class TenantCancellationTest(APITestCase):
 
     def test_manager_cannot_cancel_tenant(self):
         self.client.force_authenticate(user=self.manager)
+        ensure_staff(self.manager)
         response = self.client.delete(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -71,6 +74,7 @@ class TenantCancellationTest(APITestCase):
         original_deleted_at = self.tenant.deleted_at
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         response = self.client.delete(self.url)
 
         # Middleware blocks access to inactive tenants with 403
@@ -87,6 +91,7 @@ class TenantCancellationTest(APITestCase):
         self.tenant.save()
 
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         # Try to access MeTenantView (GET)
         response = self.client.get(self.url)
 

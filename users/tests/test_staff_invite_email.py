@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from django.test import override_settings
 from prometheus_client import Counter, CollectorRegistry
@@ -45,6 +46,7 @@ def test_invite_sends_email_and_metrics(monkeypatch):
 
     client = APIClient()
     client.force_authenticate(user=owner)
+    ensure_staff(owner)
     url = reverse("tenant_staff")
     payload = {
         "email": "collab@test.local",

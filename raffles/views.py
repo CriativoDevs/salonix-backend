@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
+from core.permissions import IsTenantStaff
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
@@ -34,7 +35,7 @@ class RaffleViewSet(TenantIsolatedMixin, ModelViewSet):
         "prize_service", "winner", "winner_voucher"
     ).prefetch_related("participants")
     serializer_class = RaffleSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self):
         # Mesmo padrão de `VoucherViewSet`: tenant vem sempre da

@@ -16,6 +16,7 @@ from rest_framework.test import APIClient
 def sse_auth_client(db):
     """Factory de APIClient autenticado (tenant padrão vem do conftest global)."""
     from users.models import CustomUser
+    from salonix_backend.test_support import ensure_staff
 
     def _make(user=None):
         if user is None:
@@ -27,6 +28,7 @@ def sse_auth_client(db):
 
         client = APIClient()
         client.force_authenticate(user=user)
+        ensure_staff(user)
         return client, user
 
     return _make

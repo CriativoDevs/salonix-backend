@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -30,6 +31,7 @@ def test_resend_invite_success():
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
 
     with patch("core.views.send_customer_pwa_invite", return_value=True) as mocked:
         url = reverse("salon-customers-invite", args=[customer.id])
@@ -62,6 +64,7 @@ def test_resend_invite_requires_pwa_enabled():
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
     url = reverse("salon-customers-invite", args=[customer.id])
     response = client.post(url)
 
@@ -91,6 +94,7 @@ def test_resend_invite_requires_email():
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
     url = reverse("salon-customers-invite", args=[customer.id])
     response = client.post(url)
 
@@ -116,6 +120,7 @@ def test_auto_invite_triggered_on_create():
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
 
     with patch("core.views.send_customer_pwa_invite", return_value=True) as mocked:
         response = client.post(
@@ -149,6 +154,7 @@ def test_auto_invite_not_triggered_without_email():
 
     client = APIClient()
     client.force_authenticate(user=user)
+    ensure_staff(user)
 
     with patch("core.views.send_customer_pwa_invite") as mocked:
         response = client.post(

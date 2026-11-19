@@ -2,6 +2,7 @@
 Testes para o sistema de feature flags baseado em planos.
 """
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from datetime import timedelta
 from rest_framework import status
@@ -406,6 +407,7 @@ class TestTenantMetaEndpoint:
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.patch(
             url,
             {"auto_invite_enabled": True},
@@ -438,6 +440,7 @@ class TestTenantMetaEndpoint:
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.patch(
             url,
             {"auto_invite_enabled": True},
@@ -493,6 +496,7 @@ class TestTenantMetaEndpoint:
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.patch(
             url,
             {"business_type": "psychology"},
@@ -520,6 +524,7 @@ class TestTenantMetaEndpoint:
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.patch(
             url,
             {"business_type": "invalid_type"},
@@ -544,6 +549,7 @@ class TestTenantMetaEndpoint:
 
         url = reverse("tenant_meta")
         self.client.force_authenticate(user=user)
+        ensure_staff(user)
         response = self.client.patch(
             url,
             {"business_type": "tattoo"},

@@ -4,6 +4,7 @@ from django.core.cache import cache
 from rest_framework import generics, status, filters
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from core.permissions import IsTenantOwnerOrManager, IsTenantStaff
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
@@ -207,7 +208,7 @@ class UserRegistrationView(generics.CreateAPIView):
 
 
 class MeFeatureFlagsView(RetrieveUpdateAPIView):
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
     serializer_class = UserFeatureFlagsSerializer  # default para GET
 
     def get_object(self):
@@ -454,7 +455,7 @@ class TenantMetaView(APIView):
         """Permissões dinâmicas: público para GET, autenticado para PATCH"""
         if self.request.method == "GET":
             return [AllowAny()]
-        return [IsAuthenticated(), IsActiveTenant()]
+        return [IsAuthenticated(), IsActiveTenant(), IsTenantOwnerOrManager()]
 
     def get_throttles(self):
         # throttle apenas no GET público
@@ -669,7 +670,7 @@ class TenantProfileView(APIView):
     def get_permissions(self):
         if self.request.method == "GET":
             return [AllowAny()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated(), IsTenantOwnerOrManager()]
 
     def get_throttles(self):
         if self.request.method == "GET":
@@ -794,7 +795,7 @@ class TenantBusinessHoursView(APIView):
          Envia lista de objetos: [{day_of_week, start_time, end_time, is_active}].
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _resolve_tenant(self, request):
         tenant = getattr(request.user, "tenant", None)
@@ -961,7 +962,7 @@ class MeTenantView(APIView):
 
 
 class MeProfileView(APIView):
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
 
     @extend_schema(
         responses=OpenApiResponse(
@@ -1056,6 +1057,7 @@ class TenantModulesSettingsView(APIView):
         IsActiveTenant,
         HasActiveTrialOrSubscription,
         RequiresMobileAccess,
+        IsTenantOwnerOrManager,
     ]
 
     @extend_schema(
@@ -1135,6 +1137,7 @@ class TenantStaffView(APIView):
         IsActiveTenant,
         HasActiveTrialOrSubscription,
         RequiresMobileAccess,
+        IsTenantStaff,
     ]
     # Listar staff não deve ser afetado pelo throttle de convites
     serializer_class = TenantStaffMemberSerializer
@@ -1281,7 +1284,7 @@ class TenantStaffView(APIView):
 
 
 class TenantStaffResendInviteView(APIView):
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantOwnerOrManager]
     throttle_classes = [UsersStaffResendInviteThrottle]
     throttle_scope = "users_staff_resend"
 
@@ -1393,7 +1396,7 @@ class UsersPasswordResetThrottle(_UsersPasswordResetThrottle):
 
 
 class TenantStaffAccessLinkView(APIView):
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantOwnerOrManager]
     throttle_classes = [UsersPasswordResetThrottle]
     throttle_scope = "users_password_reset"
 
@@ -1535,7 +1538,7 @@ class TenantStaffAccessLinkView(APIView):
 
 
 class TenantStaffContactUpdateView(APIView):
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantOwnerOrManager]
 
     @extend_schema(
         request=StaffContactUpdateSerializer,
@@ -1796,7 +1799,7 @@ class PasswordResetConfirmView(APIView):
 class CreditBalanceView(APIView):
     """Visualiza saldo e estatísticas de créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
 
     @extend_schema(
         description="Obtém saldo atual e estatísticas de créditos de comunicação",
@@ -1823,7 +1826,7 @@ class CreditBalanceView(APIView):
 class CreditHistoryView(APIView):
     """Lista histórico de transações de créditos."""
 
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["transaction_type", "status"]
@@ -1869,7 +1872,7 @@ class CreditHistoryView(APIView):
 class ConsumeCreditsView(APIView):
     """Consome créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
 
     @extend_schema(
         description="Consome créditos de comunicação",
@@ -1911,7 +1914,7 @@ class ConsumeCreditsView(APIView):
 class PurchaseCreditsView(APIView):
     """Compra créditos de comunicação."""
 
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
 
     @extend_schema(
         description="Compra créditos de comunicação",
@@ -1966,7 +1969,7 @@ class RealtimeCreditsSSEView(APIView):
     - Emite eventos quando há novas transações no ledger ou mudança de saldo
     """
 
-    permission_classes = [IsAuthenticated, RequiresMobileAccess]
+    permission_classes = [IsAuthenticated, RequiresMobileAccess, IsTenantStaff]
 
     @extend_schema(
         description=(
@@ -2098,7 +2101,7 @@ class RealtimeCreditsSSEView(APIView):
 
 
 class TenantNotificationsSettingsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         description="Retorna os toggles atuais de canais de notificação do tenant.",

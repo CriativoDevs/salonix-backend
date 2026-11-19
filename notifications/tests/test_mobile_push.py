@@ -3,6 +3,7 @@ Testes para Mobile Push Notifications (Expo Push Service).
 Cobre MobilePushDriver, endpoint de teste, e signals de appointment.
 """
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from unittest.mock import patch, Mock
 from django.test import TestCase
@@ -254,6 +255,7 @@ class TestPushEndpointTestCase(TestCase):
     def test_test_push_requires_staff(self):
         """Apenas staff pode usar endpoint de teste"""
         self.client.force_authenticate(user=self.regular_user)
+        ensure_staff(self.regular_user)
         self.regular_user.tenant = self.tenant
         response = self.client.post(
             "/api/notifications/test-push/",
@@ -268,6 +270,7 @@ class TestPushEndpointTestCase(TestCase):
     def test_test_push_user_not_found(self):
         """Deve retornar 404 se usuário não existe"""
         self.client.force_authenticate(user=self.admin_user)
+        ensure_staff(self.admin_user)
         self.admin_user.tenant = self.tenant
         response = self.client.post(
             "/api/notifications/test-push/",
@@ -283,6 +286,7 @@ class TestPushEndpointTestCase(TestCase):
     def test_test_push_no_device(self):
         """Deve retornar mensagem se usuário não tem device"""
         self.client.force_authenticate(user=self.admin_user)
+        ensure_staff(self.admin_user)
         self.admin_user.tenant = self.tenant
         self.regular_user.tenant = self.tenant
         response = self.client.post(
@@ -319,6 +323,7 @@ class TestPushEndpointTestCase(TestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.admin_user)
+        ensure_staff(self.admin_user)
         self.admin_user.tenant = self.tenant
         self.regular_user.tenant = self.tenant
         response = self.client.post(
@@ -384,6 +389,7 @@ class TestPushEndpointTestCase(TestCase):
         mock_post.return_value = mock_response
 
         self.client.force_authenticate(user=self.admin_user)
+        ensure_staff(self.admin_user)
         self.admin_user.tenant = self.tenant
         self.regular_user.tenant = self.tenant
         response = self.client.post(

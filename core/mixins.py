@@ -1,5 +1,4 @@
 from django.core.exceptions import PermissionDenied
-from django.conf import settings
 
 
 class TenantIsolatedMixin:
@@ -9,10 +8,6 @@ class TenantIsolatedMixin:
 
     def get_queryset(self):
         queryset = super().get_queryset()
-
-        # Durante testes, não aplicar isolamento tenant para simplificar
-        if "test" in settings.DATABASES.get("default", {}).get("NAME", ""):
-            return queryset
 
         # Para superusers, não aplicar filtro tenant
         if (

@@ -2,6 +2,7 @@
 Testes para funcionalidades de white-label assets (upload de logo, favicon e app_name).
 """
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from io import BytesIO
 from PIL import Image
@@ -172,6 +173,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_success_branding(self):
         """Teste PATCH bem-sucedido para atualizar branding (app_name e favicon)."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         url = reverse("tenant_meta")
         data = {"app_name": "New App", "favicon_url": "https://example.com/favicon.png"}
@@ -189,6 +191,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_invalid_favicon(self):
         """Teste PATCH com favicon_url inválido."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         url = reverse("tenant_meta")
         data = {"favicon_url": "not-a-url"}
@@ -199,6 +202,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_logo_upload(self):
         """Teste PATCH com upload de logo."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         # Criar imagem de teste
         image = Image.new("RGB", (200, 200), color="blue")
@@ -225,6 +229,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_logo_url(self):
         """Teste PATCH com logo_url externa."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         url = reverse("tenant_meta")
         data = {"logo_url": "https://example.com/new_logo.png"}
@@ -240,6 +245,7 @@ class TestTenantMetaEndpoint:
     def test_patch_tenant_meta_logo_and_url_conflict(self):
         """Teste PATCH com logo e logo_url simultaneamente (deve falhar)."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         # Criar imagem de teste
         image = Image.new("RGB", (100, 100), color="red")
@@ -274,6 +280,7 @@ class TestTenantMetaEndpoint:
 
         # Autenticar com o outro usuário
         self.client.force_authenticate(user=other_user)
+        ensure_staff(other_user)
 
         url = reverse("tenant_meta")
         data = {"app_name": "Other New App"}
@@ -302,6 +309,7 @@ class TestTenantMetaEndpoint:
         user_no_tenant.tenant = None
 
         self.client.force_authenticate(user=user_no_tenant)
+        ensure_staff(user_no_tenant)
 
         url = reverse("tenant_meta")
         data = {"app_name": "NoTenant"}
@@ -338,6 +346,7 @@ class TestTenantBrandingIntegration:
     def test_complete_branding_workflow(self):
         """Teste fluxo completo de branding."""
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
         url = reverse("tenant_meta")
 
         # 1. Verificar estado inicial

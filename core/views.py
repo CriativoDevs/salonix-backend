@@ -80,7 +80,7 @@ from core.serializers import (
     CustomerFormResponseSerializer,
 )
 from core.mixins import TenantIsolatedMixin
-from core.permissions import IsTenantOwnerOrManager, IsTenantStaff
+from core.permissions import IsTenantOwner, IsTenantOwnerOrManager, IsTenantStaff
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -652,7 +652,7 @@ class PublicClientRegistrationView(APIView):
 class AppointmentCreateView(TenantIsolatedMixin, CreateAPIView):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -793,7 +793,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
     Todos os agendamentos são criados ou nenhum é criado.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         request=BulkAppointmentSerializer,
@@ -1291,7 +1291,7 @@ class BulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 
 
 class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         request=MixedBulkAppointmentRequestSerializer,
@@ -1734,7 +1734,7 @@ class MixedBulkAppointmentCreateView(TenantIsolatedMixin, APIView):
 
 
 class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         request=BulkAppointmentSerializer,
@@ -1936,7 +1936,7 @@ class AppointmentSeriesCreateView(TenantIsolatedMixin, APIView):
 
 
 class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     queryset = AppointmentSeries.objects.all()
     serializer_class = AppointmentSeriesSerializer
 
@@ -2263,7 +2263,7 @@ class AppointmentSeriesDetailView(TenantIsolatedMixin, RetrieveAPIView):
 
 
 class AppointmentSeriesOccurrenceCancelView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         request=None,
@@ -2373,7 +2373,7 @@ class AppointmentSeriesOccurrenceCancelView(APIView):
 
 
 class AppointmentCancelView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(request=None, responses={200: AppointmentSerializer})
     def patch(self, request, pk):
@@ -2447,7 +2447,7 @@ class AppointmentCancelView(APIView):
 class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         # Filtrar por tenant (TenantIsolatedMixin cuida do escopo) e opcionalmente por professional_id
@@ -2578,7 +2578,7 @@ class ServiceViewSet(TenantIsolatedMixin, ModelViewSet):
 
 
 class ClientAccessLinkView(TenantIsolatedMixin, APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwnerOrManager]
     throttle_classes = [UsersClientAccessLinkThrottle]
     throttle_scope = "clients_access_link"
 
@@ -3507,7 +3507,7 @@ class ClientAppointmentCancelView(APIView):
 class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = Professional.objects.all()
     serializer_class = ProfessionalSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -3708,7 +3708,7 @@ class ProfessionalViewSet(TenantIsolatedMixin, ModelViewSet):
 class SalonCustomerViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = SalonCustomer.objects.all().select_related("tenant")
     serializer_class = SalonCustomerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         if not getattr(self.request, "tenant", None) and getattr(
@@ -3874,7 +3874,7 @@ def _reject_csv(reason: str, extra: dict) -> None:
 
 
 class ImportCSVBaseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _require_owner(self, request):
         if not request.user.has_staff_role(TenantStaffMember.Role.OWNER):
@@ -3986,7 +3986,7 @@ class ImportCSVBaseView(APIView):
 
 
 class ExportCSVBaseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _require_owner(self, request):
         if not request.user.has_staff_role(TenantStaffMember.Role.OWNER):
@@ -4904,7 +4904,7 @@ class ImportTemplateCSVView(APIView):
 class ScheduleSlotViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     filter_backends = [OrderingFilter]
     ordering_fields = ["start_time", "end_time", "created_at", "id"]
     ordering = ["-start_time"]
@@ -5422,7 +5422,7 @@ class SalonAppointmentViewSet(TenantIsolatedMixin, ModelViewSet):
 
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated, IsSalonOwnerOfAppointment]
+    permission_classes = [IsAuthenticated, IsSalonOwnerOfAppointment, IsTenantStaff]
 
     def get_queryset(self):
         user = self.request.user
@@ -6135,7 +6135,7 @@ class MyAppointmentsListView(TenantIsolatedMixin, ListAPIView):
 
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def get_queryset(self):
         user = self.request.user
@@ -6151,7 +6151,7 @@ class MyAppointmentsListView(TenantIsolatedMixin, ListAPIView):
 
 class AppointmentDetailView(TenantIsolatedMixin, RetrieveAPIView):
     queryset = Appointment.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     serializer_class = AppointmentDetailSerializer
 
     def get_queryset(self):
@@ -6202,7 +6202,7 @@ class AppointmentICSDownloadView(TenantIsolatedMixin, APIView):
     Permite que clientes e donos do salão baixem eventos de calendário.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         responses={
@@ -6482,7 +6482,7 @@ class AppointmentICSDownloadPublicView(APIView):
 
 
 class FeedbackListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         tags=["Feedback"],
@@ -6794,7 +6794,7 @@ class FeedbackListCreateView(APIView):
 
 
 class FeedbackDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         tags=["Feedback"],
@@ -6852,7 +6852,7 @@ class FeedbackDetailView(APIView):
 
 
 class FeedbackExportView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         tags=["Feedback"],
@@ -6922,7 +6922,7 @@ class FeedbackExportView(APIView):
 
 
 class FeedbackPurgeByCustomerView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         tags=["Feedback"],
@@ -6964,7 +6964,7 @@ class FeedbackPurgeByCustomerView(APIView):
 
 
 class FeedbackRetentionEnforceView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(
         tags=["Feedback"],
@@ -7015,7 +7015,7 @@ class TenantCancelView(APIView):
     Requer autenticação de OWNER + confirmação dupla.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwner]
 
     @extend_schema(
         tags=["Tenants"],
@@ -7143,7 +7143,7 @@ class TenantDataExportView(APIView):
     como ficheiro JSON (download). Direito de acesso/portabilidade (Art. 15/20).
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwner]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "data_export"
 
@@ -7176,7 +7176,7 @@ class TenantReactivateView(APIView):
     Requer token válido do email de cancelamento.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwner]
 
     @extend_schema(
         tags=["Tenants"],

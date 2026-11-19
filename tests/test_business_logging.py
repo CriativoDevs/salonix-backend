@@ -42,6 +42,7 @@ class TestBusinessLogging:
         tenant = Tenant.objects.create(name="Test Tenant", slug="test-tenant")
         user_fixture.tenant = tenant
         user_fixture.save()
+        TenantStaffMember.objects.filter(user=user_fixture).update(tenant=tenant)
 
         service = Service.objects.create(
             user=user_fixture,
@@ -105,6 +106,7 @@ class TestBusinessLogging:
         tenant = Tenant.objects.create(name="Test Tenant 2", slug="test-tenant-2")
         user_fixture.tenant = tenant
         user_fixture.save()
+        TenantStaffMember.objects.filter(user=user_fixture).update(tenant=tenant)
 
         service = Service.objects.create(
             user=user_fixture,
@@ -209,6 +211,7 @@ class TestBusinessLogging:
         tenant = Tenant.objects.create(name="Salon Tenant", slug="salon-tenant")
         user_fixture.tenant = tenant
         user_fixture.save()
+        TenantStaffMember.objects.filter(user=user_fixture).update(tenant=tenant)
 
         service = Service.objects.create(
             user=user_fixture,
@@ -282,6 +285,7 @@ class TestBusinessLogging:
         tenant = Tenant.objects.create(name="Salon Tenant 2", slug="salon-tenant-2")
         user_fixture.tenant = tenant
         user_fixture.save()
+        TenantStaffMember.objects.filter(user=user_fixture).update(tenant=tenant)
 
         service = Service.objects.create(
             user=user_fixture,
@@ -348,6 +352,7 @@ class TestBusinessLogging:
         # TenantMetaView check: if request.user.tenant != tenant: Forbidden.
         # So setting user.tenant = tenant is enough.
         user_fixture.save()
+        TenantStaffMember.objects.filter(user=user_fixture).update(tenant=tenant)
 
         data = {"app_name": "New App Name", "primary_color": "#FF0000"}
 

@@ -1,4 +1,5 @@
 from django.test import TestCase
+from salonix_backend.test_support import ensure_staff
 from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
 
@@ -60,6 +61,7 @@ class TenantProfileTests(TestCase):
     def test_profile_patch_requires_owner_or_manager(self):
         # Collaborator should not be allowed
         self.client.force_authenticate(user=self.collab)
+        ensure_staff(self.collab)
         resp = self.client.patch(
             "/api/users/tenant/profile/",
             {"email": "public@salonx.test", "phone": "+351912345678"},
@@ -69,6 +71,7 @@ class TenantProfileTests(TestCase):
 
         # Owner can update
         self.client.force_authenticate(user=self.owner)
+        ensure_staff(self.owner)
         resp2 = self.client.patch(
             "/api/users/tenant/profile/",
             {"email": "public@salonx.test", "phone": "+351912345678"},

@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -23,6 +24,7 @@ class TestCreditHistoryView:
             tenant=self.tenant,
         )
         self.client.force_authenticate(user=self.user)
+        ensure_staff(self.user)
 
         # Create some transactions
         base_time = timezone.now()

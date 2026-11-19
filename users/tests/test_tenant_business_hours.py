@@ -1,4 +1,5 @@
 import pytest
+from salonix_backend.test_support import ensure_staff
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -59,6 +60,7 @@ class TestTenantBusinessHoursGet:
     def test_get_empty_returns_empty_list(self):
         tenant, owner = _make_tenant_user("bh-get-empty", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data == []
@@ -80,6 +82,7 @@ class TestTenantBusinessHoursGet:
             is_active=False,
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         assert len(resp.data) == 2
@@ -97,6 +100,7 @@ class TestTenantBusinessHoursGet:
             tenant=tenant_a, day_of_week=0, start_time="09:00", end_time="18:00"
         )
         self.client.force_authenticate(user=owner_b)
+        ensure_staff(owner_b)
         resp = self.client.get(URL)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data == []
@@ -110,6 +114,7 @@ class TestTenantBusinessHoursPut:
     def test_owner_can_set_schedule(self):
         tenant, owner = _make_tenant_user("bh-put-owner", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.put(URL, data=VALID_SCHEDULE, format="json")
         assert resp.status_code == status.HTTP_200_OK
         assert len(resp.data) == 4
@@ -120,6 +125,7 @@ class TestTenantBusinessHoursPut:
             "bh-put-mgr", TenantStaffMember.Role.MANAGER
         )
         self.client.force_authenticate(user=manager)
+        ensure_staff(manager)
         resp = self.client.put(URL, data=VALID_SCHEDULE, format="json")
         assert resp.status_code == status.HTTP_200_OK
 
@@ -128,6 +134,7 @@ class TestTenantBusinessHoursPut:
             "bh-put-collab", TenantStaffMember.Role.COLLABORATOR
         )
         self.client.force_authenticate(user=collab)
+        ensure_staff(collab)
         resp = self.client.put(URL, data=VALID_SCHEDULE, format="json")
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -143,6 +150,7 @@ class TestTenantBusinessHoursPut:
             tenant=tenant, day_of_week=2, start_time="08:00", end_time="17:00"
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         new_schedule = [
             {
                 "day_of_week": 0,
@@ -165,6 +173,7 @@ class TestTenantBusinessHoursPut:
             tenant=tenant, day_of_week=0, start_time="09:00", end_time="18:00"
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.put(URL, data=[], format="json")
         assert resp.status_code == status.HTTP_200_OK
         assert TenantBusinessHours.objects.filter(tenant=tenant).count() == 0
@@ -172,6 +181,7 @@ class TestTenantBusinessHoursPut:
     def test_validation_end_time_before_start_time(self):
         _tenant, owner = _make_tenant_user("bh-val-time", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         invalid = [
             {
                 "day_of_week": 0,
@@ -186,6 +196,7 @@ class TestTenantBusinessHoursPut:
     def test_validation_end_time_equal_start_time(self):
         _tenant, owner = _make_tenant_user("bh-val-eq", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         invalid = [
             {
                 "day_of_week": 0,
@@ -200,6 +211,7 @@ class TestTenantBusinessHoursPut:
     def test_validation_duplicate_days_rejected(self):
         _tenant, owner = _make_tenant_user("bh-val-dup", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         duplicate = [
             {
                 "day_of_week": 0,
@@ -220,6 +232,7 @@ class TestTenantBusinessHoursPut:
     def test_validation_invalid_day_of_week(self):
         _tenant, owner = _make_tenant_user("bh-val-day", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         invalid = [
             {
                 "day_of_week": 7,
@@ -234,6 +247,7 @@ class TestTenantBusinessHoursPut:
     def test_put_not_a_list_rejected(self):
         _tenant, owner = _make_tenant_user("bh-val-list", TenantStaffMember.Role.OWNER)
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.put(URL, data={"day_of_week": 0}, format="json")
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -245,5 +259,6 @@ class TestTenantBusinessHoursPut:
             "bh-iso-put-b", TenantStaffMember.Role.OWNER
         )
         self.client.force_authenticate(user=owner_a)
+        ensure_staff(owner_a)
         self.client.put(URL, data=VALID_SCHEDULE, format="json")
         assert TenantBusinessHours.objects.filter(tenant=tenant_b).count() == 0

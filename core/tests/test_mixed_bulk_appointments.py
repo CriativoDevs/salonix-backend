@@ -1,4 +1,5 @@
 from django.test import TestCase
+from salonix_backend.test_support import ensure_staff
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -111,6 +112,7 @@ class TestMixedBulkAppointments(TestCase):
 
         self.client_api = APIClient()
         self.client_api.force_authenticate(user=self.client_user)
+        ensure_staff(self.client_user)
 
         self.url = reverse("appointment-mixed-bulk-create")
 
@@ -321,6 +323,7 @@ class TestMixedBulkStartEndTime(TestCase):
 
         self.api = APIClient()
         self.api.force_authenticate(user=self.client_user)
+        ensure_staff(self.client_user)
         self.url = reverse("appointment-mixed-bulk-create")
 
     def _st(self, days=1, hour=10):

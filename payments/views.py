@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from core.permissions import IsTenantOwnerOrManager, IsTenantStaff
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.conf import settings
@@ -77,7 +78,7 @@ def _require_active_billing_owner(user):
 
 
 class CreateCheckoutSession(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     throttle_classes = [PaymentsCheckoutThrottle]
 
     @extend_schema(
@@ -209,7 +210,7 @@ class CreateCheckoutSession(APIView):
 
 
 class CreatePortalSession(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     throttle_classes = [PaymentsPortalThrottle]
 
     @extend_schema(
@@ -1044,7 +1045,7 @@ class StripeWebhookView(APIView):
 class AvailableCreditPackagesView(APIView):
     """Lista os pacotes de créditos disponíveis para compra."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(responses={200: AvailableCreditPackagesResponseSerializer})
     def get(self, request):
@@ -1056,7 +1057,7 @@ class AvailableCreditPackagesView(APIView):
 class CreateCreditPaymentIntentView(APIView):
     """Cria um PaymentIntent para compra de créditos."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # owner ATIVO validado inline (BE-SEC-01: mantido p/ preservar mensagens/metricas)
     throttle_classes = [PaymentsCreditPurchaseThrottle]
 
     @extend_schema(
@@ -1155,7 +1156,7 @@ class CreateCreditPaymentIntentView(APIView):
 class AvailablePlansView(APIView):
     """View para listar planos disponíveis."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(responses={200: AvailablePlansSerializer(many=True)})
     def get(self, request):
@@ -1180,7 +1181,7 @@ class AvailablePlansView(APIView):
 class CreateCreditCheckoutSessionView(APIView):
     """Cria uma Stripe Checkout Session (mode=payment) para compra de créditos."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # owner ATIVO validado inline (BE-SEC-01: mantido p/ preservar mensagens/metricas)
     throttle_classes = [PaymentsCreditPurchaseThrottle]
 
     @extend_schema(
@@ -1288,7 +1289,7 @@ class CreateCreditCheckoutSessionView(APIView):
 class CurrentSubscriptionView(APIView):
     """View para obter informações da assinatura atual."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     @extend_schema(responses={200: CurrentSubscriptionSerializer})
     def get(self, request):
@@ -1312,7 +1313,7 @@ class CurrentSubscriptionView(APIView):
 class SubscriptionActionView(APIView):
     """View para ações de assinatura (cancelar, reativar)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     throttle_classes = [PaymentsSubscriptionActionThrottle]
 
     @extend_schema(
@@ -1370,7 +1371,7 @@ class SubscriptionActionView(APIView):
 class PaymentHistoryView(APIView):
     """View para histórico de pagamentos."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwnerOrManager]
 
     @extend_schema(responses={200: PaymentHistorySerializer})
     def get(self, request):
@@ -1392,7 +1393,7 @@ class PaymentHistoryView(APIView):
 class BillingOverviewView(APIView):
     """View para visão geral do billing."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantOwnerOrManager]
 
     @extend_schema(responses={200: BillingOverviewSerializer})
     def get(self, request):
@@ -1438,7 +1439,7 @@ class BillingOverviewView(APIView):
 class ImprovedCheckoutSessionView(APIView):
     """View melhorada para criar checkout sessions."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     throttle_classes = [PaymentsCheckoutThrottle]
 
     @extend_schema(
@@ -1481,7 +1482,7 @@ class ImprovedCheckoutSessionView(APIView):
 class ImprovedPortalSessionView(APIView):
     """View melhorada para criar portal sessions."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
     throttle_classes = [PaymentsPortalThrottle]
 
     @extend_schema(request=None, responses={200: PortalSessionResponseSerializer})
@@ -1511,7 +1512,7 @@ class ImprovedPortalSessionView(APIView):
 class StripeSettingsView(APIView):
     """Atualiza configurações de billing (Stripe) do tenant (OWNER-only)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # owner ATIVO validado inline (BE-SEC-01: mantido p/ preservar mensagens/metricas)
     throttle_classes = [PaymentsSubscriptionActionThrottle]
 
     @extend_schema(

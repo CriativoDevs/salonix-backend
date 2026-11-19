@@ -3,6 +3,7 @@ Testes do toggle `auto_generate_slots_enabled` em TenantModulesSettingsView
 (BE-SLOTS-04, #559).
 """
 
+from salonix_backend.test_support import ensure_staff
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -42,6 +43,7 @@ class TestAutoGenerateSlotsToggle:
     def test_enable_without_business_hours_returns_400(self):
         tenant, owner = _make_owner("mod-slots-nobh")
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.patch(
             URL, {"auto_generate_slots_enabled": True}, format="json"
         )
@@ -59,6 +61,7 @@ class TestAutoGenerateSlotsToggle:
             is_active=True,
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.patch(
             URL, {"auto_generate_slots_enabled": True}, format="json"
         )
@@ -72,6 +75,7 @@ class TestAutoGenerateSlotsToggle:
         tenant.auto_generate_slots_enabled = True
         tenant.save(update_fields=["auto_generate_slots_enabled"])
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         resp = self.client.patch(
             URL, {"auto_generate_slots_enabled": False}, format="json"
         )
@@ -89,6 +93,7 @@ class TestAutoGenerateSlotsToggle:
             is_active=True,
         )
         self.client.force_authenticate(user=owner)
+        ensure_staff(owner)
         self.client.patch(URL, {"auto_generate_slots_enabled": True}, format="json")
 
         meta_resp = self.client.get(
