@@ -7363,7 +7363,7 @@ class ClientFormResponseView(APIView):
         return (
             CustomerFormResponse.objects.filter(customer=customer, form__tenant=tenant)
             .select_related("form")
-            .prefetch_related("answers__field")
+            .prefetch_related("answers__field", "form__fields")
         )
 
     def get(self, request, response_id=None):

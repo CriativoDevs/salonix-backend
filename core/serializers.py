@@ -1355,6 +1355,10 @@ class CustomerFieldAnswerSerializer(serializers.ModelSerializer):
 class CustomerFormResponseSerializer(serializers.ModelSerializer):
     answers = CustomerFieldAnswerSerializer(many=True)
     form_title = serializers.CharField(source="form.title", read_only=True)
+    form_client_editable = serializers.BooleanField(
+        source="form.client_editable", read_only=True
+    )
+    form_fields = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerFormResponse
@@ -1362,12 +1366,20 @@ class CustomerFormResponseSerializer(serializers.ModelSerializer):
             "id",
             "form",
             "form_title",
+            "form_client_editable",
+            "form_fields",
             "customer",
             "answers",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_form_fields(self, obj):
+        # Definição completa dos campos (inclui os ainda sem resposta) para o
+        # cliente renderizar a ficha sem acesso ao endpoint de staff.
+        ordered = sorted(obj.form.fields.all(), key=lambda f: (f.order, f.id))
+        return TenantFormFieldSerializer(ordered, many=True).data
 
     def get_fields(self):
         fields = super().get_fields()
