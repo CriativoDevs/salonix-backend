@@ -1245,6 +1245,10 @@ class TenantReactivateSerializer(serializers.Serializer):
 
 
 class TenantFormFieldSerializer(serializers.ModelSerializer):
+    # Gravável para o update reconhecer campos existentes; sem isso toda edição
+    # do formulário recriaria os campos e apagaria as respostas em cascata.
+    id = serializers.IntegerField(required=False)
+
     class Meta:
         model = TenantFormField
         fields = ["id", "label", "field_type", "required", "options", "order"]
@@ -1372,16 +1376,20 @@ class CustomerFormResponseSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Formulário é obrigatório.")
 
         answers = data.get("answers", [])
-        answered_field_ids = {a["field"].id for a in answers}
 
-        required_fields = form.fields.filter(required=True)
-        for rf in required_fields:
-            if rf.id not in answered_field_ids:
+        # Em update parcial, respostas já gravadas contam para os obrigatórios.
+        merged = {}
+        if self.instance:
+            merged = {a.field_id: a.value for a in self.instance.answers.all()}
+        for a in answers:
+            merged[a["field"].id] = a.get("value", "")
+
+        for rf in form.fields.filter(required=True):
+            if rf.id not in merged:
                 raise serializers.ValidationError(
                     f"Campo obrigatório não respondido: {rf.label}"
                 )
-            answer = next(a for a in answers if a["field"].id == rf.id)
-            if not answer.get("value", "").strip():
+            if not str(merged[rf.id]).strip():
                 raise serializers.ValidationError(
                     f"Campo obrigatório não pode estar vazio: {rf.label}"
                 )

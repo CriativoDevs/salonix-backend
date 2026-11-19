@@ -80,6 +80,7 @@ from core.serializers import (
     CustomerFormResponseSerializer,
 )
 from core.mixins import TenantIsolatedMixin
+from core.permissions import IsTenantOwnerOrManager, IsTenantStaff
 from core.utils.pagination import get_limit_offset, set_pagination_headers
 
 from django.db import transaction
@@ -7285,7 +7286,13 @@ class TenantReactivateView(APIView):
 class TenantFormViewSet(TenantIsolatedMixin, ModelViewSet):
     queryset = TenantForm.objects.prefetch_related("fields").all()
     serializer_class = TenantFormSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # Apagar/editar o formulario apaga respostas em cascata: so owner/manager.
+        permissions = [IsAuthenticated(), IsTenantStaff()]
+        if self.request.method not in SAFE_METHODS:
+            permissions.append(IsTenantOwnerOrManager())
+        return permissions
 
     def perform_create(self, serializer):
         tenant = getattr(self.request, "tenant", None) or getattr(
@@ -7303,7 +7310,7 @@ class CustomerFormResponseViewSet(ModelViewSet):
         .all()
     )
     serializer_class = CustomerFormResponseSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTenantStaff]
 
     def _get_tenant(self):
         return getattr(self.request, "tenant", None) or getattr(
@@ -7335,30 +7342,35 @@ class CustomerFormResponseViewSet(ModelViewSet):
 
 
 class ClientFormResponseView(APIView):
-    """Endpoint para cliente ver/editar suas próprias respostas de formulário."""
+    """Cliente vê/edita as PRÓPRIAS respostas de formulário.
 
-    permission_classes = [IsAuthenticated]
+    Mesmo padrão das demais views `clients/me/*`: autenticação manual via JWT
+    `scope=client` (ver `_get_client_from_jwt`). Tudo é escopado por
+    tenant+cliente do token, nunca por ids vindos do payload (IDOR).
+    """
 
-    def _get_customer(self, request):
-        customer_id = getattr(request, "customer_id", None)
-        if not customer_id:
-            raise PermissionDenied("Acesso restrito a clientes.")
-        return get_object_or_404(SalonCustomer, id=customer_id)
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No auto-authentication, we handle JWT manually
 
-    def get(self, request):
-        customer = self._get_customer(request)
-        responses = (
-            CustomerFormResponse.objects.filter(customer=customer)
+    def _queryset(self, tenant, customer):
+        return (
+            CustomerFormResponse.objects.filter(customer=customer, form__tenant=tenant)
             .select_related("form")
             .prefetch_related("answers__field")
         )
-        serializer = CustomerFormResponseSerializer(responses, many=True)
-        return Response(serializer.data)
+
+    def get(self, request, response_id=None):
+        tenant, customer = _get_client_from_jwt(request)
+        responses = self._queryset(tenant, customer)
+        if response_id is not None:
+            form_response = get_object_or_404(responses, id=response_id)
+            return Response(CustomerFormResponseSerializer(form_response).data)
+        return Response(CustomerFormResponseSerializer(responses, many=True).data)
 
     def put(self, request, response_id):
-        customer = self._get_customer(request)
+        tenant, customer = _get_client_from_jwt(request)
         form_response = get_object_or_404(
-            CustomerFormResponse, id=response_id, customer=customer
+            self._queryset(tenant, customer), id=response_id
         )
 
         if not form_response.form.client_editable:
